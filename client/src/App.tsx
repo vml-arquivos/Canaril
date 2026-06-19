@@ -1,5 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Spinner } from "@/components/ui/spinner";
 import NotFound from "@/pages/NotFound";
 import Home from "@/pages/Home";
 import Dashboard from "@/pages/Dashboard";
@@ -8,22 +10,75 @@ import Couples from "@/pages/Couples";
 import Rings from "@/pages/Rings";
 import Clutches from "@/pages/Clutches";
 import ControlSheetPDF from "@/pages/ControlSheetPDF";
-import { Route, Switch } from "wouter";
+import LoginPage from "@/pages/Login";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
+// Componente para rotas protegidas
+function ProtectedRoute({ component: Component, ...props }: any) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return <Component {...props} />;
+}
+
 function Router() {
+  const [location] = useLocation();
+  const { user, loading } = useAuth();
+
+  // Páginas públicas
+  const publicPages = ["/", "/login"];
+  const isPublicPage = publicPages.includes(location);
+
+  // Se estiver carregando, mostrar spinner
+  if (loading && !isPublicPage) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+      </div>
+    );
+  }
+
   return (
     <Switch>
+      {/* Páginas Públicas */}
       <Route path={"/"} component={Home} />
-      <Route path={"/dashboard"} component={Dashboard} />
-      <Route path={"/birds"} component={Birds} />
-      <Route path={"/couples"} component={Couples} />
-      <Route path={"/rings"} component={Rings} />
-      <Route path={"/clutches"} component={Clutches} />
-      <Route path={"/control-sheet/:coupleId"} component={ControlSheetPDF} />
+      <Route path={"/login"} component={LoginPage} />
+
+      {/* Páginas Protegidas */}
+      <Route path={"/dashboard"}>
+        {(params) => <ProtectedRoute component={Dashboard} {...params} />}
+      </Route>
+      <Route path={"/birds"}>
+        {(params) => <ProtectedRoute component={Birds} {...params} />}
+      </Route>
+      <Route path={"/couples"}>
+        {(params) => <ProtectedRoute component={Couples} {...params} />}
+      </Route>
+      <Route path={"/rings"}>
+        {(params) => <ProtectedRoute component={Rings} {...params} />}
+      </Route>
+      <Route path={"/clutches"}>
+        {(params) => <ProtectedRoute component={Clutches} {...params} />}
+      </Route>
+      <Route path={"/control-sheet/:coupleId"}>
+        {(params) => <ProtectedRoute component={ControlSheetPDF} {...params} />}
+      </Route>
+
+      {/* Fallback */}
       <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
       <Route component={NotFound} />
     </Switch>
   );
