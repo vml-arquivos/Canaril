@@ -7,7 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { serveStatic, setupVite } from "./vite";
+import { serveStatic } from "./staticServe";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -46,8 +46,13 @@ async function startServer() {
       createContext,
     })
   );
-  // development mode uses Vite, production mode uses static files
+  // development mode usa o middleware do Vite (HMR); production usa os
+  // arquivos estáticos já buildados. O import de "./viteDevServer" é
+  // dinâmico e marcado --external no esbuild (ver package.json), então
+  // nunca entra no bundle de produção nem é resolvido em runtime de
+  // produção, onde "vite" e seus plugins (devDependencies) nem existem.
   if (process.env.NODE_ENV === "development") {
+    const { setupVite } = await import("./viteDevServer");
     await setupVite(app, server);
   } else {
     serveStatic(app);
