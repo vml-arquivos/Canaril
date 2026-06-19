@@ -87,7 +87,7 @@ VALUE: Canário Gestão Pro
 ### Variável 3
 ```
 KEY: JWT_SECRET
-VALUE: TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
+VALUE: troque-por-jwt-secret-forte
 ```
 
 ### Variável 4
@@ -105,13 +105,13 @@ VALUE: canario-gestao-pro-001
 ### Variável 6
 ```
 KEY: CSRF_SECRET
-VALUE: 26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
+VALUE: troque-por-csrf-secret-forte
 ```
 
 ### Variável 7
 ```
 KEY: SESSION_SECRET
-VALUE: BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
+VALUE: troque-por-session-secret-forte
 ```
 
 ### Variável 8

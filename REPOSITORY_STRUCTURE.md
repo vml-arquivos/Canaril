@@ -39,7 +39,6 @@ client/
 │   │   ├── Clutches.tsx             # Gestão de posturas e filhotes
 │   │   ├── ControlSheetPDF.tsx      # Ficha de controle de choca
 │   │   ├── NotFound.tsx             # Página 404
-│   │   └── ComponentShowcase.tsx    # Showcase de componentes
 │   ├── components/                  # Componentes reutilizáveis
 │   │   ├── DashboardLayout.tsx      # Layout do dashboard
 │   │   ├── DashboardLayoutSkeleton.tsx

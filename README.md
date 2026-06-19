@@ -276,9 +276,9 @@ DATABASE_URL=postgresql://postgis:postgis@localhost:5432/canario_lima_db
 VITE_APP_ID=canario-gestao-pro-001
 VITE_APP_TITLE=Canário Gestão Pro
 VITE_APP_LOGO=https://canarillima.casadf.com.br/logo.png
-JWT_SECRET=TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
-CSRF_SECRET=26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
-SESSION_SECRET=BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
+JWT_SECRET=troque-por-jwt-secret-forte
+CSRF_SECRET=troque-por-csrf-secret-forte
+SESSION_SECRET=troque-por-session-secret-forte
 OWNER_NAME=Canário Lima
 OWNER_OPEN_ID=canario-lima-001
 CORS_ORIGIN=http://localhost:3000

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { ring_batches, couples, clutches, chicks } from "../../drizzle/schema";
+import { birds, ring_batches, couples, clutches, chicks } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
 export const managementRouter = router({
@@ -220,7 +220,7 @@ export const managementRouter = router({
       if (!db) return { birds: 0, couples: 0, chicks: 0, rings: 0 };
 
       try {
-        const birdsList = await db.select().from(ring_batches);
+        const birdsList = await db.select().from(birds);
         const couplesList = await db.select().from(couples);
         const chicksList = await db.select().from(chicks);
         const ringsList = await db.select().from(ring_batches);
