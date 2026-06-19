@@ -8,23 +8,36 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { SPECIALTIES } from "@shared/constants";
-import { Plus, Edit2, Trash2, FileText } from "lucide-react";
+import { SPECIALTIES, COLORS } from "@shared/constants";
+import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
-const emptyForm = { maleId: "", femaleId: "", cageNumber: "", formationDate: "" };
+const emptyForm = { maleId: "", femaleId: "", cageNumber: "", formationDate: "", status: "active" };
 
 export default function Couples() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [view, setView] = useState<"visual" | "table">("visual");
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const { data: couples, refetch } = trpc.management.couples.list.useQuery();
   const { data: birds } = trpc.birds.list.useQuery({});
-  const malesAvailable = birds?.filter((b) => b.sex === "macho");
-  const femalesAvailable = birds?.filter((b) => b.sex === "fêmea");
+  // Pássaros já vinculados a um casal ATIVO não podem formar outro casal —
+  // somem da lista de disponíveis até o casal anterior ser desfeito/
+  // excluído. Ao editar um casal existente, o macho/fêmea dele mesmo
+  // continuam aparecendo (senão o próprio formulário ficaria inválido).
+  const pairedMaleIds = new Set(
+    couples?.filter((c) => c.status === "active" && c.id !== editingId).map((c) => c.maleId)
+  );
+  const pairedFemaleIds = new Set(
+    couples?.filter((c) => c.status === "active" && c.id !== editingId).map((c) => c.femaleId)
+  );
+  const malesAvailable = birds?.filter((b) => b.sex === "macho" && !pairedMaleIds.has(b.id));
+  const femalesAvailable = birds?.filter((b) => b.sex === "fêmea" && !pairedFemaleIds.has(b.id));
   const ringOf = (id: number) => birds?.find((b) => b.id === id)?.ring ?? `#${id}`;
+  const birdOf = (id: number) => birds?.find((b) => b.id === id);
   const specialtyName = (code: string) => SPECIALTIES.find((s) => s.id === code)?.name ?? code;
 
   const createCouple = trpc.management.couples.create.useMutation({
@@ -66,6 +79,7 @@ export default function Couples() {
       femaleId: String(couple.femaleId),
       cageNumber: couple.cageNumber ?? "",
       formationDate: new Date(couple.formationDate).toISOString().slice(0, 10),
+      status: couple.status,
     });
     setOpen(true);
   };
@@ -85,7 +99,7 @@ export default function Couples() {
     };
 
     if (editingId) {
-      updateCouple.mutate({ id: editingId, ...payload });
+      updateCouple.mutate({ id: editingId, ...payload, status: formData.status });
     } else {
       createCouple.mutate(payload);
     }
@@ -106,7 +120,24 @@ export default function Couples() {
             <h1 className="text-3xl font-bold text-gray-900">Gestão de Cruzamentos</h1>
             <p className="text-gray-600 mt-2">Registre e acompanhe seus casais</p>
           </div>
-          <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
+          <div className="flex items-center gap-2">
+            <div className="flex border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setView("visual")}
+                className={`p-2 ${view === "visual" ? "bg-green-600 text-white" : "bg-white text-gray-500"}`}
+                title="Visualização em gaiolas"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setView("table")}
+                className={`p-2 ${view === "table" ? "bg-green-600 text-white" : "bg-white text-gray-500"}`}
+                title="Visualização em tabela"
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+            <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
             <DialogTrigger asChild>
               <Button className="bg-green-600 hover:bg-green-700" onClick={() => { setEditingId(null); setFormData(emptyForm); }}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -168,6 +199,21 @@ export default function Couples() {
                       onChange={(e) => setFormData({ ...formData, formationDate: e.target.value })}
                     />
                   </div>
+                  {editingId && (
+                    <div>
+                      <Label>Status</Label>
+                      <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Ativo</SelectItem>
+                          <SelectItem value="inactive">Desfeito (libera os pássaros)</SelectItem>
+                          <SelectItem value="finalized">Finalizado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="outline" onClick={closeDialog}>
@@ -180,10 +226,58 @@ export default function Couples() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
-        {/* Table */}
-        <Card>
+        {/* Visualização em gaiolas (visual) ou tabela */}
+        {view === "visual" ? (
+          <div>
+            {couples && couples.length > 0 ? (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {couples.map((couple) => {
+                  const male = birdOf(couple.maleId);
+                  const female = birdOf(couple.femaleId);
+                  return (
+                    <button
+                      key={couple.id}
+                      onClick={() => setDetailId(couple.id)}
+                      className="text-left rounded-xl border-2 border-amber-200 bg-gradient-to-b from-amber-50 to-white p-4 hover:shadow-md hover:border-amber-400 transition-all relative"
+                    >
+                      {/* "grade" decorativa simulando uma gaiola */}
+                      <div className="absolute inset-x-3 top-0 h-2 bg-[repeating-linear-gradient(90deg,#d4a574_0px,#d4a574_2px,transparent_2px,transparent_8px)] opacity-40 rounded-t" />
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-xs font-mono font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
+                          Gaiola {couple.cageNumber || "-"}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                          couple.status === "active" ? "bg-green-100 text-green-800" :
+                          couple.status === "finalized" ? "bg-blue-100 text-blue-800" :
+                          "bg-gray-100 text-gray-600"
+                        }`}>
+                          {couple.status === "active" ? "Ativo" : couple.status === "finalized" ? "Finalizado" : "Desfeito"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-center gap-3 py-2">
+                        <BirdMini bird={male} symbol="♂" color="text-blue-500" />
+                        <Heart className="w-5 h-5 text-rose-300 shrink-0" />
+                        <BirdMini bird={female} symbol="♀" color="text-rose-500" />
+                      </div>
+                      <p className="text-center text-xs text-gray-400 mt-2">
+                        Formado em {new Date(couple.formationDate).toLocaleDateString("pt-BR")}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-16 text-gray-400 border border-dashed rounded-xl">
+                <BirdIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p>Nenhum casal formado ainda.</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Card>
           <CardHeader>
             <CardTitle>Casais Cadastrados</CardTitle>
             <CardDescription>Total: {couples?.length || 0} casais</CardDescription>
@@ -210,8 +304,12 @@ export default function Couples() {
                         <TableCell className="font-mono text-sm">{ringOf(couple.femaleId)}</TableCell>
                         <TableCell>{new Date(couple.formationDate).toLocaleDateString("pt-BR")}</TableCell>
                         <TableCell>
-                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
-                            {couple.status}
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            couple.status === "active" ? "bg-green-100 text-green-800" :
+                            couple.status === "finalized" ? "bg-blue-100 text-blue-800" :
+                            "bg-gray-100 text-gray-600"
+                          }`}>
+                            {couple.status === "active" ? "Ativo" : couple.status === "finalized" ? "Finalizado" : "Desfeito"}
                           </span>
                         </TableCell>
                         <TableCell>
@@ -241,7 +339,104 @@ export default function Couples() {
             )}
           </CardContent>
         </Card>
+        )}
       </div>
+
+      {/* Ficha rápida ao clicar no card visual */}
+      <CoupleDetailDialog
+        couple={couples?.find((c) => c.id === detailId) ?? null}
+        male={detailId ? birdOf(couples?.find((c) => c.id === detailId)?.maleId ?? -1) : undefined}
+        female={detailId ? birdOf(couples?.find((c) => c.id === detailId)?.femaleId ?? -1) : undefined}
+        onClose={() => setDetailId(null)}
+        onEdit={(couple) => {
+          setDetailId(null);
+          openEdit(couple);
+        }}
+      />
     </DashboardLayout>
+  );
+}
+
+function BirdMini({ bird, symbol, color }: { bird: { ring: string; specialty_code: string; color_code: string } | undefined; symbol: string; color: string }) {
+  if (!bird) {
+    return (
+      <div className="flex flex-col items-center gap-1 w-24">
+        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-300">
+          <BirdIcon className="w-6 h-6" />
+        </div>
+        <span className="text-xs text-gray-300">-</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-1 w-24">
+      <div className={`w-12 h-12 rounded-full bg-white border-2 border-current flex items-center justify-center text-lg font-bold ${color}`}>
+        {symbol}
+      </div>
+      <span className="text-xs font-mono font-semibold text-gray-700 truncate max-w-full">{bird.ring}</span>
+      <span className="text-[10px] text-gray-400 truncate max-w-full">
+        {COLORS.find((c) => c.id === bird.color_code)?.name ?? bird.color_code}
+      </span>
+    </div>
+  );
+}
+
+function CoupleDetailDialog({
+  couple,
+  male,
+  female,
+  onClose,
+  onEdit,
+}: {
+  couple: { id: number; cageNumber: string | null; formationDate: Date | string; status: string } | null | undefined;
+  male: { ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
+  female: { ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
+  onClose: () => void;
+  onEdit: (couple: any) => void;
+}) {
+  return (
+    <Dialog open={!!couple} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        {couple && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Ficha do Casal — Gaiola {couple.cageNumber || "-"}</DialogTitle>
+              <DialogDescription>
+                Formado em {new Date(couple.formationDate).toLocaleDateString("pt-BR")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {[
+                { label: "Macho", bird: male },
+                { label: "Fêmea", bird: female },
+              ].map(({ label, bird }) => (
+                <div key={label} className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase">{label}</p>
+                    <p className="font-mono font-semibold text-gray-900">{bird?.ring ?? "-"}</p>
+                  </div>
+                  <div className="text-right text-sm">
+                    <p className="text-gray-700">{SPECIALTIES.find((s) => s.id === bird?.specialty_code)?.name ?? bird?.specialty_code}</p>
+                    <p className="text-gray-400">{COLORS.find((c) => c.id === bird?.color_code)?.name ?? bird?.color_code}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Link href={`/ficha-gaiola/${couple.id}`}>
+                <Button variant="outline" size="sm">
+                  <FileText className="w-4 h-4 mr-1" />
+                  Imprimir ficha
+                </Button>
+              </Link>
+              <Button size="sm" onClick={() => onEdit(couple)}>
+                <Edit2 className="w-4 h-4 mr-1" />
+                Editar
+              </Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

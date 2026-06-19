@@ -178,6 +178,20 @@ export const managementRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database not available");
         try {
+          // Regra de integridade: um pássaro não pode estar em dois casais
+          // ativos ao mesmo tempo. Validado aqui no servidor (não só no
+          // formulário) para que a regra valha sempre, não importa de onde
+          // vem a requisição.
+          const activeCouples = await db.select().from(couples).where(eq(couples.status, "active"));
+          const maleTaken = activeCouples.find((c) => c.maleId === input.maleId || c.femaleId === input.maleId);
+          const femaleTaken = activeCouples.find((c) => c.maleId === input.femaleId || c.femaleId === input.femaleId);
+          if (maleTaken) {
+            throw new Error("Este pássaro (macho) já está em outro casal ativo. Desfaça o casal anterior primeiro.");
+          }
+          if (femaleTaken) {
+            throw new Error("Este pássaro (fêmea) já está em outro casal ativo. Desfaça o casal anterior primeiro.");
+          }
+
           await db.insert(couples).values({
             maleId: input.maleId,
             femaleId: input.femaleId,
@@ -206,6 +220,23 @@ export const managementRouter = router({
         if (!db) throw new Error("Database not available");
         const { id, ...fields } = input;
         try {
+          // Mesma validação do create, mas ignorando o próprio casal sendo
+          // editado (senão ele sempre bateria consigo mesmo).
+          if (input.maleId !== undefined || input.femaleId !== undefined) {
+            const current = (await db.select().from(couples).where(eq(couples.id, id)))[0];
+            const checkMaleId = input.maleId ?? current?.maleId;
+            const checkFemaleId = input.femaleId ?? current?.femaleId;
+            const activeCouples = await db.select().from(couples).where(eq(couples.status, "active"));
+            const maleTaken = activeCouples.find((c) => c.id !== id && (c.maleId === checkMaleId || c.femaleId === checkMaleId));
+            const femaleTaken = activeCouples.find((c) => c.id !== id && (c.maleId === checkFemaleId || c.femaleId === checkFemaleId));
+            if (maleTaken) {
+              throw new Error("Este pássaro (macho) já está em outro casal ativo.");
+            }
+            if (femaleTaken) {
+              throw new Error("Este pássaro (fêmea) já está em outro casal ativo.");
+            }
+          }
+
           await db.update(couples).set({ ...fields, updatedAt: new Date() }).where(eq(couples.id, id));
           return { success: true };
         } catch (error) {

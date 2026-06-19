@@ -15,6 +15,7 @@ import { photosRouter } from "./routers/photos";
 import { championshipsRouter } from "./routers/championships";
 import { reportsRouter } from "./routers/reports";
 import { showroomRouter } from "./routers/showroom";
+import { settingsRouter } from "./routers/settings";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -95,6 +96,7 @@ export const appRouter = router({
   championships: championshipsRouter,
   reports: reportsRouter,
   showroom: showroomRouter,
+  settings: settingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

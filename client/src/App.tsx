@@ -14,6 +14,7 @@ import CageCardPrint from "@/pages/CageCardPrint";
 import Cages from "@/pages/Cages";
 import Championships from "@/pages/Championships";
 import Reports from "@/pages/Reports";
+import Settings from "@/pages/Settings";
 import LoginPage from "@/pages/Login";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -91,6 +92,9 @@ function Router() {
       </Route>
       <Route path={"/reports"}>
         {(params) => <ProtectedRoute component={Reports} {...params} />}
+      </Route>
+      <Route path={"/settings"}>
+        {(params) => <ProtectedRoute component={Settings} {...params} />}
       </Route>
 
       {/* Fallback */}

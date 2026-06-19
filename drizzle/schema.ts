@@ -409,6 +409,30 @@ export const ai_judge_analyses = pgTable("ai_judge_analyses", {
 }));
 
 /**
+ * Configurações do Criadouro (registro único, id sempre = 1)
+ *
+ * Fonte única de verdade para nome, contato e identidade visual do
+ * criadouro — usada tanto na Home pública quanto na Ficha de Gaiola
+ * impressa e em qualquer outro painel que precise exibir essa informação.
+ * Antes esses dados ficavam fixos em shared/constants.ts (BREEDER_INFO);
+ * agora são editáveis via tela de Configurações, sem precisar mexer em
+ * código pra trocar nome/telefone/endereço.
+ */
+export const breeder_settings = pgTable("breeder_settings", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 150 }).notNull().default("Meu Criadouro"),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 2 }),
+  address: varchar("address", { length: 250 }),
+  phone: varchar("phone", { length: 30 }),
+  email: varchar("email", { length: 150 }),
+  website: varchar("website", { length: 200 }),
+  description: text("description"),
+  logoUrl: varchar("logoUrl", { length: 500 }),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+});
+
+/**
  * Types exportados
  */
 export type User = typeof users.$inferSelect;
@@ -433,3 +457,4 @@ export type ChampionshipEntry = typeof championship_entries.$inferSelect;
 export type Judge = typeof judges.$inferSelect;
 export type Score = typeof scores.$inferSelect;
 export type AiJudgeAnalysis = typeof ai_judge_analyses.$inferSelect;
+export type BreederSettings = typeof breeder_settings.$inferSelect;

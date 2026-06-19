@@ -40,6 +40,9 @@ export default function CageCardPrint() {
     enabled: !!coupleId,
   });
 
+  const { data: settings } = trpc.settings.get.useQuery();
+  const breederName = settings?.name || "Meu Criadouro";
+
   const handlePrint = () => window.print();
 
   if (!coupleId) {
@@ -97,20 +100,20 @@ export default function CageCardPrint() {
             O scale some na impressão (ver @media print acima). */}
         <div className="border rounded-lg bg-gray-50 p-10 overflow-auto flex justify-center">
           <div style={{ transform: "scale(2)", transformOrigin: "top left", width: "130mm", height: "60mm" }}>
-            <CageCard couple={couple} rows={rows} />
+            <CageCard couple={couple} rows={rows} breederName={breederName} />
           </div>
         </div>
       </div>
 
       {/* Alvo real de impressão — único nó usado pelo navegador ao imprimir */}
       <div id="cage-card-print">
-        <CageCard couple={couple} rows={rows} />
+        <CageCard couple={couple} rows={rows} breederName={breederName} />
       </div>
     </DashboardLayout>
   );
 }
 
-function CageCard({ couple, rows }: { couple: any; rows: any[] }) {
+function CageCard({ couple, rows, breederName }: { couple: any; rows: any[]; breederName: string }) {
   return (
     <div
       className="bg-white flex font-sans overflow-hidden"
@@ -127,7 +130,7 @@ function CageCard({ couple, rows }: { couple: any; rows: any[] }) {
         style={{ width: "34mm", height: "60mm", padding: "3mm", backgroundColor: BRAND_ACCENT, boxSizing: "border-box" }}
       >
         <div style={{ fontSize: "6.5pt", letterSpacing: "0.5pt" }} className="uppercase font-semibold opacity-90">
-          Canário Lima
+          {breederName}
         </div>
         <div>
           <div style={{ fontSize: "6.5pt" }} className="uppercase opacity-90">Gaiola</div>

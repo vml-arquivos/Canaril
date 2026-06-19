@@ -3,13 +3,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
-import { Bird, Egg, Heart, Trophy, Wheat, Bone, Leaf, Droplets, AlertTriangle, ImageOff } from "lucide-react";
-import { SPECIALTIES, COLORS_BY_SPECIALTY, BREEDER_INFO } from "@shared/constants";
+import { Bird, Egg, Heart, Trophy, Wheat, Bone, Leaf, Droplets, AlertTriangle, ImageOff, Zap } from "lucide-react";
+import { SPECIALTIES, COLORS_BY_SPECIALTY } from "@shared/constants";
 import { trpc } from "@/lib/trpc";
 
 export default function Home() {
   const { isAuthenticated } = useAuth();
   const { data: featuredBirds } = trpc.showroom.featuredBirds.useQuery();
+  const { data: settings } = trpc.settings.get.useQuery();
+
+  const breeder = {
+    name: settings?.name || "Meu Criadouro",
+    city: settings?.city || "",
+    state: settings?.state || "",
+    phone: settings?.phone || "",
+    email: settings?.email || "",
+    description: settings?.description || "Criadouro dedicado à criação responsável de canários, com controle genealógico completo.",
+  };
 
   return (
     <div className="min-h-screen bg-[#FBF8F3]">
@@ -18,7 +28,7 @@ export default function Home() {
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Bird className="w-7 h-7 text-amber-600" />
-            <h1 className="text-xl font-bold text-amber-900 tracking-tight">{BREEDER_INFO.name}</h1>
+            <h1 className="text-xl font-bold text-amber-900 tracking-tight">{breeder.name}</h1>
           </div>
           <nav className="flex gap-6 items-center text-sm">
             <a href="#vitrine" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
@@ -47,13 +57,13 @@ export default function Home() {
       <section className="container mx-auto px-4 py-20 sm:py-28 text-center">
         <div className="max-w-2xl mx-auto">
           <p className="text-amber-600 font-medium tracking-wide uppercase text-sm mb-4">
-            {BREEDER_INFO.city}, {BREEDER_INFO.state}
+            {breeder.city}, {breeder.state}
           </p>
           <h2 className="text-4xl sm:text-5xl font-bold text-amber-950 mb-6 tracking-tight leading-tight">
-            {BREEDER_INFO.name}
+            {breeder.name}
           </h2>
           <p className="text-lg text-amber-900/70 leading-relaxed">
-            {BREEDER_INFO.description}
+            {breeder.description}
           </p>
         </div>
       </section>
@@ -173,6 +183,36 @@ export default function Home() {
             tone="warning"
           />
         </div>
+
+        {/* Tabela detalhada de nutrientes */}
+        <div className="mt-10 bg-white rounded-xl border border-amber-100 overflow-hidden">
+          <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/50">
+            <h4 className="font-semibold text-amber-950">Necessidades por Nutriente</h4>
+            <p className="text-xs text-amber-700/60 mt-0.5">Orientação geral — não substitui acompanhamento veterinário</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-amber-900/60 border-b border-amber-50">
+                  <th className="px-5 py-2 font-medium">Nutriente</th>
+                  <th className="px-5 py-2 font-medium">Para que serve</th>
+                  <th className="px-5 py-2 font-medium">Boas fontes</th>
+                  <th className="px-5 py-2 font-medium">Atenção</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-amber-50">
+                {NUTRIENT_TABLE.map((row) => (
+                  <tr key={row.nutrient}>
+                    <td className="px-5 py-3 font-medium text-amber-950">{row.nutrient}</td>
+                    <td className="px-5 py-3 text-gray-600">{row.function}</td>
+                    <td className="px-5 py-3 text-gray-600">{row.sources}</td>
+                    <td className="px-5 py-3 text-gray-500 text-xs">{row.caution}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       {/* Stats */}
@@ -208,7 +248,7 @@ export default function Home() {
         <div className="max-w-2xl mx-auto text-center">
           <h3 className="text-2xl font-bold text-amber-950 mb-4">Sobre o Criadouro</h3>
           <p className="text-gray-700 leading-relaxed mb-4">
-            {BREEDER_INFO.description}
+            {breeder.description}
           </p>
           <p className="text-gray-700 leading-relaxed">
             Um sistema de gestão próprio mantém controle total sobre genealogia, cruzamentos, posturas e
@@ -227,15 +267,54 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-amber-100 bg-white py-8">
         <div className="container mx-auto px-4 text-center text-amber-800/70 text-sm">
-          <p>&copy; {new Date().getFullYear()} {BREEDER_INFO.name}. Todos os direitos reservados.</p>
+          <p>&copy; {new Date().getFullYear()} {breeder.name}. Todos os direitos reservados.</p>
           <p className="mt-2">
-            {BREEDER_INFO.city}, {BREEDER_INFO.state} · {BREEDER_INFO.phone} · {BREEDER_INFO.email}
+            {breeder.city}, {breeder.state} · {breeder.phone} · {breeder.email}
           </p>
         </div>
       </footer>
     </div>
   );
 }
+
+const NUTRIENT_TABLE = [
+  {
+    nutrient: "Proteína",
+    function: "Crescimento, muda de penas e desenvolvimento dos filhotes",
+    sources: "Ovo cozido, papa de ovo",
+    caution: "Reforçar na reprodução e na muda; sem exagerar fora dessas fases",
+  },
+  {
+    nutrient: "Cálcio",
+    function: "Casca do ovo e saúde óssea",
+    sources: "Osso de siba, grit calcário, casca de ovo triturada",
+    caution: "Fêmeas em postura precisam de oferta constante e visível na gaiola",
+  },
+  {
+    nutrient: "Ferro",
+    function: "Produção de glóbulos vermelhos e energia",
+    sources: "Sementes integrais, verduras de folha escura",
+    caution: "Raramente falta numa dieta variada — não suplementar sem orientação veterinária",
+  },
+  {
+    nutrient: "Sódio",
+    function: "Equilíbrio de líquidos no organismo",
+    sources: "Já presente naturalmente na ração e nas sementes",
+    caution: "Excesso é tóxico — nunca ofereça alimento salgado de consumo humano",
+  },
+  {
+    nutrient: "Vitamina A",
+    function: "Pele, penas e visão",
+    sources: "Cenoura e vegetais verde-escuros ou alaranjados",
+    caution: "Fácil de suprir oferecendo verduras frescas com regularidade",
+  },
+  {
+    nutrient: "Fibras",
+    function: "Boa digestão",
+    sources: "Verduras frescas e fruta em pequena quantidade",
+    caution: "Introduzir aos poucos para evitar desconforto intestinal",
+  },
+];
 
 function NutritionCard({
   icon: Icon,
