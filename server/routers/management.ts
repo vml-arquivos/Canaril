@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { rings, couples, clutches, chicks } from "../../drizzle/schema";
+import { ring_batches, couples, clutches, chicks } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
 export const managementRouter = router({
@@ -11,7 +11,7 @@ export const managementRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(rings).orderBy(desc(rings.createdAt));
+        return await db.select().from(ring_batches).orderBy(desc(ring_batches.createdAt));
       } catch (error) {
         console.error("Error listing rings:", error);
         return [];
@@ -20,26 +20,26 @@ export const managementRouter = router({
 
     create: protectedProcedure
       .input(z.object({
-        number: z.string(),
+        batch_number: z.string(),
         year: z.number(),
         color: z.string().optional(),
-        quantity: z.number().default(1),
+        quantity_total: z.number().default(100),
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
         try {
-          await db.insert(rings).values({
-            number: input.number,
+          await db.insert(ring_batches).values({
+            batch_number: input.batch_number,
             year: input.year,
-            color: input.color,
-            quantity: input.quantity,
-            usedQuantity: 0,
-            status: "disponível",
+            color: input.color || "Padrão",
+            quantity_total: input.quantity_total,
+            quantity_used: 0,
+            status: "available",
           });
           return { success: true };
         } catch (error) {
-          console.error("Error creating ring:", error);
+          console.error("Error creating ring batch:", error);
           throw error;
         }
       }),
@@ -58,11 +58,25 @@ export const managementRouter = router({
       }
     }),
 
+    getById: protectedProcedure
+      .input(z.number())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return null;
+        try {
+          const result = await db.select().from(couples).where(eq(couples.id, input)).limit(1);
+          return result.length > 0 ? result[0] : null;
+        } catch (error) {
+          console.error("Error getting couple:", error);
+          return null;
+        }
+      }),
+
     create: protectedProcedure
       .input(z.object({
         maleId: z.number(),
         femaleId: z.number(),
-        cageNumber: z.string().optional(),
+        cageNumber: z.string(),
         formationDate: z.date(),
       }))
       .mutation(async ({ input }) => {
@@ -74,26 +88,12 @@ export const managementRouter = router({
             femaleId: input.femaleId,
             cageNumber: input.cageNumber,
             formationDate: input.formationDate,
-            status: "ativo",
+            status: "active",
           });
           return { success: true };
         } catch (error) {
           console.error("Error creating couple:", error);
           throw error;
-        }
-      }),
-
-    getById: protectedProcedure
-      .input(z.number())
-      .query(async ({ input }) => {
-        const db = await getDb();
-        if (!db) return null;
-        try {
-          const result = await db.select().from(couples).where(eq(couples.id, input));
-          return result[0] || null;
-        } catch (error) {
-          console.error("Error getting couple:", error);
-          return null;
         }
       }),
   }),
@@ -104,21 +104,35 @@ export const managementRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(clutches).orderBy(desc(clutches.clutchDate));
+        return await db.select().from(clutches).orderBy(desc(clutches.createdAt));
       } catch (error) {
         console.error("Error listing clutches:", error);
         return [];
       }
     }),
 
+    getByCoupleId: protectedProcedure
+      .input(z.number())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        try {
+          return await db.select().from(clutches).where(eq(clutches.coupleId, input)).orderBy(desc(clutches.clutchDate));
+        } catch (error) {
+          console.error("Error getting clutches by couple:", error);
+          return [];
+        }
+      }),
+
     create: protectedProcedure
       .input(z.object({
         coupleId: z.number(),
         clutchDate: z.date(),
-        totalEggs: z.number().default(0),
-        fertilizedEggs: z.number().default(0),
-        infertileEggs: z.number().default(0),
-        lostEggs: z.number().default(0),
+        totalEggs: z.number(),
+        fertilizedEggs: z.number(),
+        infertileEggs: z.number().optional(),
+        lostEggs: z.number().optional(),
+        hatchedChicks: z.number().optional(),
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
@@ -129,27 +143,14 @@ export const managementRouter = router({
             clutchDate: input.clutchDate,
             totalEggs: input.totalEggs,
             fertilizedEggs: input.fertilizedEggs,
-            infertileEggs: input.infertileEggs,
-            lostEggs: input.lostEggs,
-            hatchedChicks: 0,
+            infertileEggs: input.infertileEggs || 0,
+            lostEggs: input.lostEggs || 0,
+            hatchedChicks: input.hatchedChicks || 0,
           });
           return { success: true };
         } catch (error) {
           console.error("Error creating clutch:", error);
           throw error;
-        }
-      }),
-
-    getByCoupleId: protectedProcedure
-      .input(z.number())
-      .query(async ({ input }) => {
-        const db = await getDb();
-        if (!db) return [];
-        try {
-          return await db.select().from(clutches).where(eq(clutches.coupleId, input));
-        } catch (error) {
-          console.error("Error getting clutches:", error);
-          return [];
         }
       }),
   }),
@@ -160,19 +161,32 @@ export const managementRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(chicks).orderBy(desc(chicks.birthDate));
+        return await db.select().from(chicks).orderBy(desc(chicks.createdAt));
       } catch (error) {
         console.error("Error listing chicks:", error);
         return [];
       }
     }),
 
+    getByClutchId: protectedProcedure
+      .input(z.number())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        try {
+          return await db.select().from(chicks).where(eq(chicks.clutchId, input)).orderBy(desc(chicks.birthDate));
+        } catch (error) {
+          console.error("Error getting chicks by clutch:", error);
+          return [];
+        }
+      }),
+
     create: protectedProcedure
       .input(z.object({
         clutchId: z.number(),
-        ring: z.string().optional(),
-        sex: z.string().optional(),
-        color: z.string().optional(),
+        ring: z.string(),
+        sex: z.string(),
+        color_code: z.string(),
         birthDate: z.date(),
         ringDate: z.date().optional(),
         weanDate: z.date().optional(),
@@ -185,11 +199,11 @@ export const managementRouter = router({
             clutchId: input.clutchId,
             ring: input.ring,
             sex: input.sex,
-            color: input.color,
+            color_code: input.color_code,
             birthDate: input.birthDate,
             ringDate: input.ringDate,
             weanDate: input.weanDate,
-            status: "ativo",
+            status: "active",
           });
           return { success: true };
         } catch (error) {
@@ -197,41 +211,28 @@ export const managementRouter = router({
           throw error;
         }
       }),
-
-    getByClutchId: protectedProcedure
-      .input(z.number())
-      .query(async ({ input }) => {
-        const db = await getDb();
-        if (!db) return [];
-        try {
-          return await db.select().from(chicks).where(eq(chicks.clutchId, input));
-        } catch (error) {
-          console.error("Error getting chicks:", error);
-          return [];
-        }
-      }),
   }),
 
-  // ===== DASHBOARD =====
+  // ===== ESTATÍSTICAS =====
   dashboard: router({
     stats: protectedProcedure.query(async () => {
       const db = await getDb();
       if (!db) return { birds: 0, couples: 0, chicks: 0, rings: 0 };
 
       try {
-        const birdsList = await db.select().from(rings);
+        const birdsList = await db.select().from(ring_batches);
         const couplesList = await db.select().from(couples);
         const chicksList = await db.select().from(chicks);
-        const ringsList = await db.select().from(rings);
+        const ringsList = await db.select().from(ring_batches);
 
         return {
           birds: birdsList.length,
-          couples: couplesList.length,
+          couples: couplesList.filter((c) => c.status === "active").length,
           chicks: chicksList.length,
-          rings: ringsList.reduce((sum, r) => sum + (r.quantity - r.usedQuantity), 0),
+          rings: ringsList.reduce((sum, r) => sum + (r.quantity_total - r.quantity_used), 0),
         };
       } catch (error) {
-        console.error("Error getting stats:", error);
+        console.error("Error getting dashboard stats:", error);
         return { birds: 0, couples: 0, chicks: 0, rings: 0 };
       }
     }),

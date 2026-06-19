@@ -1,7 +1,7 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, date, boolean, index, uniqueIndex } from "drizzle-orm/mysql-core";
+import { int, varchar, text, timestamp, mysqlTable, index } from "drizzle-orm/mysql-core";
 
 /**
- * Core user table backing auth flow.
+ * Tabela de Usuários (OAuth)
  */
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -9,198 +9,205 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: varchar("role", { length: 20 }).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
-
 /**
- * Tabela de anilhas
+ * Tabela de Especialidades de Canários
  */
-export const rings = mysqlTable(
-  "rings",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    number: varchar("number", { length: 50 }).notNull(),
-    year: int("year").notNull(),
-    color: varchar("color", { length: 50 }),
-    status: varchar("status", { length: 50 }).default("disponível").notNull(),
-    quantity: int("quantity").notNull().default(1),
-    usedQuantity: int("usedQuantity").notNull().default(0),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    numberYearIdx: uniqueIndex("rings_number_year_idx").on(table.number, table.year),
-  })
-);
-
-export type Ring = typeof rings.$inferSelect;
-export type InsertRing = typeof rings.$inferInsert;
-
-/**
- * Tabela de pássaros
- */
-export const birds = mysqlTable(
-  "birds",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    ringId: int("ringId"),
-    ring: varchar("ring", { length: 50 }).notNull().unique(),
-    specialty: varchar("specialty", { length: 50 }).notNull(),
-    sex: varchar("sex", { length: 50 }).notNull(),
-    color: varchar("color", { length: 50 }).notNull(),
-    birthDate: date("birthDate"),
-    procedence: varchar("procedence", { length: 255 }),
-    status: varchar("status", { length: 50 }).default("ativo").notNull(),
-    photoUrl: text("photoUrl"),
-    fatherId: int("fatherId"),
-    motherId: int("motherId"),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    ringIdx: uniqueIndex("birds_ring_idx").on(table.ring),
-    fatherIdx: index("birds_fatherId_idx").on(table.fatherId),
-    motherIdx: index("birds_motherId_idx").on(table.motherId),
-    statusIdx: index("birds_status_idx").on(table.status),
-  })
-);
-
-export type Bird = typeof birds.$inferSelect;
-export type InsertBird = typeof birds.$inferInsert;
-
-/**
- * Tabela de casais (cruzamentos)
- */
-export const couples = mysqlTable(
-  "couples",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    maleId: int("maleId").notNull(),
-    femaleId: int("femaleId").notNull(),
-    cageNumber: varchar("cageNumber", { length: 50 }),
-    formationDate: date("formationDate").notNull(),
-    status: varchar("status", { length: 50 }).default("ativo").notNull(),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    maleIdx: index("couples_maleId_idx").on(table.maleId),
-    femaleIdx: index("couples_femaleId_idx").on(table.femaleId),
-    statusIdx: index("couples_status_idx").on(table.status),
-  })
-);
-
-export type Couple = typeof couples.$inferSelect;
-export type InsertCouple = typeof couples.$inferInsert;
-
-/**
- * Tabela de posturas
- */
-export const clutches = mysqlTable(
-  "clutches",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    coupleId: int("coupleId").notNull(),
-    clutchDate: date("clutchDate").notNull(),
-    totalEggs: int("totalEggs").notNull().default(0),
-    fertilizedEggs: int("fertilizedEggs").notNull().default(0),
-    infertileEggs: int("infertileEggs").notNull().default(0),
-    lostEggs: int("lostEggs").notNull().default(0),
-    hatchDate: date("hatchDate"),
-    hatchedChicks: int("hatchedChicks").notNull().default(0),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    coupleIdx: index("clutches_coupleId_idx").on(table.coupleId),
-    clutchDateIdx: index("clutches_clutchDate_idx").on(table.clutchDate),
-  })
-);
-
-export type Clutch = typeof clutches.$inferSelect;
-export type InsertClutch = typeof clutches.$inferInsert;
-
-/**
- * Tabela de filhotes
- */
-export const chicks = mysqlTable(
-  "chicks",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    clutchId: int("clutchId").notNull(),
-    ringId: int("ringId"),
-    ring: varchar("ring", { length: 50 }).unique(),
-    sex: varchar("sex", { length: 50 }),
-    color: varchar("color", { length: 50 }),
-    birthDate: date("birthDate").notNull(),
-    ringDate: date("ringDate"),
-    weanDate: date("weanDate"),
-    status: varchar("status", { length: 50 }).default("ativo").notNull(),
-    photoUrl: text("photoUrl"),
-    notes: text("notes"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    clutchIdx: index("chicks_clutchId_idx").on(table.clutchId),
-    ringIdx: index("chicks_ring_idx").on(table.ring),
-    statusIdx: index("chicks_status_idx").on(table.status),
-  })
-);
-
-export type Chick = typeof chicks.$inferSelect;
-export type InsertChick = typeof chicks.$inferInsert;
-
-/**
- * Tabela de galeria de fotos do criadouro
- */
-export const galleryPhotos = mysqlTable(
-  "galleryPhotos",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    title: varchar("title", { length: 255 }).notNull(),
-    description: text("description"),
-    photoUrl: text("photoUrl").notNull(),
-    specialty: varchar("specialty", { length: 50 }),
-    displayOrder: int("displayOrder").notNull().default(0),
-    isActive: boolean("isActive").notNull().default(true),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  },
-  (table) => ({
-    displayOrderIdx: index("galleryPhotos_displayOrder_idx").on(table.displayOrder),
-  })
-);
-
-export type GalleryPhoto = typeof galleryPhotos.$inferSelect;
-export type InsertGalleryPhoto = typeof galleryPhotos.$inferInsert;
-
-/**
- * Tabela de informações do criadouro
- */
-export const breederInfo = mysqlTable("breederInfo", {
+export const specialties = mysqlTable("specialties", {
   id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
-  city: varchar("city", { length: 255 }).notNull(),
-  state: varchar("state", { length: 2 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
   description: text("description"),
+  size_cm: varchar("size_cm", { length: 20 }),
+  weight_g: varchar("weight_g", { length: 20 }),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  codeIdx: index("specialties_code_idx").on(table.code),
+}));
+
+/**
+ * Tabela de Cores e Mutações
+ */
+export const colors = mysqlTable("colors", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(),
+  genetics: varchar("genetics", { length: 50 }),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  codeIdx: index("colors_code_idx").on(table.code),
+}));
+
+/**
+ * Tabela de Criadores
+ */
+export const breeders = mysqlTable("breeders", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  city: varchar("city", { length: 100 }).notNull(),
+  state: varchar("state", { length: 2 }).notNull(),
+  country: varchar("country", { length: 100 }).notNull(),
+  registration_number: varchar("registration_number", { length: 50 }).unique(),
+  association: varchar("association", { length: 200 }),
   phone: varchar("phone", { length: 20 }),
-  email: varchar("email", { length: 320 }),
-  website: varchar("website", { length: 255 }),
-  logoUrl: text("logoUrl"),
-  bannerUrl: text("bannerUrl"),
+  email: varchar("email", { length: 100 }),
+  website: varchar("website", { length: 200 }),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export type BreederInfo = typeof breederInfo.$inferSelect;
-export type InsertBreederInfo = typeof breederInfo.$inferInsert;
+/**
+ * Tabela de Lotes de Anilhas
+ */
+export const ring_batches = mysqlTable("ring_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  batch_number: varchar("batch_number", { length: 50 }).notNull(),
+  year: int("year").notNull(),
+  color: varchar("color", { length: 50 }).notNull(),
+  quantity_total: int("quantity_total").notNull(),
+  quantity_used: int("quantity_used").default(0).notNull(),
+  status: varchar("status", { length: 20 }).default("available").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  batchIdx: index("ring_batches_batch_idx").on(table.batch_number),
+}));
+
+/**
+ * Tabela de Pássaros
+ */
+export const birds = mysqlTable("birds", {
+  id: int("id").autoincrement().primaryKey(),
+  ring: varchar("ring", { length: 50 }).notNull().unique(),
+  specialty_code: varchar("specialty_code", { length: 50 }).notNull(),
+  sex: varchar("sex", { length: 20 }).notNull(),
+  color_code: varchar("color_code", { length: 50 }).notNull(),
+  birthDate: timestamp("birthDate"),
+  procedence: varchar("procedence", { length: 200 }),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  fatherId: int("fatherId"),
+  motherId: int("motherId"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  ringIdx: index("birds_ring_idx").on(table.ring),
+  specialtyIdx: index("birds_specialty_idx").on(table.specialty_code),
+  colorIdx: index("birds_color_idx").on(table.color_code),
+}));
+
+/**
+ * Tabela de Casais/Cruzamentos
+ */
+export const couples = mysqlTable("couples", {
+  id: int("id").autoincrement().primaryKey(),
+  maleId: int("maleId").notNull(),
+  femaleId: int("femaleId").notNull(),
+  cageNumber: varchar("cageNumber", { length: 50 }).notNull(),
+  formationDate: timestamp("formationDate").notNull(),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  cageIdx: index("couples_cage_idx").on(table.cageNumber),
+  statusIdx: index("couples_status_idx").on(table.status),
+}));
+
+/**
+ * Tabela de Posturas
+ */
+export const clutches = mysqlTable("clutches", {
+  id: int("id").autoincrement().primaryKey(),
+  coupleId: int("coupleId").notNull(),
+  clutchDate: timestamp("clutchDate").notNull(),
+  totalEggs: int("totalEggs").notNull(),
+  fertilizedEggs: int("fertilizedEggs").notNull(),
+  infertileEggs: int("infertileEggs").default(0).notNull(),
+  lostEggs: int("lostEggs").default(0).notNull(),
+  hatchedChicks: int("hatchedChicks").default(0).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  coupleIdx: index("clutches_couple_idx").on(table.coupleId),
+}));
+
+/**
+ * Tabela de Filhotes
+ */
+export const chicks = mysqlTable("chicks", {
+  id: int("id").autoincrement().primaryKey(),
+  clutchId: int("clutchId").notNull(),
+  ring: varchar("ring", { length: 50 }).notNull().unique(),
+  sex: varchar("sex", { length: 20 }).notNull(),
+  color_code: varchar("color_code", { length: 50 }).notNull(),
+  birthDate: timestamp("birthDate").notNull(),
+  ringDate: timestamp("ringDate"),
+  weanDate: timestamp("weanDate"),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  ringIdx: index("chicks_ring_idx").on(table.ring),
+  clutchIdx: index("chicks_clutch_idx").on(table.clutchId),
+}));
+
+/**
+ * Tabela de Regras Genéticas
+ */
+export const genetic_rules = mysqlTable("genetic_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  male_color: varchar("male_color", { length: 50 }).notNull(),
+  female_color: varchar("female_color", { length: 50 }).notNull(),
+  rule_type: varchar("rule_type", { length: 50 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Tabela de Associação Especialidade-Cor
+ */
+export const specialty_colors = mysqlTable("specialty_colors", {
+  id: int("id").autoincrement().primaryKey(),
+  specialty_code: varchar("specialty_code", { length: 50 }).notNull(),
+  color_code: varchar("color_code", { length: 50 }).notNull(),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  specialtyColorIdx: index("specialty_colors_idx").on(table.specialty_code, table.color_code),
+}));
+
+/**
+ * Types exportados
+ */
+export type User = typeof users.$inferSelect;
+export type InsertUser = typeof users.$inferInsert;
+
+export type Specialty = typeof specialties.$inferSelect;
+export type Color = typeof colors.$inferSelect;
+export type Breeder = typeof breeders.$inferSelect;
+export type RingBatch = typeof ring_batches.$inferSelect;
+export type Bird = typeof birds.$inferSelect;
+export type Couple = typeof couples.$inferSelect;
+export type Clutch = typeof clutches.$inferSelect;
+export type Chick = typeof chicks.$inferSelect;
+export type GeneticRule = typeof genetic_rules.$inferSelect;
+export type SpecialtyColor = typeof specialty_colors.$inferSelect;

@@ -8,7 +8,7 @@ export const birdsRouter = router({
   // Listar todos os pássaros
   list: protectedProcedure
     .input(z.object({
-      specialty: z.string().optional(),
+      specialty_code: z.string().optional(),
       status: z.string().optional(),
       search: z.string().optional(),
     }).optional())
@@ -45,9 +45,9 @@ export const birdsRouter = router({
   create: protectedProcedure
     .input(z.object({
       ring: z.string(),
-      specialty: z.string(),
+      specialty_code: z.string(),
       sex: z.string(),
-      color: z.string(),
+      color_code: z.string(),
       birthDate: z.date().optional(),
       procedence: z.string().optional(),
       fatherId: z.number().optional(),
@@ -59,49 +59,22 @@ export const birdsRouter = router({
       if (!db) throw new Error("Database not available");
 
       try {
-        const result = await db.insert(birds).values({
+        await db.insert(birds).values({
           ring: input.ring,
-          specialty: input.specialty,
+          specialty_code: input.specialty_code,
           sex: input.sex,
-          color: input.color,
+          color_code: input.color_code,
           birthDate: input.birthDate,
           procedence: input.procedence,
           fatherId: input.fatherId,
           motherId: input.motherId,
           notes: input.notes,
-          status: "ativo",
+          status: "active",
         });
 
         return { success: true };
       } catch (error) {
         console.error("Error creating bird:", error);
-        throw error;
-      }
-    }),
-
-  // Atualizar pássaro
-  update: protectedProcedure
-    .input(z.object({
-      id: z.number(),
-      ring: z.string().optional(),
-      specialty: z.string().optional(),
-      sex: z.string().optional(),
-      color: z.string().optional(),
-      birthDate: z.date().optional(),
-      procedence: z.string().optional(),
-      status: z.string().optional(),
-      notes: z.string().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-
-      try {
-        const { id, ...updates } = input;
-        await db.update(birds).set(updates).where(eq(birds.id, id));
-        return { success: true };
-      } catch (error) {
-        console.error("Error updating bird:", error);
         throw error;
       }
     }),
@@ -125,77 +98,65 @@ export const birdsRouter = router({
   // Obter genealogia (pais, avós, bisavós)
   getGenealogy: protectedProcedure
     .input(z.number())
-    .query(async ({ input }) => {
+    .query(async ({ input: birdId }) => {
       const db = await getDb();
       if (!db) return null;
 
       try {
-        const bird = await db.select().from(birds).where(eq(birds.id, input));
-        if (!bird[0]) return null;
+        const bird = await db.select().from(birds).where(eq(birds.id, birdId)).limit(1);
+        if (!bird.length) return null;
 
-        const genealogy: any = {
-          current: bird[0],
-          father: null,
-          mother: null,
-          paternal_grandfather: null,
-          paternal_grandmother: null,
-          maternal_grandfather: null,
-          maternal_grandmother: null,
+        const currentBird = bird[0];
+        let father = null;
+        let mother = null;
+        let paternal_grandfather = null;
+        let paternal_grandmother = null;
+        let maternal_grandfather = null;
+        let maternal_grandmother = null;
+
+        // Pais
+        if (currentBird.fatherId) {
+          const fatherResult = await db.select().from(birds).where(eq(birds.id, currentBird.fatherId)).limit(1);
+          father = fatherResult[0] || null;
+
+          // Avós paternos
+          if (father && father.fatherId) {
+            const pgResult = await db.select().from(birds).where(eq(birds.id, father.fatherId)).limit(1);
+            paternal_grandfather = pgResult[0] || null;
+          }
+          if (father && father.motherId) {
+            const pgmResult = await db.select().from(birds).where(eq(birds.id, father.motherId)).limit(1);
+            paternal_grandmother = pgmResult[0] || null;
+          }
+        }
+
+        if (currentBird.motherId) {
+          const motherResult = await db.select().from(birds).where(eq(birds.id, currentBird.motherId)).limit(1);
+          mother = motherResult[0] || null;
+
+          // Avós maternos
+          if (mother && mother.fatherId) {
+            const mgResult = await db.select().from(birds).where(eq(birds.id, mother.fatherId)).limit(1);
+            maternal_grandfather = mgResult[0] || null;
+          }
+          if (mother && mother.motherId) {
+            const mgmResult = await db.select().from(birds).where(eq(birds.id, mother.motherId)).limit(1);
+            maternal_grandmother = mgmResult[0] || null;
+          }
+        }
+
+        return {
+          current: currentBird,
+          father,
+          mother,
+          paternal_grandfather,
+          paternal_grandmother,
+          maternal_grandfather,
+          maternal_grandmother,
         };
-
-        if (bird[0].fatherId) {
-          const father = await db.select().from(birds).where(eq(birds.id, bird[0].fatherId));
-          genealogy.father = father[0];
-
-          if (father[0]?.fatherId) {
-            const pgf = await db.select().from(birds).where(eq(birds.id, father[0].fatherId));
-            genealogy.paternal_grandfather = pgf[0];
-          }
-          if (father[0]?.motherId) {
-            const pgm = await db.select().from(birds).where(eq(birds.id, father[0].motherId));
-            genealogy.paternal_grandmother = pgm[0];
-          }
-        }
-
-        if (bird[0].motherId) {
-          const mother = await db.select().from(birds).where(eq(birds.id, bird[0].motherId));
-          genealogy.mother = mother[0];
-
-          if (mother[0]?.fatherId) {
-            const mgf = await db.select().from(birds).where(eq(birds.id, mother[0].fatherId));
-            genealogy.maternal_grandfather = mgf[0];
-          }
-          if (mother[0]?.motherId) {
-            const mgm = await db.select().from(birds).where(eq(birds.id, mother[0].motherId));
-            genealogy.maternal_grandmother = mgm[0];
-          }
-        }
-
-        return genealogy;
       } catch (error) {
         console.error("Error getting genealogy:", error);
         return null;
-      }
-    }),
-
-  // Listar pássaros disponíveis para cruzamento (por sexo)
-  getAvailableBySex: protectedProcedure
-    .input(z.string())
-    .query(async ({ input }) => {
-      const db = await getDb();
-      if (!db) return [];
-
-      try {
-        const result = await db
-          .select()
-          .from(birds)
-          .where(and(eq(birds.sex, input), eq(birds.status, "ativo")))
-          .orderBy(desc(birds.createdAt));
-
-        return result;
-      } catch (error) {
-        console.error("Error getting available birds:", error);
-        return [];
       }
     }),
 });

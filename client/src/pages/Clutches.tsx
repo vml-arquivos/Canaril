@@ -387,7 +387,7 @@ export default function Clutches() {
                             <TableCell className="font-mono font-semibold">{chick.ring || "-"}</TableCell>
                             <TableCell>{chick.clutchId}</TableCell>
                             <TableCell>{chick.sex || "-"}</TableCell>
-                            <TableCell>{chick.color || "-"}</TableCell>
+                            <TableCell>{chick.color_code || "-"}</TableCell>
                             <TableCell>{new Date(chick.birthDate).toLocaleDateString("pt-BR")}</TableCell>
                             <TableCell>
                               <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">

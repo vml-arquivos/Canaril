@@ -21,8 +21,9 @@ export default function Couples() {
   });
 
   const { data: couples, refetch } = trpc.management.couples.list.useQuery();
-  const { data: malesAvailable } = trpc.birds.getAvailableBySex.useQuery("macho");
-  const { data: femalesAvailable } = trpc.birds.getAvailableBySex.useQuery("fêmea");
+  const { data: birds } = trpc.birds.list.useQuery();
+  const malesAvailable = birds?.filter((b: any) => b.sex === "macho");
+  const femalesAvailable = birds?.filter((b: any) => b.sex === "fêmea");
 
   const createCouple = trpc.management.couples.create.useMutation({
     onSuccess: () => {
@@ -86,9 +87,9 @@ export default function Couples() {
                         <SelectValue placeholder="Selecione o macho..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {malesAvailable?.map((bird) => (
+                        {malesAvailable?.map((bird: any) => (
                           <SelectItem key={bird.id} value={bird.id.toString()}>
-                            {bird.ring} - {bird.specialty}
+                            {bird.ring} - {bird.specialty_code_code}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -101,9 +102,9 @@ export default function Couples() {
                         <SelectValue placeholder="Selecione a fêmea..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {femalesAvailable?.map((bird) => (
+                        {femalesAvailable?.map((bird: any) => (
                           <SelectItem key={bird.id} value={bird.id.toString()}>
-                            {bird.ring} - {bird.specialty}
+                            {bird.ring} - {bird.specialty_code_code}
                           </SelectItem>
                         ))}
                       </SelectContent>

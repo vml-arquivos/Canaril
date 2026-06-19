@@ -25,6 +25,8 @@ export default function Birds() {
   });
 
   const { data: birds, refetch } = trpc.birds.list.useQuery({});
+  const [editingId, setEditingId] = useState<number | null>(null);
+  
   const createBird = trpc.birds.create.useMutation({
     onSuccess: () => {
       toast.success("Pássaro cadastrado com sucesso!");
@@ -45,6 +47,16 @@ export default function Birds() {
     },
   });
 
+  const deleteBird = trpc.birds.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Pássaro deletado com sucesso!");
+      refetch();
+    },
+    onError: (error) => {
+      toast.error("Erro ao deletar pássaro: " + error.message);
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.ring || !formData.specialty || !formData.sex || !formData.color) {
@@ -61,6 +73,12 @@ export default function Birds() {
       procedence: formData.procedence,
       notes: formData.notes,
     });
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Tem certeza que deseja deletar este pássaro?")) {
+      deleteBird.mutate(id);
+    }
   };
 
   return (
@@ -206,9 +224,9 @@ export default function Birds() {
                     {birds.map((bird) => (
                       <TableRow key={bird.id}>
                         <TableCell className="font-mono font-semibold">{bird.ring}</TableCell>
-                        <TableCell>{bird.specialty}</TableCell>
+                        <TableCell>{bird.specialty_code}</TableCell>
                         <TableCell>{bird.sex}</TableCell>
-                        <TableCell>{bird.color}</TableCell>
+                        <TableCell>{bird.color_code}</TableCell>
                         <TableCell>{bird.birthDate ? new Date(bird.birthDate).toLocaleDateString("pt-BR") : "-"}</TableCell>
                         <TableCell>
                           <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
@@ -220,7 +238,7 @@ export default function Birds() {
                             <Button size="sm" variant="ghost">
                               <Edit2 className="w-4 h-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="text-red-600">
+                            <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDelete(bird.id)}>
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>

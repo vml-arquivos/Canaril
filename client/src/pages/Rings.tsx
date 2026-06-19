@@ -13,10 +13,10 @@ import { toast } from "sonner";
 export default function Rings() {
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({
-    number: "",
+    batch_number: "",
     year: new Date().getFullYear().toString(),
     color: "",
-    quantity: "1",
+    quantity_total: "100",
   });
 
   const { data: rings, refetch } = trpc.management.rings.list.useQuery();
@@ -27,10 +27,10 @@ export default function Rings() {
       refetch();
       setOpen(false);
       setFormData({
-        number: "",
+        batch_number: "",
         year: new Date().getFullYear().toString(),
         color: "",
-        quantity: "1",
+        quantity_total: "100",
       });
     },
     onError: (error) => {
@@ -40,21 +40,21 @@ export default function Rings() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.number || !formData.year) {
+    if (!formData.batch_number || !formData.year) {
       toast.error("Preencha todos os campos obrigatórios");
       return;
     }
 
     createRing.mutate({
-      number: formData.number,
+      batch_number: formData.batch_number,
       year: parseInt(formData.year),
       color: formData.color,
-      quantity: parseInt(formData.quantity),
+      quantity_total: parseInt(formData.quantity_total),
     });
   };
 
-  const totalRings = rings?.reduce((sum, r) => sum + r.quantity, 0) || 0;
-  const usedRings = rings?.reduce((sum, r) => sum + r.usedQuantity, 0) || 0;
+  const totalRings = rings?.reduce((sum, r) => sum + r.quantity_total, 0) || 0;
+  const usedRings = rings?.reduce((sum, r) => sum + r.quantity_used, 0) || 0;
   const availableRings = totalRings - usedRings;
 
   return (
@@ -81,12 +81,12 @@ export default function Rings() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="number">Número do Lote *</Label>
+                    <Label htmlFor="batch_number">Número do Lote *</Label>
                     <Input
-                      id="number"
-                      value={formData.number}
-                      onChange={(e) => setFormData({ ...formData, number: e.target.value })}
-                      placeholder="Ex: BR-2024-001"
+                      id="batch_number"
+                      value={formData.batch_number}
+                      onChange={(e) => setFormData({ ...formData, batch_number: e.target.value })}
+                      placeholder="Ex: 001"
                     />
                   </div>
                   <div>
@@ -108,12 +108,12 @@ export default function Rings() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="quantity">Quantidade *</Label>
+                    <Label htmlFor="quantity_total">Quantidade *</Label>
                     <Input
-                      id="quantity"
+                      id="quantity_total"
                       type="number"
-                      value={formData.quantity}
-                      onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                      value={formData.quantity_total}
+                      onChange={(e) => setFormData({ ...formData, quantity_total: e.target.value })}
                       min="1"
                     />
                   </div>
@@ -191,14 +191,14 @@ export default function Rings() {
                   </TableHeader>
                   <TableBody>
                     {rings.map((ring) => {
-                      const available = ring.quantity - ring.usedQuantity;
+                      const available = ring.quantity_total - ring.quantity_used;
                       return (
                         <TableRow key={ring.id}>
-                          <TableCell className="font-mono font-semibold">{ring.number}</TableCell>
+                          <TableCell className="font-mono font-semibold">{ring.batch_number}</TableCell>
                           <TableCell>{ring.year}</TableCell>
                           <TableCell>{ring.color || "-"}</TableCell>
-                          <TableCell>{ring.quantity}</TableCell>
-                          <TableCell className="text-yellow-600">{ring.usedQuantity}</TableCell>
+                          <TableCell>{ring.quantity_total}</TableCell>
+                          <TableCell className="text-yellow-600">{ring.quantity_used}</TableCell>
                           <TableCell className={available < 5 ? "text-red-600 font-semibold" : "text-green-600"}>
                             {available}
                           </TableCell>
