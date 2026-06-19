@@ -10,6 +10,9 @@ import * as db from "./db";
 import { birdsRouter } from "./routers/birds";
 import { managementRouter } from "./routers/management";
 import { aiJudgeRouter } from "./routers/aiJudge";
+import { cagesRouter } from "./routers/cages";
+import { photosRouter } from "./routers/photos";
+import { championshipsRouter } from "./routers/championships";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -85,6 +88,9 @@ export const appRouter = router({
   birds: birdsRouter,
   management: managementRouter,
   aiJudge: aiJudgeRouter,
+  cages: cagesRouter,
+  photos: photosRouter,
+  championships: championshipsRouter,
 });
 
 export type AppRouter = typeof appRouter;
