@@ -8,6 +8,9 @@ CSRF_SECRET=26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
 SESSION_SECRET=BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
 OWNER_NAME=Canário Lima
 OWNER_OPEN_ID=canario-lima-001
+ADMIN_NAME=Vilson Marcio
+ADMIN_EMAIL=vilsonmarcio@gmail.com
+ADMIN_PASSWORD=Senha@123
 CORS_ORIGIN=https://canarillima.casadf.com.br
 LOG_LEVEL=info
 PORT=3000

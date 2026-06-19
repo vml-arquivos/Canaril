@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 // https://orm.drizzle.team/docs/guides/upsert#postgresql-and-sqlite for
 // details on upsert syntax with onConflictDoUpdate.
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Client } from "pg";
+import { Pool } from "pg";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -20,9 +20,8 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
-      await client.connect();
-      _db = drizzle(client);
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
