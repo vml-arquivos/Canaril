@@ -10,4 +10,9 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Diretório local onde fotos e outros arquivos enviados pelo sistema são
+  // gravados em disco. Deve apontar para um volume persistente montado no
+  // Coolify (Configuration > Persistent Storage), senão os arquivos somem
+  // a cada novo deploy/restart do container.
+  uploadsDir: process.env.UPLOADS_DIR ?? "/app/uploads",
 };

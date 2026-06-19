@@ -1,48 +1,25 @@
 import type { Express } from "express";
+import express from "express";
 import { ENV } from "./env";
 
+/**
+ * Serve os arquivos gravados por storagePut (server/storage.ts) direto do
+ * disco local, a partir do mesmo diretório usado pra gravação
+ * (ENV.uploadsDir — deve apontar pro volume persistente montado no
+ * Coolify). Usa express.static, que já cuida de cache headers, range
+ * requests (importante pra fotos grandes/preview) e mime type por
+ * extensão — sem precisar reimplementar nada disso na mão.
+ */
 export function registerStorageProxy(app: Express) {
-  app.get("/manus-storage/*", async (req, res) => {
-    const key = (req.params as Record<string, string>)[0];
-    if (!key) {
-      res.status(400).send("Missing storage key");
-      return;
-    }
+  app.use("/uploads", express.static(ENV.uploadsDir, {
+    maxAge: "30d",
+    fallthrough: true,
+  }));
 
-    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-      res.status(500).send("Storage proxy not configured");
-      return;
-    }
-
-    try {
-      const forgeUrl = new URL(
-        "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
-      );
-      forgeUrl.searchParams.set("path", key);
-
-      const forgeResp = await fetch(forgeUrl, {
-        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
-      });
-
-      if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
-        res.status(502).send("Storage backend error");
-        return;
-      }
-
-      const { url } = (await forgeResp.json()) as { url: string };
-      if (!url) {
-        res.status(502).send("Empty signed URL from backend");
-        return;
-      }
-
-      res.set("Cache-Control", "no-store");
-      res.redirect(307, url);
-    } catch (err) {
-      console.error("[StorageProxy] failed:", err);
-      res.status(502).send("Storage proxy error");
-    }
+  // Mantém a rota antiga (/manus-storage/*) respondendo 404 claro, em vez
+  // de erro genérico, caso algum link antigo (de uma tentativa anterior
+  // com Forge) ainda esteja em cache em algum lugar.
+  app.get("/manus-storage/*", (_req, res) => {
+    res.status(404).send("Este caminho de armazenamento não é mais usado. Os arquivos agora ficam em /uploads.");
   });
 }
