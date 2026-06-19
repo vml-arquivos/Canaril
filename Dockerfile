@@ -41,7 +41,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 
 # Instalar apenas dependências de produção
-RUN pnpm install --frozen-lockfile --prod && pnpm add drizzle-orm@^0.44.6
+RUN pnpm install --frozen-lockfile --prod
 
 # Copiar build da stage anterior
 COPY --from=builder /app/dist ./dist

@@ -17,7 +17,7 @@ export const users = pgTable("users", {
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: varchar("role", { length: 20 }).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
@@ -33,7 +33,7 @@ export const specialties = pgTable("specialties", {
   weight_g: varchar("weight_g", { length: 20 }),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   codeIdx: index("specialties_code_idx").on(table.code),
 }));
@@ -50,7 +50,7 @@ export const colors = pgTable("colors", {
   description: text("description"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   codeIdx: index("colors_code_idx").on(table.code),
 }));
@@ -72,7 +72,7 @@ export const breeders = pgTable("breeders", {
   description: text("description"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
 /**
@@ -87,7 +87,7 @@ export const ring_batches = pgTable("ring_batches", {
   quantity_used: integer("quantity_used").default(0).notNull(),
   status: varchar("status", { length: 20 }).default("available").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   batchIdx: index("ring_batches_batch_idx").on(table.batch_number),
 }));
@@ -108,7 +108,7 @@ export const birds = pgTable("birds", {
   motherId: integer("motherId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   ringIdx: index("birds_ring_idx").on(table.ring),
   specialtyIdx: index("birds_specialty_idx").on(table.specialty_code),
@@ -127,7 +127,7 @@ export const couples = pgTable("couples", {
   status: varchar("status", { length: 20 }).default("active").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   cageIdx: index("couples_cage_idx").on(table.cageNumber),
   statusIdx: index("couples_status_idx").on(table.status),
@@ -147,7 +147,7 @@ export const clutches = pgTable("clutches", {
   hatchedChicks: integer("hatchedChicks").default(0).notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   coupleIdx: index("clutches_couple_idx").on(table.coupleId),
 }));
@@ -167,7 +167,7 @@ export const chicks = pgTable("chicks", {
   status: varchar("status", { length: 20 }).default("active").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   ringIdx: index("chicks_ring_idx").on(table.ring),
   clutchIdx: index("chicks_clutch_idx").on(table.clutchId),
@@ -184,7 +184,7 @@ export const genetic_rules = pgTable("genetic_rules", {
   description: text("description"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
 /**
@@ -196,7 +196,7 @@ export const specialty_colors = pgTable("specialty_colors", {
   color_code: varchar("color_code", { length: 50 }).notNull(),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   specialtyColorIdx: index("specialty_colors_idx").on(table.specialty_code, table.color_code),
 }));
