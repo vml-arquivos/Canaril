@@ -1,17 +1,23 @@
-import { integer, serial, varchar, text, timestamp, pgTable, index } from "drizzle-orm/pg-core";
+// Use PostgreSQL-specific table and column types. We switch from the MySQL
+// dialect (`mysqlTable`, `int`, etc.) to the PostgreSQL dialect provided by
+// `drizzle-orm/pg-core`. The `serial` helper defines an auto-incrementing
+// primary key, and `integer` represents standard integer columns. Other
+// helpers (varchar, text, timestamp, index) remain the same API across
+// dialects.
+import { serial, integer, varchar, text, timestamp, pgTable, index } from "drizzle-orm/pg-core";
 
 /**
- * Tabela de Usuários (OAuth/local)
+ * Tabela de Usuários (OAuth)
  */
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  openId: varchar("openId", { length: 128 }).notNull().unique(),
+  openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: varchar("role", { length: 20 }).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
@@ -27,10 +33,10 @@ export const specialties = pgTable("specialties", {
   weight_g: varchar("weight_g", { length: 20 }),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("specialties_code_idx").on(table.code),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  codeIdx: index("specialties_code_idx").on(table.code),
+}));
 
 /**
  * Tabela de Cores e Mutações
@@ -44,10 +50,10 @@ export const colors = pgTable("colors", {
   description: text("description"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("colors_code_idx").on(table.code),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  codeIdx: index("colors_code_idx").on(table.code),
+}));
 
 /**
  * Tabela de Criadores
@@ -66,7 +72,7 @@ export const breeders = pgTable("breeders", {
   description: text("description"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 /**
@@ -81,11 +87,10 @@ export const ring_batches = pgTable("ring_batches", {
   quantity_used: integer("quantity_used").default(0).notNull(),
   status: varchar("status", { length: 20 }).default("available").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("ring_batches_batch_idx").on(table.batch_number),
-  index("ring_batches_year_idx").on(table.year),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  batchIdx: index("ring_batches_batch_idx").on(table.batch_number),
+}));
 
 /**
  * Tabela de Pássaros
@@ -103,13 +108,12 @@ export const birds = pgTable("birds", {
   motherId: integer("motherId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("birds_ring_idx").on(table.ring),
-  index("birds_specialty_idx").on(table.specialty_code),
-  index("birds_color_idx").on(table.color_code),
-  index("birds_status_idx").on(table.status),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  ringIdx: index("birds_ring_idx").on(table.ring),
+  specialtyIdx: index("birds_specialty_idx").on(table.specialty_code),
+  colorIdx: index("birds_color_idx").on(table.color_code),
+}));
 
 /**
  * Tabela de Casais/Cruzamentos
@@ -123,13 +127,11 @@ export const couples = pgTable("couples", {
   status: varchar("status", { length: 20 }).default("active").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("couples_cage_idx").on(table.cageNumber),
-  index("couples_status_idx").on(table.status),
-  index("couples_male_idx").on(table.maleId),
-  index("couples_female_idx").on(table.femaleId),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  cageIdx: index("couples_cage_idx").on(table.cageNumber),
+  statusIdx: index("couples_status_idx").on(table.status),
+}));
 
 /**
  * Tabela de Posturas
@@ -145,11 +147,10 @@ export const clutches = pgTable("clutches", {
   hatchedChicks: integer("hatchedChicks").default(0).notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("clutches_couple_idx").on(table.coupleId),
-  index("clutches_date_idx").on(table.clutchDate),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  coupleIdx: index("clutches_couple_idx").on(table.coupleId),
+}));
 
 /**
  * Tabela de Filhotes
@@ -166,12 +167,11 @@ export const chicks = pgTable("chicks", {
   status: varchar("status", { length: 20 }).default("active").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("chicks_ring_idx").on(table.ring),
-  index("chicks_clutch_idx").on(table.clutchId),
-  index("chicks_status_idx").on(table.status),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  ringIdx: index("chicks_ring_idx").on(table.ring),
+  clutchIdx: index("chicks_clutch_idx").on(table.clutchId),
+}));
 
 /**
  * Tabela de Regras Genéticas
@@ -184,7 +184,7 @@ export const genetic_rules = pgTable("genetic_rules", {
   description: text("description"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 /**
@@ -196,10 +196,10 @@ export const specialty_colors = pgTable("specialty_colors", {
   color_code: varchar("color_code", { length: 50 }).notNull(),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-}, (table) => [
-  index("specialty_colors_idx").on(table.specialty_code, table.color_code),
-]);
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  specialtyColorIdx: index("specialty_colors_idx").on(table.specialty_code, table.color_code),
+}));
 
 /**
  * Types exportados

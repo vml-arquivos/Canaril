@@ -19,20 +19,17 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Bird, CircleDot, Egg, FileText, Heart, LayoutDashboard, LogOut, PanelLeft } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Bird, label: "Pássaros", path: "/birds" },
-  { icon: Heart, label: "Casais", path: "/couples" },
-  { icon: CircleDot, label: "Anilhas", path: "/rings" },
-  { icon: Egg, label: "Posturas e Filhotes", path: "/clutches" },
-  { icon: FileText, label: "Fichas de Controle", path: "/control-sheet/0" },
+  { icon: LayoutDashboard, label: "Page 1", path: "/" },
+  { icon: Users, label: "Page 2", path: "/some-path" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -65,20 +62,20 @@ export default function DashboardLayout({
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="flex flex-col items-center gap-6">
             <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Faça login para continuar
+              Sign in to continue
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              O painel de gestão exige autenticação.
+              Access to this dashboard requires authentication. Continue to launch the login flow.
             </p>
           </div>
           <Button
             onClick={() => {
-              window.location.href = "/login";
+              window.location.href = getLoginUrl();
             }}
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"
           >
-            Entrar
+            Sign in
           </Button>
         </div>
       </div>
@@ -174,7 +171,7 @@ function DashboardLayoutContent({
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-semibold tracking-tight truncate">
-                    Canário Gestão
+                    Navigation
                   </span>
                 </div>
               ) : null}
@@ -229,7 +226,7 @@ function DashboardLayoutContent({
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sair</span>
+                  <span>Sign out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

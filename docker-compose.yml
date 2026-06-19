@@ -1,65 +1,148 @@
 version: '3.9'
 
 services:
+  # ============================================================================
+  # PostgreSQL Database
+  # ============================================================================
   postgres:
     image: postgres:16-alpine
     container_name: canario-lima-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-canario}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-canario_local_password}
-      POSTGRES_DB: ${POSTGRES_DB:-canario_lima_db}
+      POSTGRES_USER: postgis
+      POSTGRES_PASSWORD: postgis
+      POSTGRES_DB: canario_lima_db
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=pt_BR.UTF-8"
     ports:
       - "5432:5432"
     volumes:
+      # Persistência de dados
       - postgres_data:/var/lib/postgresql/data
+      # Migrations
       - ./drizzle/migrations:/docker-entrypoint-initdb.d:ro
     networks:
       - canario-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-canario} -d ${POSTGRES_DB:-canario_lima_db}"]
+      test: ["CMD-SHELL", "pg_isready -U postgis -d canario_lima_db"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # ============================================================================
+  # Application Server
+  # ============================================================================
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: canario-lima-app
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://canario:canario_local_password@postgres:5432/canario_lima_db}
-      JWT_SECRET: ${JWT_SECRET:-troque-este-jwt-secret}
-      SESSION_SECRET: ${SESSION_SECRET:-troque-este-session-secret}
-      CSRF_SECRET: ${CSRF_SECRET:-troque-este-csrf-secret}
-      OWNER_NAME: ${OWNER_NAME:-Canário Lima}
-      OWNER_OPEN_ID: ${OWNER_OPEN_ID:-canario-lima-admin}
-      ADMIN_NAME: ${ADMIN_NAME:-Canário Lima}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123-trocar}
-      VITE_APP_ID: ${VITE_APP_ID:-canario-gestao-pro-001}
-      VITE_APP_TITLE: ${VITE_APP_TITLE:-Canário Gestão Pro}
-      VITE_APP_LOGO: ${VITE_APP_LOGO:-/logo.png}
-      OAUTH_SERVER_URL: ${OAUTH_SERVER_URL:-}
-      VITE_OAUTH_PORTAL_URL: ${VITE_OAUTH_PORTAL_URL:-}
-      NODE_ENV: production
-      PORT: 3000
+      # Database
+      DATABASE_URL: "postgresql://postgis:postgis@postgres:5432/canario_lima_db"
+      
+      # Autenticação
+      JWT_SECRET: "TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y="
+      CSRF_SECRET: "26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b"
+      SESSION_SECRET: "BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs="
+      
+      # Owner
+      OWNER_NAME: "Canário Lima"
+      OWNER_OPEN_ID: "canario-lima-001"
+      
+      # App
+      VITE_APP_ID: "canario-gestao-pro-001"
+      VITE_APP_TITLE: "Canário Gestão Pro"
+      VITE_APP_LOGO: "https://seu-dominio.com/logo.png"
+      
+      # OAuth (Desativado)
+      OAUTH_SERVER_URL: "http://localhost:3000"
+      VITE_OAUTH_PORTAL_URL: "http://localhost:3000/login"
+      
+      # APIs (Desativadas)
+      BUILT_IN_FORGE_API_URL: "http://localhost:3000/api"
+      BUILT_IN_FORGE_API_KEY: "standalone-api-key-001"
+      VITE_FRONTEND_FORGE_API_URL: "http://localhost:3000/api"
+      VITE_FRONTEND_FORGE_API_KEY: "standalone-frontend-key-001"
+      
+      # Analytics
+      VITE_ANALYTICS_ENDPOINT: "http://localhost:3000/analytics"
+      VITE_ANALYTICS_WEBSITE_ID: "canario-lima-001"
+      
+      # Node
+      NODE_ENV: "production"
+      PORT: "3000"
+      
+      # Logging
+      LOG_LEVEL: "info"
+      
+      # CORS
+      CORS_ORIGIN: "http://localhost:3000,https://seu-dominio.com"
+      
+      # Session
+      SESSION_TIMEOUT: "86400000"
+      
+      # Cookie
+      COOKIE_SECURE: "true"
+      COOKIE_SAME_SITE: "strict"
+      COOKIE_HTTP_ONLY: "true"
+    
     ports:
       - "3000:3000"
+    
     depends_on:
       postgres:
         condition: service_healthy
+    
     networks:
       - canario-network
+    
     volumes:
+      # Logs
       - ./logs:/app/logs
+    
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    
     restart: unless-stopped
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # Nginx Reverse Proxy (Opcional)
+  # ============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: canario-lima-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - canario-network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:

@@ -17,17 +17,17 @@
 
 ### JWT_SECRET
 ```
-troque-por-jwt-secret-forte
+TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
 ```
 
 ### CSRF_SECRET
 ```
-troque-por-csrf-secret-forte
+26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
 ```
 
 ### SESSION_SECRET
 ```
-troque-por-session-secret-forte
+BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
 ```
 
 ### Backup API Keys
