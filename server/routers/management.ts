@@ -4,18 +4,16 @@ import { getDb } from "../db";
 import { birds, ring_batches, rings, couples, clutches, chicks } from "../../drizzle/schema";
 import { and, eq, desc } from "drizzle-orm";
 
-async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, batchNumber: string, quantityTotal: number) {
-  const safeQuantity = Math.max(0, Math.min(quantityTotal, 5000));
-  const pad = Math.max(3, String(safeQuantity).length);
+async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, year: number, startNumber: number, endNumber: number) {
   const now = new Date();
 
-  for (let start = 1; start <= safeQuantity; start += 500) {
-    const end = Math.min(start + 499, safeQuantity);
+  for (let chunkStart = startNumber; chunkStart <= endNumber; chunkStart += 500) {
+    const chunkEnd = Math.min(chunkStart + 499, endNumber);
     const values = [];
-    for (let sequence = start; sequence <= end; sequence++) {
+    for (let sequence = chunkStart; sequence <= chunkEnd; sequence++) {
       values.push({
         batchId,
-        number: `${batchNumber}-${String(sequence).padStart(pad, "0")}`,
+        number: `${year}-${String(sequence).padStart(3, "0")}`,
         sequence,
         status: "available",
         createdAt: now,
@@ -59,30 +57,86 @@ export const managementRouter = router({
         batch_number: z.string(),
         year: z.number(),
         color: z.string().optional(),
-        quantity_total: z.number().default(100),
+        startNumber: z.number().int().positive(),
+        endNumber: z.number().int().positive(),
       }))
       .mutation(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+
+        if (input.endNumber < input.startNumber) {
+          throw new Error("A numeração final deve ser maior ou igual à inicial");
+        }
+        const quantity_total = input.endNumber - input.startNumber + 1;
+        if (quantity_total > 5000) {
+          throw new Error("Lote muito grande (máximo 5000 anilhas por lote)");
+        }
+
         try {
           const [createdBatch] = await db.insert(ring_batches).values({
             batch_number: input.batch_number,
             year: input.year,
             color: input.color || "Padrão",
-            quantity_total: input.quantity_total,
+            quantity_total,
             quantity_used: 0,
             status: "available",
           }).returning();
 
           if (createdBatch) {
-            await generateRingsForBatch(db, createdBatch.id, createdBatch.batch_number, createdBatch.quantity_total);
+            await generateRingsForBatch(db, createdBatch.id, createdBatch.year, input.startNumber, input.endNumber);
           }
 
-          return { success: true, batch: createdBatch };
+          return { success: true, batch: createdBatch, generated: quantity_total };
         } catch (error) {
           console.error("Error creating ring batch:", error);
           throw error;
         }
+      }),
+
+    // Anilhas individuais disponíveis (para selects de cadastro de pássaro/filhote)
+    listAvailable: protectedProcedure
+      .input(z.object({ batchId: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        try {
+          const conditions = [eq(rings.status, "available")];
+          if (input?.batchId) conditions.push(eq(rings.batchId, input.batchId));
+          return await db.select().from(rings).where(and(...conditions)).orderBy(rings.sequence);
+        } catch (error) {
+          console.error("Error listing available rings:", error);
+          return [];
+        }
+      }),
+
+    // Todas as anilhas individuais de um lote (visão detalhada)
+    listByBatch: protectedProcedure
+      .input(z.number())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        try {
+          return await db.select().from(rings).where(eq(rings.batchId, input)).orderBy(rings.sequence);
+        } catch (error) {
+          console.error("Error listing rings by batch:", error);
+          return [];
+        }
+      }),
+
+    // Remove o lote e as anilhas individuais ainda disponíveis dele. Anilhas
+    // já em uso (vinculadas a pássaros reais) bloqueiam a remoção.
+    delete: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const inUse = await db.select().from(rings).where(and(eq(rings.batchId, input), eq(rings.status, "in_use")));
+        if (inUse.length > 0) {
+          throw new Error(`Este lote tem ${inUse.length} anilha(s) já em uso e não pode ser removido.`);
+        }
+        await db.delete(rings).where(eq(rings.batchId, input));
+        await db.delete(ring_batches).where(eq(ring_batches.id, input));
+        return { success: true };
       }),
   }),
 
@@ -134,6 +188,42 @@ export const managementRouter = router({
           return { success: true };
         } catch (error) {
           console.error("Error creating couple:", error);
+          throw error;
+        }
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        maleId: z.number().optional(),
+        femaleId: z.number().optional(),
+        cageNumber: z.string().optional(),
+        formationDate: z.date().optional(),
+        status: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { id, ...fields } = input;
+        try {
+          await db.update(couples).set({ ...fields, updatedAt: new Date() }).where(eq(couples.id, id));
+          return { success: true };
+        } catch (error) {
+          console.error("Error updating couple:", error);
+          throw error;
+        }
+      }),
+
+    delete: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        try {
+          await db.delete(couples).where(eq(couples.id, input));
+          return { success: true };
+        } catch (error) {
+          console.error("Error deleting couple:", error);
           throw error;
         }
       }),

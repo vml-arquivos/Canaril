@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { Plus, Edit2, Trash2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Rings() {
@@ -16,21 +16,23 @@ export default function Rings() {
     batch_number: "",
     year: new Date().getFullYear().toString(),
     color: "",
-    quantity_total: "100",
+    startNumber: "1",
+    endNumber: "200",
   });
 
   const { data: rings, refetch } = trpc.management.rings.list.useQuery();
 
   const createRing = trpc.management.rings.create.useMutation({
-    onSuccess: () => {
-      toast.success("Lote de anilhas cadastrado com sucesso!");
+    onSuccess: (data) => {
+      toast.success(`Lote cadastrado! ${data.generated} anilhas individuais geradas.`);
       refetch();
       setOpen(false);
       setFormData({
         batch_number: "",
         year: new Date().getFullYear().toString(),
         color: "",
-        quantity_total: "100",
+        startNumber: "1",
+        endNumber: "200",
       });
     },
     onError: (error) => {
@@ -38,10 +40,22 @@ export default function Rings() {
     },
   });
 
+  const deleteRingBatch = trpc.management.rings.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Lote removido com sucesso!");
+      refetch();
+    },
+    onError: (error) => toast.error("Erro ao remover lote: " + error.message),
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.batch_number || !formData.year) {
+    if (!formData.batch_number || !formData.year || !formData.startNumber || !formData.endNumber) {
       toast.error("Preencha todos os campos obrigatórios");
+      return;
+    }
+    if (parseInt(formData.endNumber) < parseInt(formData.startNumber)) {
+      toast.error("A numeração final deve ser maior ou igual à inicial");
       return;
     }
 
@@ -49,9 +63,21 @@ export default function Rings() {
       batch_number: formData.batch_number,
       year: parseInt(formData.year),
       color: formData.color,
-      quantity_total: parseInt(formData.quantity_total),
+      startNumber: parseInt(formData.startNumber),
+      endNumber: parseInt(formData.endNumber),
     });
   };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Tem certeza que deseja remover este lote? Anilhas já em uso bloqueiam a remoção.")) {
+      deleteRingBatch.mutate(id);
+    }
+  };
+
+  const previewCount =
+    formData.startNumber && formData.endNumber
+      ? Math.max(0, parseInt(formData.endNumber) - parseInt(formData.startNumber) + 1)
+      : 0;
 
   const totalRings = rings?.reduce((sum, r) => sum + r.quantity_total, 0) || 0;
   const usedRings = rings?.reduce((sum, r) => sum + r.quantity_used, 0) || 0;
@@ -108,16 +134,33 @@ export default function Rings() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="quantity_total">Quantidade *</Label>
+                    <Label htmlFor="startNumber">Numeração Inicial *</Label>
                     <Input
-                      id="quantity_total"
+                      id="startNumber"
                       type="number"
-                      value={formData.quantity_total}
-                      onChange={(e) => setFormData({ ...formData, quantity_total: e.target.value })}
                       min="1"
+                      value={formData.startNumber}
+                      onChange={(e) => setFormData({ ...formData, startNumber: e.target.value })}
+                      placeholder="Ex: 1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="endNumber">Numeração Final *</Label>
+                    <Input
+                      id="endNumber"
+                      type="number"
+                      min="1"
+                      value={formData.endNumber}
+                      onChange={(e) => setFormData({ ...formData, endNumber: e.target.value })}
+                      placeholder="Ex: 200"
                     />
                   </div>
                 </div>
+                <p className="text-sm text-gray-500">
+                  Serão geradas <strong>{previewCount}</strong> anilhas individuais, numeradas de{" "}
+                  <strong>{formData.year}-{String(formData.startNumber || 0).padStart(3, "0")}</strong> até{" "}
+                  <strong>{formData.year}-{String(formData.endNumber || 0).padStart(3, "0")}</strong>.
+                </p>
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                     Cancelar
@@ -212,14 +255,15 @@ export default function Rings() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="ghost">
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button size="sm" variant="ghost" className="text-red-600">
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600"
+                              onClick={() => handleDelete(ring.id)}
+                              title="Remover lote (só se nenhuma anilha estiver em uso)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );

@@ -91,6 +91,36 @@ export const birdsRouter = router({
       }
     }),
 
+  // Editar pássaro
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      ring: z.string().optional(),
+      specialty_code: z.string().optional(),
+      sex: z.string().optional(),
+      color_code: z.string().optional(),
+      birthDate: z.date().optional(),
+      procedence: z.string().optional(),
+      fatherId: z.number().nullable().optional(),
+      motherId: z.number().nullable().optional(),
+      cageId: z.number().nullable().optional(),
+      status: z.string().optional(),
+      isPublic: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { id, ...fields } = input;
+      try {
+        await db.update(birds).set({ ...fields, updatedAt: new Date() }).where(eq(birds.id, id));
+        return { success: true };
+      } catch (error) {
+        console.error("Error updating bird:", error);
+        throw error;
+      }
+    }),
+
   // Deletar pássaro
   delete: protectedProcedure
     .input(z.number())

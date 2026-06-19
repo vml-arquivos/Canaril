@@ -13,6 +13,8 @@ import { aiJudgeRouter } from "./routers/aiJudge";
 import { cagesRouter } from "./routers/cages";
 import { photosRouter } from "./routers/photos";
 import { championshipsRouter } from "./routers/championships";
+import { reportsRouter } from "./routers/reports";
+import { showroomRouter } from "./routers/showroom";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -91,6 +93,8 @@ export const appRouter = router({
   cages: cagesRouter,
   photos: photosRouter,
   championships: championshipsRouter,
+  reports: reportsRouter,
+  showroom: showroomRouter,
 });
 
 export type AppRouter = typeof appRouter;
