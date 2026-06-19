@@ -66,9 +66,9 @@ export default function Birds() {
 
     createBird.mutate({
       ring: formData.ring,
-      specialty: formData.specialty,
+      specialty_code: formData.specialty,
       sex: formData.sex,
-      color: formData.color,
+      color_code: formData.color,
       birthDate: formData.birthDate ? new Date(formData.birthDate) : undefined,
       procedence: formData.procedence,
       notes: formData.notes,

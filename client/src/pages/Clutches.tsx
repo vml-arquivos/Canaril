@@ -103,7 +103,7 @@ export default function Clutches() {
       clutchId: parseInt(chickData.clutchId),
       ring: chickData.ring,
       sex: chickData.sex,
-      color: chickData.color,
+      color_code: chickData.color,
       birthDate: new Date(chickData.birthDate),
     });
   };
