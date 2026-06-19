@@ -1,8 +1,44 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { ring_batches, couples, clutches, chicks } from "../../drizzle/schema";
-import { eq, desc } from "drizzle-orm";
+import { birds, ring_batches, rings, couples, clutches, chicks } from "../../drizzle/schema";
+import { and, eq, desc } from "drizzle-orm";
+
+async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, batchNumber: string, quantityTotal: number) {
+  const safeQuantity = Math.max(0, Math.min(quantityTotal, 5000));
+  const pad = Math.max(3, String(safeQuantity).length);
+  const now = new Date();
+
+  for (let start = 1; start <= safeQuantity; start += 500) {
+    const end = Math.min(start + 499, safeQuantity);
+    const values = [];
+    for (let sequence = start; sequence <= end; sequence++) {
+      values.push({
+        batchId,
+        number: `${batchNumber}-${String(sequence).padStart(pad, "0")}`,
+        sequence,
+        status: "available",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    if (values.length > 0) {
+      await db.insert(rings).values(values).onConflictDoNothing();
+    }
+  }
+}
+
+async function markRingAsUsed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, ringNumber: string, patch: { birdId?: number; chickId?: number }) {
+  await db
+    .update(rings)
+    .set({
+      ...patch,
+      status: "in_use",
+      usedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(rings.number, ringNumber), eq(rings.status, "available")));
+}
 
 export const managementRouter = router({
   // ===== ANILHAS =====
@@ -29,15 +65,20 @@ export const managementRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database not available");
         try {
-          await db.insert(ring_batches).values({
+          const [createdBatch] = await db.insert(ring_batches).values({
             batch_number: input.batch_number,
             year: input.year,
             color: input.color || "Padrão",
             quantity_total: input.quantity_total,
             quantity_used: 0,
             status: "available",
-          });
-          return { success: true };
+          }).returning();
+
+          if (createdBatch) {
+            await generateRingsForBatch(db, createdBatch.id, createdBatch.batch_number, createdBatch.quantity_total);
+          }
+
+          return { success: true, batch: createdBatch };
         } catch (error) {
           console.error("Error creating ring batch:", error);
           throw error;
@@ -195,7 +236,7 @@ export const managementRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database not available");
         try {
-          await db.insert(chicks).values({
+          const [createdChick] = await db.insert(chicks).values({
             clutchId: input.clutchId,
             ring: input.ring,
             sex: input.sex,
@@ -204,8 +245,13 @@ export const managementRouter = router({
             ringDate: input.ringDate,
             weanDate: input.weanDate,
             status: "active",
-          });
-          return { success: true };
+          }).returning();
+
+          if (createdChick) {
+            await markRingAsUsed(db, createdChick.ring, { chickId: createdChick.id });
+          }
+
+          return { success: true, chick: createdChick };
         } catch (error) {
           console.error("Error creating chick:", error);
           throw error;
@@ -220,16 +266,20 @@ export const managementRouter = router({
       if (!db) return { birds: 0, couples: 0, chicks: 0, rings: 0 };
 
       try {
-        const birdsList = await db.select().from(ring_batches);
+        const birdsList = await db.select().from(birds);
         const couplesList = await db.select().from(couples);
         const chicksList = await db.select().from(chicks);
-        const ringsList = await db.select().from(ring_batches);
+        const individualRings = await db.select().from(rings);
+        const ringBatches = await db.select().from(ring_batches);
+
+        const availableIndividualRings = individualRings.filter((r) => r.status === "available").length;
+        const legacyAvailableRings = ringBatches.reduce((sum, r) => sum + Math.max(0, r.quantity_total - r.quantity_used), 0);
 
         return {
           birds: birdsList.length,
           couples: couplesList.filter((c) => c.status === "active").length,
           chicks: chicksList.length,
-          rings: ringsList.reduce((sum, r) => sum + (r.quantity_total - r.quantity_used), 0),
+          rings: availableIndividualRings || legacyAvailableRings,
         };
       } catch (error) {
         console.error("Error getting dashboard stats:", error);

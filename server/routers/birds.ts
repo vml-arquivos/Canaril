@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { birds } from "../../drizzle/schema";
+import { birds, rings } from "../../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 
 export const birdsRouter = router({
@@ -59,7 +59,7 @@ export const birdsRouter = router({
       if (!db) throw new Error("Database not available");
 
       try {
-        await db.insert(birds).values({
+        const [createdBird] = await db.insert(birds).values({
           ring: input.ring,
           specialty_code: input.specialty_code,
           sex: input.sex,
@@ -70,9 +70,21 @@ export const birdsRouter = router({
           motherId: input.motherId,
           notes: input.notes,
           status: "active",
-        });
+        }).returning();
 
-        return { success: true };
+        if (createdBird) {
+          await db
+            .update(rings)
+            .set({
+              status: "in_use",
+              birdId: createdBird.id,
+              usedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(rings.number, createdBird.ring), eq(rings.status, "available")));
+        }
+
+        return { success: true, bird: createdBird };
       } catch (error) {
         console.error("Error creating bird:", error);
         throw error;

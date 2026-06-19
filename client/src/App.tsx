@@ -11,6 +11,8 @@ import Rings from "@/pages/Rings";
 import Clutches from "@/pages/Clutches";
 import ControlSheetPDF from "@/pages/ControlSheetPDF";
 import CageCardPrint from "@/pages/CageCardPrint";
+import Cages from "@/components/Cages";
+import Championships from "@/components/Championships";
 import LoginPage from "@/pages/Login";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -79,6 +81,12 @@ function Router() {
       </Route>
       <Route path={"/ficha-gaiola/:coupleId"}>
         {(params) => <ProtectedRoute component={CageCardPrint} {...params} />}
+      </Route>
+      <Route path={"/cages"}>
+        {(params) => <ProtectedRoute component={Cages} {...params} />}
+      </Route>
+      <Route path={"/championships"}>
+        {(params) => <ProtectedRoute component={Championships} {...params} />}
       </Route>
 
       {/* Fallback */}
