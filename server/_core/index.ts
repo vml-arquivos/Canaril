@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic } from "./staticServe";
+import { ensureDatabaseReady } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -29,6 +30,18 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // Garante conexão com o banco e aplica migrations pendentes ANTES de
+  // aceitar qualquer requisição. Se falhar, o processo encerra com código
+  // de saída != 0 — isso faz o Coolify mostrar o deploy como falho de forma
+  // clara, em vez de subir um servidor "no ar" mas com login/banco quebrado.
+  try {
+    await ensureDatabaseReady();
+  } catch (error) {
+    console.error("[Startup] Falha crítica ao preparar o banco de dados. Encerrando processo.");
+    console.error(error);
+    process.exit(1);
+  }
+
   const app = express();
   const server = createServer(app);
   // Health check endpoint

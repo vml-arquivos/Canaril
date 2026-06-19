@@ -46,6 +46,12 @@ RUN pnpm install --frozen-lockfile --prod
 # Copiar build da stage anterior
 COPY --from=builder /app/dist ./dist
 
+# Copiar as migrations SQL para a imagem de produção. O runner de migrations
+# (server/_core/migrate.ts) lê esses arquivos em runtime a partir de
+# process.cwd() + drizzle/migrations — sem esta linha, o container sobe mas
+# nunca aplica nenhuma migration (era a causa raiz do login quebrado).
+COPY drizzle/migrations ./drizzle/migrations
+
 # Criar diretório para logs
 RUN mkdir -p /app/logs
 

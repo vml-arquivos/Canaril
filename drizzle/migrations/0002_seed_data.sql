@@ -16,7 +16,8 @@ INSERT INTO specialties (code, name, description, size_cm, weight_g, status) VAL
 ('HOLANDÊS', 'Holandês', 'Raça de porte grande e elegante. Corpo alongado com postura ereta e nobre.', '13-14', '30-40', 'active'),
 ('FRISADO_NORTE', 'Frisado do Norte', 'Canário com plumagem frisada característica. Origem holandesa, porte médio.', '12-13', '20-35', 'active'),
 ('FRISADO_SUL', 'Frisado do Sul', 'Canário frisado de porte menor. Plumagem ondulada e bem distribuída.', '12-13', '20-35', 'active'),
-('BELGA_CLÁSSICO', 'Belga Clássico', 'Raça de porte clássica. Forma alongada e elegante com postura característica.', '13-14', '30-40', 'active');
+('BELGA_CLÁSSICO', 'Belga Clássico', 'Raça de porte clássica. Forma alongada e elegante com postura característica.', '13-14', '30-40', 'active')
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- TABELA: colors (Cores e Mutações com Códigos Genéticos)
@@ -41,13 +42,15 @@ INSERT INTO colors (code, name, category, genetics, description, status) VALUES
 ('FEO', 'Feo', 'Mutação', 'Recessivo', 'Mutação que reduz pigmentação. Aspecto mais claro e uniforme.', 'active'),
 ('TOPÁZIO', 'Topázio', 'Mutação', 'Recessivo', 'Mutação com tonalidade amarelada uniforme. Aspecto topázio.', 'active'),
 ('ALBINO', 'Albino', 'Mutação', 'Recessivo', 'Ausência total de pigmentação. Olhos vermelhos. Alto risco genético.', 'active'),
-('LUTINO', 'Lutino', 'Mutação', 'Recessivo', 'Amarelo puro sem pigmentação escura. Olhos vermelhos. Ligado ao sexo.', 'active');
+('LUTINO', 'Lutino', 'Mutação', 'Recessivo', 'Amarelo puro sem pigmentação escura. Olhos vermelhos. Ligado ao sexo.', 'active')
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- TABELA: breeders (Criador - Canário Lima)
 -- ============================================================================
 INSERT INTO breeders (name, city, state, country, registration_number, association, phone, email, website, description, status) VALUES
-('Canário Lima', 'Brasília', 'DF', 'Brasil', 'CBCA-2024-001', 'Confederação Brasileira de Criadores de Aves (CBCA)', '(61) 99999-9999', 'contato@canarioslima.com.br', 'www.canarioslima.com.br', 'Criadouro profissional especializado em Canários Belga com foco em qualidade genética e bem-estar animal. Localizado em Brasília, Distrito Federal, com mais de 10 anos de experiência em seleção e criação de canários de alta qualidade.', 'active');
+('Canário Lima', 'Brasília', 'DF', 'Brasil', 'CBCA-2024-001', 'Confederação Brasileira de Criadores de Aves (CBCA)', '(61) 99999-9999', 'contato@canarioslima.com.br', 'www.canarioslima.com.br', 'Criadouro profissional especializado em Canários Belga com foco em qualidade genética e bem-estar animal. Localizado em Brasília, Distrito Federal, com mais de 10 anos de experiência em seleção e criação de canários de alta qualidade.', 'active')
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- TABELA: ring_batches (Lotes de Anilhas Iniciais)
@@ -57,7 +60,8 @@ INSERT INTO ring_batches (batch_number, year, color, quantity_total, quantity_us
 ('002', 2024, 'Azul', 100, 0, 'available'),
 ('003', 2024, 'Verde', 100, 0, 'available'),
 ('004', 2024, 'Amarela', 100, 0, 'available'),
-('005', 2024, 'Branca', 100, 0, 'available');
+('005', 2024, 'Branca', 100, 0, 'available')
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- TABELA: genetic_rules (Regras de Validação Genética)
@@ -76,7 +80,8 @@ INSERT INTO genetic_rules (male_color, female_color, rule_type, description, sta
 
 -- Cruzamentos Proibidos
 ('BRANCO', 'BRANCO', 'forbidden', 'Branco Dominante x Branco Dominante - PROIBIDO por risco de surdez', 'active'),
-('ALBINO', 'ALBINO', 'forbidden', 'Albino x Albino - PROIBIDO por alto risco genético', 'active');
+('ALBINO', 'ALBINO', 'forbidden', 'Albino x Albino - PROIBIDO por alto risco genético', 'active')
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- TABELA: specialty_colors (Cores Permitidas por Especialidade)
@@ -139,7 +144,8 @@ INSERT INTO specialty_colors (specialty_code, color_code, status) VALUES
 ('BELGA_CLÁSSICO', 'PRATEADO', 'active'),
 ('BELGA_CLÁSSICO', 'OPALINO', 'active'),
 ('BELGA_CLÁSSICO', 'FEO', 'active'),
-('BELGA_CLÁSSICO', 'TOPÁZIO', 'active');
+('BELGA_CLÁSSICO', 'TOPÁZIO', 'active')
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- CONFIRMAÇÃO: Dados Iniciais Inseridos com Sucesso

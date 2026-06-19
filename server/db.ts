@@ -7,27 +7,74 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { runMigrations } from './_core/migrate';
 
 // Keep a cached database instance around.  This value will be assigned once
 // when first connecting to the database and reused on subsequent calls.  The
 // type is defined using ReturnType<typeof drizzle> for inference.
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: Pool | null = null;
+
+// Tracks the in-flight (or completed) migration run for the current process,
+// so that migrations only ever execute once per boot, no matter how many
+// callers hit getDb() concurrently. If a previous attempt failed, the next
+// call to getDb() will retry from scratch (the promise is reset on error).
+let _migrationsPromise: Promise<void> | null = null;
 
 // Lazily create the Drizzle instance backed by a PostgreSQL client.  Using a
 // lazy getter avoids connecting to the database when local tooling runs
 // without a real DB (e.g. unit tests or storybook).  If the connection
 // attempt fails, log the error and return null so callers can handle it.
+//
+// As soon as a real connection pool exists, pending migrations are applied
+// automatically (and only once per process) before any query runs against
+// it. This removes the dependency on manual `psql` intervention in
+// production: every boot self-heals the schema to match drizzle/schema.ts.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      _db = drizzle(pool);
+      _pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      _db = drizzle(_pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _pool = null;
     }
   }
+
+  if (_pool && !_migrationsPromise) {
+    const pool = _pool;
+    _migrationsPromise = runMigrations(pool).catch(error => {
+      // Allow a future call to retry instead of permanently caching a
+      // failed migration run for the lifetime of the process.
+      _migrationsPromise = null;
+      throw error;
+    });
+  }
+
+  if (_migrationsPromise) {
+    await _migrationsPromise;
+  }
+
   return _db;
+}
+
+/**
+ * Explicit, named entry point meant to be called once at server startup
+ * (see server/_core/index.ts). Ensures the database connection is live and
+ * all migrations have been applied *before* the HTTP server starts
+ * accepting traffic. If DATABASE_URL isn't set, this resolves without
+ * error (local/dev scenarios that intentionally run without a database).
+ */
+export async function ensureDatabaseReady(): Promise<void> {
+  if (!process.env.DATABASE_URL) {
+    console.warn("[Database] DATABASE_URL não definida — iniciando sem banco de dados.");
+    return;
+  }
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Não foi possível estabelecer conexão com o banco de dados (DATABASE_URL definida, mas a conexão falhou).");
+  }
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
