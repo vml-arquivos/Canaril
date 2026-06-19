@@ -9,6 +9,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { birdsRouter } from "./routers/birds";
 import { managementRouter } from "./routers/management";
+import { aiJudgeRouter } from "./routers/aiJudge";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -83,6 +84,7 @@ export const appRouter = router({
   }),
   birds: birdsRouter,
   management: managementRouter,
+  aiJudge: aiJudgeRouter,
 });
 
 export type AppRouter = typeof appRouter;

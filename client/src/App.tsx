@@ -10,6 +10,7 @@ import Couples from "@/pages/Couples";
 import Rings from "@/pages/Rings";
 import Clutches from "@/pages/Clutches";
 import ControlSheetPDF from "@/pages/ControlSheetPDF";
+import CageCardPrint from "@/pages/CageCardPrint";
 import LoginPage from "@/pages/Login";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -75,6 +76,9 @@ function Router() {
       </Route>
       <Route path={"/control-sheet/:coupleId"}>
         {(params) => <ProtectedRoute component={ControlSheetPDF} {...params} />}
+      </Route>
+      <Route path={"/ficha-gaiola/:coupleId"}>
+        {(params) => <ProtectedRoute component={CageCardPrint} {...params} />}
       </Route>
 
       {/* Fallback */}

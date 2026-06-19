@@ -1,0 +1,176 @@
+import { z } from "zod";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+import { ai_judge_analyses, birds, specialties, CriteriaScore } from "../../drizzle/schema";
+import { invokeLLM } from "../_core/llm";
+import { eq, desc } from "drizzle-orm";
+
+/**
+ * Juiz Virtual com IA (Visão Computacional)
+ *
+ * Importante: isso NÃO é um modelo de Computer Vision treinado do zero pra
+ * julgamento ornitológico — não existe dataset público disso, e treinar um
+ * seria um projeto de pesquisa à parte. O que entregamos aqui é uma análise
+ * comparativa real e funcional usando um modelo de linguagem com visão
+ * (invokeLLM, já configurado na stack), pedindo nota estruturada por
+ * critério via response_format json_schema. É genuinamente útil como
+ * "segunda opinião" e pré-triagem antes da pista — não substitui o juiz
+ * humano, e o prompt deixa isso explícito pro próprio modelo.
+ */
+
+const JUDGE_CRITERIA = [
+  { criterion: "Tipo e postura", maxScore: 20 },
+  { criterion: "Plumagem", maxScore: 20 },
+  { criterion: "Cor e padrão", maxScore: 20 },
+  { criterion: "Tamanho e proporção", maxScore: 20 },
+  { criterion: "Condição geral", maxScore: 20 },
+] as const;
+
+const analysisJsonSchema = {
+  name: "canary_judging_analysis",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      criteria_scores: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            criterion: { type: "string" },
+            score: { type: "number" },
+            maxScore: { type: "number" },
+            comment: { type: "string" },
+          },
+          required: ["criterion", "score", "maxScore", "comment"],
+          additionalProperties: false,
+        },
+      },
+      overallScore: { type: "number", description: "Soma das notas, 0 a 100" },
+      confidence: { type: "number", description: "Confiança da análise, de 0 a 1" },
+      summary: { type: "string", description: "Resumo qualitativo em português, 2-3 frases" },
+    },
+    required: ["criteria_scores", "overallScore", "confidence", "summary"],
+    additionalProperties: false,
+  },
+} as const;
+
+export const aiJudgeRouter = router({
+  // Dispara uma análise para uma foto já enviada (photoUrl deve ser uma URL
+  // acessível publicamente — ex: a retornada por storagePut, no formato
+  // /manus-storage/{key} servido pela própria plataforma).
+  analyze: protectedProcedure
+    .input(
+      z.object({
+        birdId: z.number().optional(),
+        photoUrl: z.string().url(),
+        specialty_code: z.string(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Banco de dados não disponível");
+
+      const [specialty] = await db
+        .select()
+        .from(specialties)
+        .where(eq(specialties.code, input.specialty_code));
+
+      if (!specialty) {
+        throw new Error(`Especialidade "${input.specialty_code}" não encontrada`);
+      }
+
+      // Cria o registro como "pending" antes de chamar o modelo, para que
+      // uma falha na chamada (rede, timeout) ainda deixe rastro no banco
+      // em vez de simplesmente sumir.
+      const [pending] = await db
+        .insert(ai_judge_analyses)
+        .values({
+          birdId: input.birdId,
+          photoUrl: input.photoUrl,
+          specialty_code: input.specialty_code,
+          model: "pending",
+          status: "pending",
+        })
+        .returning();
+
+      try {
+        const model = "claude-sonnet-4-6";
+
+        const result = await invokeLLM({
+          model,
+          messages: [
+            {
+              role: "system",
+              content:
+                `Você é um avaliador de apoio para julgamento de canários da raça "${specialty.name}" ` +
+                `(${specialty.description ?? "sem descrição cadastrada"}). Analise a foto comparando com o ` +
+                `padrão oficial da raça e atribua nota de 0 a 20 para cada critério a seguir: ` +
+                JUDGE_CRITERIA.map(c => c.criterion).join(", ") +
+                `. Seja crítico e específico nos comentários. Deixe claro que esta é uma pré-análise ` +
+                `de apoio, não substitui o julgamento de um juiz humano credenciado.`,
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Analise este pássaro para julgamento:" },
+                { type: "image_url", image_url: { url: input.photoUrl, detail: "high" } },
+              ],
+            },
+          ],
+          response_format: { type: "json_schema", json_schema: analysisJsonSchema },
+        });
+
+        const raw = result.choices[0]?.message?.content;
+        const text = typeof raw === "string" ? raw : raw?.find(c => c.type === "text")?.text;
+        if (!text) throw new Error("Resposta vazia do modelo");
+
+        const parsed = JSON.parse(text) as {
+          criteria_scores: CriteriaScore[];
+          overallScore: number;
+          confidence: number;
+          summary: string;
+        };
+
+        const [updated] = await db
+          .update(ai_judge_analyses)
+          .set({
+            model,
+            criteria_scores: parsed.criteria_scores,
+            overallScore: parsed.overallScore,
+            confidence: parsed.confidence,
+            summary: parsed.summary,
+            status: "completed",
+            updatedAt: new Date(),
+          })
+          .where(eq(ai_judge_analyses.id, pending.id))
+          .returning();
+
+        return updated;
+      } catch (error) {
+        console.error("[AI Judge] Falha na análise:", error);
+        await db
+          .update(ai_judge_analyses)
+          .set({
+            status: "failed",
+            errorMessage: error instanceof Error ? error.message : String(error),
+            updatedAt: new Date(),
+          })
+          .where(eq(ai_judge_analyses.id, pending.id));
+        throw new Error("Não foi possível concluir a análise do Juiz Virtual. Tente novamente.");
+      }
+    }),
+
+  // Histórico de análises de um pássaro específico
+  listByBird: protectedProcedure
+    .input(z.number())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db
+        .select()
+        .from(ai_judge_analyses)
+        .where(eq(ai_judge_analyses.birdId, input))
+        .orderBy(desc(ai_judge_analyses.createdAt));
+    }),
+});

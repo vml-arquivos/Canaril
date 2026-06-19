@@ -4,7 +4,30 @@
 // primary key, and `integer` represents standard integer columns. Other
 // helpers (varchar, text, timestamp, index) remain the same API across
 // dialects.
-import { serial, integer, varchar, text, timestamp, pgTable, index } from "drizzle-orm/pg-core";
+import { serial, integer, varchar, text, timestamp, pgTable, index, jsonb, boolean, real } from "drizzle-orm/pg-core";
+
+/**
+ * Estrutura de um possível resultado de cruzamento, usada pela calculadora
+ * de matriz (Matchmaker). Armazenada como JSONB em genetic_rules.
+ */
+export type GeneticOutcome = {
+  color_code: string;
+  probability: number; // 0-100
+  sex_linked: boolean;
+  notes?: string;
+};
+
+/**
+ * Estrutura de um critério avaliado em uma pontuação (juiz humano ou IA).
+ * Armazenada como JSONB em scores.criteria_scores e
+ * ai_judge_analyses.criteria_scores.
+ */
+export type CriteriaScore = {
+  criterion: string; // ex: "Plumagem", "Postura", "Cor"
+  score: number;
+  maxScore: number;
+  comment?: string;
+};
 
 /**
  * Tabela de Usuários (OAuth)
@@ -31,6 +54,12 @@ export const specialties = pgTable("specialties", {
   description: text("description"),
   size_cm: varchar("size_cm", { length: 20 }),
   weight_g: varchar("weight_g", { length: 20 }),
+  // Referência ao padrão oficial (FOB/OBJO/COM). Mantido como campo de
+  // texto livre, alimentado manualmente a partir das tabelas publicadas por
+  // cada órgão — essas entidades não oferecem API pública para sincronizar
+  // automaticamente.
+  official_code: varchar("official_code", { length: 50 }),
+  official_body: varchar("official_body", { length: 20 }),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -48,6 +77,8 @@ export const colors = pgTable("colors", {
   category: varchar("category", { length: 50 }).notNull(),
   genetics: varchar("genetics", { length: 50 }),
   description: text("description"),
+  official_code: varchar("official_code", { length: 50 }),
+  official_body: varchar("official_body", { length: 20 }),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -106,6 +137,11 @@ export const birds = pgTable("birds", {
   status: varchar("status", { length: 20 }).default("active").notNull(),
   fatherId: integer("fatherId"),
   motherId: integer("motherId"),
+  // Gaiola atual do pássaro (mapeamento espacial do criadouro). Mantido
+  // nullable: nem todo pássaro precisa estar alocado no momento do cadastro.
+  cageId: integer("cageId"),
+  // Controla se o pássaro aparece na vitrine pública (Home/Showroom).
+  isPublic: boolean("isPublic").default(false).notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -113,6 +149,7 @@ export const birds = pgTable("birds", {
   ringIdx: index("birds_ring_idx").on(table.ring),
   specialtyIdx: index("birds_specialty_idx").on(table.specialty_code),
   colorIdx: index("birds_color_idx").on(table.color_code),
+  cageIdx: index("birds_cage_idx").on(table.cageId),
 }));
 
 /**
@@ -123,6 +160,10 @@ export const couples = pgTable("couples", {
   maleId: integer("maleId").notNull(),
   femaleId: integer("femaleId").notNull(),
   cageNumber: varchar("cageNumber", { length: 50 }).notNull(),
+  // FK relacional para "cages", em paralelo ao cageNumber (texto livre)
+  // existente — mantido nullable para não quebrar casais já cadastrados
+  // antes desta tabela existir.
+  cageId: integer("cageId"),
   formationDate: timestamp("formationDate").notNull(),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   notes: text("notes"),
@@ -165,12 +206,19 @@ export const chicks = pgTable("chicks", {
   ringDate: timestamp("ringDate"),
   weanDate: timestamp("weanDate"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
+  // Quando o filhote é "promovido" ao plantel reprodutor (vira candidato a
+  // formar casais/entrar em exposições), uma linha correspondente é criada
+  // em "birds" e referenciada aqui. Sem isso, filhotes nascidos no próprio
+  // criadouro ficavam fora da árvore genealógica (fatherId/motherId só
+  // existe em "birds").
+  birdId: integer("birdId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   ringIdx: index("chicks_ring_idx").on(table.ring),
   clutchIdx: index("chicks_clutch_idx").on(table.clutchId),
+  birdIdx: index("chicks_bird_idx").on(table.birdId),
 }));
 
 /**
@@ -182,6 +230,11 @@ export const genetic_rules = pgTable("genetic_rules", {
   female_color: varchar("female_color", { length: 50 }).notNull(),
   rule_type: varchar("rule_type", { length: 50 }).notNull(),
   description: text("description"),
+  // Distribuição de probabilidade dos filhotes para este cruzamento, ex:
+  // [{ color_code: "amarelo_intenso", probability: 25, sex_linked: false }]
+  // Alimenta a Calculadora de Matriz (Matchmaker) sem precisar de um motor
+  // de genética populacional completo — a regra já vem pré-calculada.
+  probability_outcomes: jsonb("probability_outcomes").$type<GeneticOutcome[]>(),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -202,6 +255,160 @@ export const specialty_colors = pgTable("specialty_colors", {
 }));
 
 /**
+ * Tabela de Anilhas Individuais
+ *
+ * Complementa "ring_batches" (que só guarda o contador do lote). Cada linha
+ * aqui é UMA anilha física, gerada automaticamente quando um lote é dado
+ * entrada (ex.: lote 2026 com 200 unidades gera 200 linhas, status
+ * "available"). Ao anilhar um filhote, o backend atualiza essa linha para
+ * "in_use" e seta birdId/chickId — sem precisar de controle manual de
+ * numeração.
+ */
+export const rings = pgTable("rings", {
+  id: serial("id").primaryKey(),
+  batchId: integer("batchId").notNull(),
+  number: varchar("number", { length: 50 }).notNull().unique(),
+  sequence: integer("sequence").notNull(),
+  status: varchar("status", { length: 20 }).default("available").notNull(), // available | in_use
+  birdId: integer("birdId"),
+  chickId: integer("chickId"),
+  usedAt: timestamp("usedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  batchIdx: index("rings_batch_idx").on(table.batchId),
+  statusIdx: index("rings_status_idx").on(table.status),
+}));
+
+/**
+ * Tabela de Fotos (polimórfica)
+ *
+ * Reaproveitada por pássaro, filhote, criador (showroom) e entradas de
+ * campeonato — em vez de duplicar a mesma estrutura de foto em cada
+ * tabela. O arquivo em si fica no storage (server/storage.ts ->
+ * storagePut), aqui só guardamos a referência (key/url).
+ */
+export const photos = pgTable("photos", {
+  id: serial("id").primaryKey(),
+  entityType: varchar("entityType", { length: 30 }).notNull(), // bird | chick | breeder | championship_entry
+  entityId: integer("entityId").notNull(),
+  storageKey: varchar("storageKey", { length: 500 }).notNull(),
+  url: varchar("url", { length: 500 }).notNull(),
+  caption: varchar("caption", { length: 200 }),
+  isPrimary: boolean("isPrimary").default(false).notNull(),
+  displayOrder: integer("displayOrder").default(0).notNull(),
+  takenAt: timestamp("takenAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  entityIdx: index("photos_entity_idx").on(table.entityType, table.entityId),
+}));
+
+/**
+ * Tabela de Gaiolas (mapeamento espacial do criadouro)
+ */
+export const cages = pgTable("cages", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(), // ex: "A-12"
+  section: varchar("section", { length: 100 }), // ex: "Galpão 1 - Fileira 3"
+  capacity: integer("capacity").default(1).notNull(),
+  status: varchar("status", { length: 20 }).default("free").notNull(), // free | occupied | maintenance
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  codeIdx: index("cages_code_idx").on(table.code),
+}));
+
+/**
+ * Tabela de Campeonatos
+ */
+export const championships = pgTable("championships", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  association: varchar("association", { length: 100 }), // FOB | OBJO | COM | outro
+  location: varchar("location", { length: 200 }),
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate"),
+  status: varchar("status", { length: 20 }).default("upcoming").notNull(), // upcoming | ongoing | finished
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+});
+
+/**
+ * Tabela de Inscrições em Campeonato (Gestão de Pista)
+ */
+export const championship_entries = pgTable("championship_entries", {
+  id: serial("id").primaryKey(),
+  championshipId: integer("championshipId").notNull(),
+  birdId: integer("birdId").notNull(),
+  category: varchar("category", { length: 150 }).notNull(), // ex: "Gloster Corona Amarelo Intenso"
+  cageNumberAtShow: varchar("cageNumberAtShow", { length: 50 }),
+  status: varchar("status", { length: 20 }).default("registered").notNull(), // registered | judged | disqualified | awarded
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  championshipIdx: index("championship_entries_championship_idx").on(table.championshipId),
+  birdIdx: index("championship_entries_bird_idx").on(table.birdId),
+}));
+
+/**
+ * Tabela de Juízes
+ */
+export const judges = pgTable("judges", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 150 }).notNull(),
+  registrationNumber: varchar("registrationNumber", { length: 50 }),
+  association: varchar("association", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Pontuações (juiz humano)
+ */
+export const scores = pgTable("scores", {
+  id: serial("id").primaryKey(),
+  entryId: integer("entryId").notNull(),
+  judgeId: integer("judgeId"),
+  criteria_scores: jsonb("criteria_scores").$type<CriteriaScore[]>(),
+  totalScore: real("totalScore").notNull(),
+  placement: integer("placement"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  entryIdx: index("scores_entry_idx").on(table.entryId),
+}));
+
+/**
+ * Tabela de Análises do Juiz Virtual (IA)
+ *
+ * Cada linha é o resultado de UMA chamada ao modelo de visão (invokeLLM
+ * com image_url + response_format json_schema, ver server/_core/llm.ts).
+ * Não é um modelo de Computer Vision treinado do zero — é uma análise
+ * comparativa via LLM com visão contra os critérios do padrão oficial da
+ * especialidade.
+ */
+export const ai_judge_analyses = pgTable("ai_judge_analyses", {
+  id: serial("id").primaryKey(),
+  birdId: integer("birdId"),
+  entryId: integer("entryId"), // opcional: vínculo com uma inscrição de campeonato
+  photoUrl: varchar("photoUrl", { length: 500 }).notNull(),
+  specialty_code: varchar("specialty_code", { length: 50 }).notNull(),
+  model: varchar("model", { length: 100 }).notNull(),
+  criteria_scores: jsonb("criteria_scores").$type<CriteriaScore[]>(),
+  overallScore: real("overallScore"),
+  confidence: real("confidence"), // 0 a 1
+  summary: text("summary"),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // pending | completed | failed
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  birdIdx: index("ai_judge_analyses_bird_idx").on(table.birdId),
+  entryIdx: index("ai_judge_analyses_entry_idx").on(table.entryId),
+}));
+
+/**
  * Types exportados
  */
 export type User = typeof users.$inferSelect;
@@ -217,3 +424,12 @@ export type Clutch = typeof clutches.$inferSelect;
 export type Chick = typeof chicks.$inferSelect;
 export type GeneticRule = typeof genetic_rules.$inferSelect;
 export type SpecialtyColor = typeof specialty_colors.$inferSelect;
+
+export type Ring = typeof rings.$inferSelect;
+export type Photo = typeof photos.$inferSelect;
+export type Cage = typeof cages.$inferSelect;
+export type Championship = typeof championships.$inferSelect;
+export type ChampionshipEntry = typeof championship_entries.$inferSelect;
+export type Judge = typeof judges.$inferSelect;
+export type Score = typeof scores.$inferSelect;
+export type AiJudgeAnalysis = typeof ai_judge_analyses.$inferSelect;
