@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS } from "@shared/constants";
-import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle } from "lucide-react";
+import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle, Dna } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
@@ -388,6 +388,63 @@ function CoiWarning({ maleId, femaleId }: { maleId: string; femaleId: string }) 
   );
 }
 
+function MendelianPrediction({ fatherId, motherId }: { fatherId: number; motherId: number }) {
+  const { data, isLoading, error } = trpc.mendelian.predictCross.useQuery(
+    { fatherId, motherId },
+    { retry: false }
+  );
+
+  if (isLoading) return null;
+
+  if (error) {
+    return (
+      <div className="border-t pt-3 mt-1">
+        <p className="text-xs text-gray-400 italic">{error.message}</p>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  return (
+    <div className="border-t pt-3 mt-1 space-y-2">
+      <p className="text-xs text-gray-400 uppercase flex items-center gap-1">
+        <Dna className="w-3.5 h-3.5" />
+        Predição Mendeliana
+      </p>
+
+      {data.warnings.map((w, i) => (
+        <div key={i} className="rounded-lg bg-red-50 border border-red-200 p-2 text-xs text-red-800">
+          ⚠️ {w.message}
+        </div>
+      ))}
+
+      {data.mutations.map((m) => (
+        <div key={m.mutation} className="text-sm border rounded-lg p-2">
+          <p className="font-medium text-gray-800 capitalize">{m.mutation.replace(/_/g, " ")}</p>
+          {m.overall && (
+            <p className="text-xs text-gray-500">
+              {Object.entries(m.overall).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_SHORT[k]}`).join(" · ")}
+            </p>
+          )}
+          {m.sons && m.daughters && (
+            <div className="text-xs text-gray-500 space-y-0.5">
+              <p>♂ {Object.entries(m.sons).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_SHORT[k]}`).join(" · ")}</p>
+              <p>♀ {Object.entries(m.daughters).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_SHORT[k]}`).join(" · ")}</p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const ZYGOSITY_SHORT: Record<string, string> = {
+  homozygous_mutant: "manifesta",
+  heterozygous_carrier: "portador",
+  homozygous_normal: "normal",
+};
+
 function BirdMini({ bird, symbol, color }: { bird: { ring: string; specialty_code: string; color_code: string } | undefined; symbol: string; color: string }) {
   if (!bird) {
     return (
@@ -420,14 +477,14 @@ function CoupleDetailDialog({
   onEdit,
 }: {
   couple: { id: number; cageNumber: string | null; formationDate: Date | string; status: string } | null | undefined;
-  male: { ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
-  female: { ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
+  male: { id: number; ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
+  female: { id: number; ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
   onClose: () => void;
   onEdit: (couple: any) => void;
 }) {
   return (
     <Dialog open={!!couple} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         {couple && (
           <>
             <DialogHeader>
@@ -453,6 +510,9 @@ function CoupleDetailDialog({
                 </div>
               ))}
             </div>
+
+            {male && female && <MendelianPrediction fatherId={male.id} motherId={female.id} />}
+
             <div className="flex gap-2 justify-end pt-2">
               <Link href={`/ficha-gaiola/${couple.id}`}>
                 <Button variant="outline" size="sm">

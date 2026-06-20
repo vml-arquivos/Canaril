@@ -500,6 +500,44 @@ export const cage_sensor_readings = pgTable("cage_sensor_readings", {
 }));
 
 /**
+ * Estrutura de uma mutação no genótipo de um pássaro: tipo de herança e
+ * zigosidade. Para mutações ligadas ao sexo, fêmeas só podem ser
+ * "homozygous_mutant" (manifestam) ou "homozygous_normal" (normais) —
+ * nunca "heterozygous_carrier", pois só têm um cromossomo Z.
+ */
+export type GenotypeZygosity = "homozygous_mutant" | "heterozygous_carrier" | "homozygous_normal";
+export type GenotypeMutation = {
+  mutation: string; // id de MELANIN_MUTATIONS ou LIPOCHROME_MUTATIONS (shared/constants.ts)
+  inheritance: "autosomal_dominant" | "autosomal_recessive" | "sex_linked_recessive";
+  zygosity: GenotypeZygosity;
+};
+
+/**
+ * Genótipo de Genética Avançada (Módulo de Cruzamentos Mendelianos)
+ *
+ * Tabela opcional, 1:1 com "birds" — complementa (não substitui) os campos
+ * simples já existentes (specialty_code/color_code), que continuam sendo a
+ * cor "de exibição" usada em todo o resto do sistema. Esse genótipo
+ * detalhado só é usado pelo motor de predição de cruzamento
+ * (server/_core/mendelian.ts) quando o criador opta por preenchê-lo.
+ */
+export const bird_genotype = pgTable("bird_genotype", {
+  id: serial("id").primaryKey(),
+  birdId: integer("birdId").notNull().unique(),
+  backgroundColor: varchar("backgroundColor", { length: 30 }), // id de BACKGROUND_COLORS
+  featherType: varchar("featherType", { length: 20 }), // "intenso" | "nevado"
+  hasCrest: boolean("hasCrest").default(false).notNull(),
+  // Cada mutação que o pássaro carrega/manifesta, com tipo de herança e
+  // zigosidade — ver GenotypeMutation acima.
+  mutations: jsonb("mutations").$type<GenotypeMutation[]>(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  birdIdx: index("bird_genotype_bird_idx").on(table.birdId),
+}));
+
+/**
  * Types exportados
  */
 export type User = typeof users.$inferSelect;
@@ -528,3 +566,4 @@ export type BreederSettings = typeof breeder_settings.$inferSelect;
 export type HealthRecord = typeof health_records.$inferSelect;
 export type BreedingReminder = typeof breeding_reminders.$inferSelect;
 export type CageSensorReading = typeof cage_sensor_readings.$inferSelect;
+export type BirdGenotype = typeof bird_genotype.$inferSelect;

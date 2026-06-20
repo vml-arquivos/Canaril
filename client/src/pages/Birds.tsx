@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { AIJudgePanel } from "@/components/AIJudgePanel";
 import { HealthLog } from "@/components/HealthLog";
+import { GenotypeEditor } from "@/components/GenotypeEditor";
 import { BirdFicha } from "@/components/BirdFicha";
 import { BirdPhotoIdentifier } from "@/components/BirdPhotoIdentifier";
 
@@ -314,6 +315,13 @@ export default function Birds() {
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-2">Saúde e Alimentação</h3>
                     <HealthLog birdId={editingId} />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-1">Genótipo Avançado (opcional)</h3>
+                    <p className="text-xs text-gray-400 mb-2">
+                      Preencha pra liberar a predição mendeliana de cruzamento (cor de fundo, plumagem, crista e mutações)
+                    </p>
+                    <GenotypeEditor birdId={editingId} sex={formData.sex} />
                   </div>
                 </div>
               )}

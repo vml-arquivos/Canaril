@@ -20,6 +20,7 @@ import { remindersRouter } from "./routers/reminders";
 import { geneticsRouter } from "./routers/genetics";
 import { healthRouter } from "./routers/health";
 import { iotRouter } from "./routers/iot";
+import { mendelianRouter } from "./routers/mendelian";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -105,6 +106,7 @@ export const appRouter = router({
   genetics: geneticsRouter,
   health: healthRouter,
   iot: iotRouter,
+  mendelian: mendelianRouter,
 });
 
 export type AppRouter = typeof appRouter;
