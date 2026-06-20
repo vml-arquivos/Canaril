@@ -78,6 +78,51 @@ export const championshipsRouter = router({
       return updated ?? null;
     }),
 
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        name: z.string().trim().min(1).optional(),
+        association: z.string().trim().optional(),
+        location: z.string().trim().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        status: championshipStatusSchema.optional(),
+        notes: z.string().trim().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Banco de dados não disponível");
+      const { id, ...fields } = input;
+
+      const [updated] = await db
+        .update(championships)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(eq(championships.id, id))
+        .returning();
+
+      return updated ?? null;
+    }),
+
+  delete: protectedProcedure
+    .input(z.number())
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Banco de dados não disponível");
+
+      // Remove em cascata as inscrições e pontuações desse campeonato —
+      // não faz sentido manter inscrições órfãs de um campeonato apagado.
+      const entries = await db.select().from(championship_entries).where(eq(championship_entries.championshipId, input));
+      for (const entry of entries) {
+        await db.delete(scores).where(eq(scores.entryId, entry.id));
+      }
+      await db.delete(championship_entries).where(eq(championship_entries.championshipId, input));
+      await db.delete(championships).where(eq(championships.id, input));
+
+      return { success: true };
+    }),
+
   entries: router({
     listByChampionship: protectedProcedure
       .input(z.number())
@@ -134,6 +179,40 @@ export const championshipsRouter = router({
 
         return updated ?? null;
       }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          birdId: z.number().optional(),
+          category: z.string().trim().min(1).optional(),
+          cageNumberAtShow: z.string().trim().optional(),
+          status: entryStatusSchema.optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Banco de dados não disponível");
+        const { id, ...fields } = input;
+
+        const [updated] = await db
+          .update(championship_entries)
+          .set({ ...fields, updatedAt: new Date() })
+          .where(eq(championship_entries.id, id))
+          .returning();
+
+        return updated ?? null;
+      }),
+
+    delete: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Banco de dados não disponível");
+        await db.delete(scores).where(eq(scores.entryId, input));
+        await db.delete(championship_entries).where(eq(championship_entries.id, input));
+        return { success: true };
+      }),
   }),
 
   judges: router({
@@ -166,6 +245,33 @@ export const championshipsRouter = router({
           .returning();
 
         return created;
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().trim().min(1).optional(),
+          registrationNumber: z.string().trim().optional(),
+          association: z.string().trim().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Banco de dados não disponível");
+        const { id, ...fields } = input;
+
+        const [updated] = await db.update(judges).set(fields).where(eq(judges.id, id)).returning();
+        return updated ?? null;
+      }),
+
+    delete: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Banco de dados não disponível");
+        await db.delete(judges).where(eq(judges.id, input));
+        return { success: true };
       }),
   }),
 

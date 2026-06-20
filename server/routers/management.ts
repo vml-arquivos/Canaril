@@ -124,6 +124,18 @@ export const managementRouter = router({
         }
       }),
 
+    // Edita cor/observações do lote. A faixa de numeração (início/fim) não
+    // muda depois de gerada, pois isso já criou anilhas individuais reais.
+    update: protectedProcedure
+      .input(z.object({ id: z.number(), color: z.string().trim().optional(), status: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { id, ...fields } = input;
+        await db.update(ring_batches).set({ ...fields, updatedAt: new Date() }).where(eq(ring_batches.id, id));
+        return { success: true };
+      }),
+
     // Remove o lote e as anilhas individuais ainda disponíveis dele. Anilhas
     // já em uso (vinculadas a pássaros reais) bloqueiam a remoção.
     delete: protectedProcedure

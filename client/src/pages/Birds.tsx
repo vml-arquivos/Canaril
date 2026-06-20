@@ -10,12 +10,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
-import { Plus, Edit2, Trash2, GitBranch } from "lucide-react";
+import { Plus, Edit2, Trash2, GitBranch, Eye } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { AIJudgePanel } from "@/components/AIJudgePanel";
 import { HealthLog } from "@/components/HealthLog";
+import { BirdFicha } from "@/components/BirdFicha";
 
 const emptyForm = {
   ring: "",
@@ -34,6 +35,7 @@ export default function Birds() {
   const [formData, setFormData] = useState(emptyForm);
 
   const { data: birds, refetch } = trpc.birds.list.useQuery({});
+  const [fichaBird, setFichaBird] = useState<NonNullable<typeof birds>[number] | null>(null);
   const { data: editingPhotos } = trpc.photos.listByEntity.useQuery(
     { entityType: "bird", entityId: editingId ?? 0 },
     { enabled: !!editingId }
@@ -298,7 +300,11 @@ export default function Birds() {
                   </TableHeader>
                   <TableBody>
                     {birds.map((bird) => (
-                      <TableRow key={bird.id}>
+                      <TableRow
+                        key={bird.id}
+                        className="cursor-pointer hover:bg-gray-50"
+                        onClick={() => setFichaBird(bird)}
+                      >
                         <TableCell className="font-mono font-semibold">{bird.ring}</TableCell>
                         <TableCell>{SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name ?? bird.specialty_code}</TableCell>
                         <TableCell>{SEXES.find((s) => s.id === bird.sex)?.name ?? bird.sex}</TableCell>
@@ -309,17 +315,20 @@ export default function Birds() {
                             {bird.status}
                           </span>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => setFichaBird(bird)} title="Ver ficha completa">
+                              <Eye className="w-4 h-4" />
+                            </Button>
                             <Link href={`/pedigree/${bird.id}`}>
                               <Button size="sm" variant="ghost" title="Ver pedigree e consanguinidade">
                                 <GitBranch className="w-4 h-4" />
                               </Button>
                             </Link>
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(bird)}>
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(bird)} title="Editar">
                               <Edit2 className="w-4 h-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDelete(bird.id)}>
+                            <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDelete(bird.id)} title="Excluir">
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
@@ -337,6 +346,15 @@ export default function Birds() {
           </CardContent>
         </Card>
       </div>
+
+      <BirdFicha
+        bird={fichaBird}
+        onClose={() => setFichaBird(null)}
+        onEdit={(bird) => {
+          setFichaBird(null);
+          openEdit(bird as NonNullable<typeof birds>[number]);
+        }}
+      />
     </DashboardLayout>
   );
 }

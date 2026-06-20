@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { Plus, Trash2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Edit2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Rings() {
@@ -47,6 +47,21 @@ export default function Rings() {
     },
     onError: (error) => toast.error("Erro ao remover lote: " + error.message),
   });
+
+  const updateRingBatch = trpc.management.rings.update.useMutation({
+    onSuccess: () => {
+      toast.success("Lote atualizado com sucesso!");
+      refetch();
+    },
+    onError: (error) => toast.error("Erro ao atualizar lote: " + error.message),
+  });
+
+  const handleEditColor = (id: number, currentColor: string) => {
+    const newColor = window.prompt("Nova cor do lote:", currentColor);
+    if (newColor && newColor.trim() && newColor !== currentColor) {
+      updateRingBatch.mutate({ id, color: newColor.trim() });
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -255,15 +270,25 @@ export default function Rings() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-red-600"
-                              onClick={() => handleDelete(ring.id)}
-                              title="Remover lote (só se nenhuma anilha estiver em uso)"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleEditColor(ring.id, ring.color)}
+                                title="Editar cor do lote"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600"
+                                onClick={() => handleDelete(ring.id)}
+                                title="Remover lote (só se nenhuma anilha estiver em uso)"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );

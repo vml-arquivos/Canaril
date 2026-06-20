@@ -9,11 +9,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS } from "@shared/constants";
-import { Plus, Trophy, ChevronRight } from "lucide-react";
+import { Plus, Trophy, ChevronRight, Edit2, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Championships() {
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ name: "", association: "", location: "", startDate: "" });
 
@@ -23,11 +24,51 @@ export default function Championships() {
     onSuccess: () => {
       toast.success("Campeonato cadastrado com sucesso!");
       refetch();
-      setOpen(false);
-      setFormData({ name: "", association: "", location: "", startDate: "" });
+      closeDialog();
     },
     onError: (error) => toast.error("Erro ao cadastrar campeonato: " + error.message),
   });
+
+  const updateChampionship = trpc.championships.update.useMutation({
+    onSuccess: () => {
+      toast.success("Campeonato atualizado com sucesso!");
+      refetch();
+      closeDialog();
+    },
+    onError: (error) => toast.error("Erro ao atualizar campeonato: " + error.message),
+  });
+
+  const deleteChampionship = trpc.championships.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Campeonato removido com sucesso!");
+      refetch();
+      if (selectedId === editingId) setSelectedId(null);
+    },
+    onError: (error) => toast.error("Erro ao remover campeonato: " + error.message),
+  });
+
+  const closeDialog = () => {
+    setOpen(false);
+    setEditingId(null);
+    setFormData({ name: "", association: "", location: "", startDate: "" });
+  };
+
+  const openEdit = (c: NonNullable<typeof championships>[number]) => {
+    setEditingId(c.id);
+    setFormData({
+      name: c.name,
+      association: c.association ?? "",
+      location: c.location ?? "",
+      startDate: new Date(c.startDate).toISOString().slice(0, 10),
+    });
+    setOpen(true);
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Tem certeza? Isso também remove as inscrições e pontuações desse campeonato.")) {
+      deleteChampionship.mutate(id);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,12 +76,17 @@ export default function Championships() {
       toast.error("Preencha nome e data de início");
       return;
     }
-    createChampionship.mutate({
+    const payload = {
       name: formData.name,
       association: formData.association || undefined,
       location: formData.location || undefined,
       startDate: new Date(formData.startDate),
-    });
+    };
+    if (editingId) {
+      updateChampionship.mutate({ id: editingId, ...payload });
+    } else {
+      createChampionship.mutate(payload);
+    }
   };
 
   const selected = championships?.find((c) => c.id === selectedId) ?? null;
@@ -53,16 +99,16 @@ export default function Championships() {
             <h1 className="text-3xl font-bold text-gray-900">Campeonatos</h1>
             <p className="text-gray-600 mt-2">Gestão de pista, inscrições e pontuações</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
             <DialogTrigger asChild>
-              <Button className="bg-yellow-600 hover:bg-yellow-700">
+              <Button className="bg-yellow-600 hover:bg-yellow-700" onClick={() => { setEditingId(null); setFormData({ name: "", association: "", location: "", startDate: "" }); }}>
                 <Plus className="w-4 h-4 mr-2" />
                 Novo Campeonato
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Cadastrar Campeonato</DialogTitle>
+                <DialogTitle>{editingId ? "Editar Campeonato" : "Cadastrar Campeonato"}</DialogTitle>
                 <DialogDescription>Registre um novo campeonato ou exposição</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -102,11 +148,11 @@ export default function Championships() {
                   />
                 </div>
                 <div className="flex gap-2 justify-end">
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  <Button type="button" variant="outline" onClick={closeDialog}>
                     Cancelar
                   </Button>
                   <Button type="submit" className="bg-yellow-600 hover:bg-yellow-700">
-                    Cadastrar
+                    {editingId ? "Salvar alterações" : "Cadastrar"}
                   </Button>
                 </div>
               </form>
@@ -123,21 +169,29 @@ export default function Championships() {
             <CardContent className="space-y-2">
               {championships && championships.length > 0 ? (
                 championships.map((c) => (
-                  <button
+                  <div
                     key={c.id}
                     onClick={() => setSelectedId(c.id)}
-                    className={`w-full text-left p-3 rounded-lg border flex items-center justify-between transition-colors ${
+                    className={`w-full text-left p-3 rounded-lg border flex items-center justify-between transition-colors cursor-pointer ${
                       selectedId === c.id ? "border-yellow-500 bg-yellow-50" : "border-gray-200 hover:bg-gray-50"
                     }`}
                   >
-                    <div>
-                      <p className="font-semibold text-gray-900">{c.name}</p>
-                      <p className="text-sm text-gray-500">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{c.name}</p>
+                      <p className="text-sm text-gray-500 truncate">
                         {c.association ?? "-"} · {new Date(c.startDate).toLocaleDateString("pt-BR")} · {c.location ?? "-"}
                       </p>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                  </button>
+                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(c)}>
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDelete(c.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                      <ChevronRight className="w-4 h-4 text-gray-400 ml-1" />
+                    </div>
+                  </div>
                 ))
               ) : (
                 <div className="text-center py-8 text-gray-500">
@@ -159,6 +213,8 @@ export default function Championships() {
             </Card>
           )}
         </div>
+
+        <JudgesManager />
       </div>
     </DashboardLayout>
   );
@@ -192,6 +248,14 @@ function ChampionshipEntries({ championship }: { championship: { id: number; nam
       setCageNumberAtShow("");
     },
     onError: (error) => toast.error("Erro ao inscrever: " + error.message),
+  });
+
+  const deleteEntry = trpc.championships.entries.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Inscrição removida!");
+      refetch();
+    },
+    onError: (error) => toast.error("Erro ao remover: " + error.message),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -328,7 +392,19 @@ function ChampionshipEntries({ championship }: { championship: { id: number; nam
                       <span className={`px-2 py-1 rounded text-xs font-medium ${st.className}`}>{st.label}</span>
                     </TableCell>
                     <TableCell>
-                      <ScoreDialog entryId={entry.id} />
+                      <div className="flex items-center gap-1">
+                        <ScoreDialog entryId={entry.id} />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-600"
+                          onClick={() => {
+                            if (confirm("Remover esta inscrição?")) deleteEntry.mutate(entry.id);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -347,11 +423,13 @@ function ChampionshipEntries({ championship }: { championship: { id: number; nam
 
 function ScoreDialog({ entryId }: { entryId: number }) {
   const [open, setOpen] = useState(false);
+  const [judgeId, setJudgeId] = useState("");
   const [totalScore, setTotalScore] = useState("");
   const [placement, setPlacement] = useState("");
   const [notes, setNotes] = useState("");
 
   const { data: existingScores, refetch: refetchEntries } = trpc.championships.scores.listByEntry.useQuery(entryId);
+  const { data: judges } = trpc.championships.judges.list.useQuery();
   const utils = trpc.useUtils();
 
   const createScore = trpc.championships.scores.create.useMutation({
@@ -363,6 +441,7 @@ function ScoreDialog({ entryId }: { entryId: number }) {
       setTotalScore("");
       setPlacement("");
       setNotes("");
+      setJudgeId("");
     },
     onError: (error) => toast.error("Erro ao registrar pontuação: " + error.message),
   });
@@ -375,6 +454,7 @@ function ScoreDialog({ entryId }: { entryId: number }) {
     }
     createScore.mutate({
       entryId,
+      judgeId: judgeId ? parseInt(judgeId) : undefined,
       totalScore: parseFloat(totalScore),
       placement: placement ? parseInt(placement) : undefined,
       notes: notes || undefined,
@@ -394,6 +474,19 @@ function ScoreDialog({ entryId }: { entryId: number }) {
           <DialogDescription>Registre a nota do juiz para esta inscrição</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label>Juiz</Label>
+            <Select value={judgeId} onValueChange={setJudgeId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sem juiz identificado" />
+              </SelectTrigger>
+              <SelectContent>
+                {judges?.map((j) => (
+                  <SelectItem key={j.id} value={String(j.id)}>{j.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label htmlFor="totalScore">Pontuação Total *</Label>
             <Input
@@ -429,5 +522,116 @@ function ScoreDialog({ entryId }: { entryId: number }) {
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function JudgesManager() {
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formData, setFormData] = useState({ name: "", registrationNumber: "", association: "" });
+
+  const { data: judges, refetch } = trpc.championships.judges.list.useQuery();
+
+  const createJudge = trpc.championships.judges.create.useMutation({
+    onSuccess: () => { toast.success("Juiz cadastrado!"); refetch(); closeDialog(); },
+    onError: (error) => toast.error("Erro: " + error.message),
+  });
+  const updateJudge = trpc.championships.judges.update.useMutation({
+    onSuccess: () => { toast.success("Juiz atualizado!"); refetch(); closeDialog(); },
+    onError: (error) => toast.error("Erro: " + error.message),
+  });
+  const deleteJudge = trpc.championships.judges.delete.useMutation({
+    onSuccess: () => { toast.success("Juiz removido!"); refetch(); },
+    onError: (error) => toast.error("Erro: " + error.message),
+  });
+
+  const closeDialog = () => {
+    setOpen(false);
+    setEditingId(null);
+    setFormData({ name: "", registrationNumber: "", association: "" });
+  };
+
+  const openEdit = (j: NonNullable<typeof judges>[number]) => {
+    setEditingId(j.id);
+    setFormData({ name: j.name, registrationNumber: j.registrationNumber ?? "", association: j.association ?? "" });
+    setOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim()) {
+      toast.error("Informe o nome do juiz");
+      return;
+    }
+    if (editingId) {
+      updateJudge.mutate({ id: editingId, ...formData });
+    } else {
+      createJudge.mutate(formData);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-yellow-600" />
+            Juízes
+          </CardTitle>
+          <CardDescription>Cadastro de juízes credenciados</CardDescription>
+        </div>
+        <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" onClick={() => { setEditingId(null); setFormData({ name: "", registrationNumber: "", association: "" }); }}>
+              <Plus className="w-4 h-4 mr-1" />
+              Novo Juiz
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{editingId ? "Editar Juiz" : "Cadastrar Juiz"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="judgeName">Nome *</Label>
+                <Input id="judgeName" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+              </div>
+              <div>
+                <Label htmlFor="judgeReg">Nº de Registro</Label>
+                <Input id="judgeReg" value={formData.registrationNumber} onChange={(e) => setFormData({ ...formData, registrationNumber: e.target.value })} />
+              </div>
+              <div>
+                <Label htmlFor="judgeAssoc">Associação</Label>
+                <Input id="judgeAssoc" value={formData.association} onChange={(e) => setFormData({ ...formData, association: e.target.value })} placeholder="Ex: FOB" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button type="button" variant="outline" onClick={closeDialog}>Cancelar</Button>
+                <Button type="submit">{editingId ? "Salvar" : "Cadastrar"}</Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {judges && judges.length > 0 ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {judges.map((j) => (
+              <div key={j.id} className="flex items-center justify-between border rounded-lg p-2 text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{j.name}</p>
+                  <p className="text-xs text-gray-400 truncate">{j.association || "-"} {j.registrationNumber ? `· ${j.registrationNumber}` : ""}</p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" onClick={() => openEdit(j)}><Edit2 className="w-3.5 h-3.5" /></Button>
+                  <Button size="sm" variant="ghost" className="text-red-600" onClick={() => { if (confirm("Remover este juiz?")) deleteJudge.mutate(j.id); }}><Trash2 className="w-3.5 h-3.5" /></Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 text-center py-4">Nenhum juiz cadastrado ainda.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
