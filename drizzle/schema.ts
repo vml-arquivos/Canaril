@@ -538,6 +538,101 @@ export const bird_genotype = pgTable("bird_genotype", {
 }));
 
 /**
+ * Catálogo Oficial FOB/OBJO — classes oficiais de Canário de Cor e Porte.
+ *
+ * Armazena as 1469 classes oficiais (CC#### para Cor, CP#### para Porte)
+ * com os traços genéticos interpretados pelo officialClassInterpreter.
+ * Não é a genética completa — é o fenótipo oficial de entrada.
+ */
+export const official_bird_classes = pgTable("official_bird_classes", {
+  id: serial("id").primaryKey(),
+  modality: varchar("modality", { length: 10 }).notNull(), // 'COR' | 'PORTE'
+  officialCode: varchar("officialCode", { length: 20 }).notNull().unique(), // CC0102, CP0240 etc.
+  officialName: text("officialName").notNull(), // BRANCO DOMINANTE, PADOVANO COM TOPETE...
+  abbreviation: varchar("abbreviation", { length: 50 }), // BR DO, PA CT BR LI...
+  groupName: varchar("groupName", { length: 200 }), // Lipocrômicos sem fator, Padovano...
+  subgroupName: varchar("subgroupName", { length: 200 }), // Brancos, Vermelhos, Ágatas...
+  breedName: varchar("breedName", { length: 100 }), // para PORTE: Padovano, Gloster...
+  bitola: varchar("bitola", { length: 50 }), // para PORTE: tamanho/bitola
+  categoryName: varchar("categoryName", { length: 50 }), // intenso, nevado, mosaico...
+  sourceYear: integer("sourceYear").default(2026),
+  sourceEntity: varchar("sourceEntity", { length: 20 }).default("FOB/OBJO"),
+  rawText: text("rawText"), // origem bruta do PDF/CSV
+  interpretedTraits: jsonb("interpretedTraits"), // resultado do interpretOfficialClass()
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  codeIdx: index("official_bird_classes_code_idx").on(table.officialCode),
+  modalityIdx: index("official_bird_classes_modality_idx").on(table.modality),
+  breedIdx: index("official_bird_classes_breed_idx").on(table.breedName),
+}));
+
+/**
+ * Perfil Genético Individual de cada pássaro.
+ *
+ * Criado/atualizado automaticamente quando o criador seleciona uma classe
+ * oficial na ficha da ave. Armazena o resultado da interpretação genética
+ * com níveis de certeza (CONFIRMADO, INFERIDO, POSSÍVEL, DESCONHECIDO).
+ * Permite correção manual sem perder a inferência original.
+ */
+export const bird_genetic_profiles = pgTable("bird_genetic_profiles", {
+  id: serial("id").primaryKey(),
+  birdId: integer("birdId").notNull().unique(),
+  officialClassId: integer("officialClassId"), // FK para official_bird_classes
+
+  // Identificação oficial
+  modality: varchar("modality", { length: 10 }), // 'COR' | 'PORTE'
+  officialCode: varchar("officialCode", { length: 20 }),
+  officialName: text("officialName"),
+  officialAbbreviation: varchar("officialAbbreviation", { length: 50 }),
+  officialGroup: varchar("officialGroup", { length: 200 }),
+  breedName: varchar("breedName", { length: 100 }),
+  bitola: varchar("bitola", { length: 50 }),
+
+  // Fenótipo
+  phenotypeName: text("phenotypeName"),
+  visualColorDescription: text("visualColorDescription"),
+
+  // Traços genéticos interpretados
+  lipochromeBase: varchar("lipochromeBase", { length: 50 }),
+  melaninSeries: varchar("melaninSeries", { length: 50 }),
+  featherCategory: varchar("featherCategory", { length: 30 }), // intenso|nevado|mosaico_macho|mosaico_femea
+  crestType: varchar("crestType", { length: 30 }), // com_topete|sem_topete|corona|consort
+
+  // Status de genes especiais
+  dominantWhiteStatus: varchar("dominantWhiteStatus", { length: 20 }), // visual|desconhecido
+  recessiveWhiteStatus: varchar("recessiveWhiteStatus", { length: 20 }), // visual|portador|desconhecido
+  ivoryStatus: varchar("ivoryStatus", { length: 20 }), // visual|portador|desconhecido
+  redFactorStatus: varchar("redFactorStatus", { length: 20 }), // visual|desconhecido
+  inoStatus: varchar("inoStatus", { length: 20 }),
+  urucumStatus: varchar("urucumStatus", { length: 20 }),
+  asasBrancasStatus: varchar("asasBrancasStatus", { length: 20 }),
+
+  // Mutações
+  visibleMutations: jsonb("visibleMutations").$type<string[]>(),
+  carriedMutations: jsonb("carriedMutations").$type<string[]>(),
+  possibleCarriedMutations: jsonb("possibleCarriedMutations").$type<string[]>(),
+  unknownTraits: jsonb("unknownTraits").$type<string[]>(),
+
+  // Genótipo
+  genotypeJson: jsonb("genotypeJson"), // genótipo confirmado
+  inferredGenotypeJson: jsonb("inferredGenotypeJson"), // genótipo inferido
+  confidenceScore: real("confidenceScore").default(0.2), // 0 a 1
+  geneticWarnings: jsonb("geneticWarnings").$type<string[]>(),
+  nutritionRecommendations: jsonb("nutritionRecommendations").$type<string[]>(),
+
+  // Controle
+  manualOverride: boolean("manualOverride").default(false).notNull(),
+  lastInferenceAt: timestamp("lastInferenceAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  birdIdx: index("bird_genetic_profiles_bird_idx").on(table.birdId),
+  officialClassIdx: index("bird_genetic_profiles_class_idx").on(table.officialClassId),
+}));
+
+/**
  * Types exportados
  */
 export type User = typeof users.$inferSelect;
@@ -567,3 +662,7 @@ export type HealthRecord = typeof health_records.$inferSelect;
 export type BreedingReminder = typeof breeding_reminders.$inferSelect;
 export type CageSensorReading = typeof cage_sensor_readings.$inferSelect;
 export type BirdGenotype = typeof bird_genotype.$inferSelect;
+export type OfficialBirdClass = typeof official_bird_classes.$inferSelect;
+export type InsertOfficialBirdClass = typeof official_bird_classes.$inferInsert;
+export type BirdGeneticProfile = typeof bird_genetic_profiles.$inferSelect;
+export type InsertBirdGeneticProfile = typeof bird_genetic_profiles.$inferInsert;

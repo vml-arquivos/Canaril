@@ -10,8 +10,31 @@ import {
   classifyCOIRisk,
   PedigreeBird,
 } from "../_core/genetics";
+import { calculateColorCross } from "../_core/colorGenetics";
 import { invokeLLM } from "../_core/llm";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
+
+const autosomalRecessiveSchema = z.enum(["NN", "Nm", "mm"]);
+const sexLinkedMaleSchema = z.enum(["Z+Z+", "Z+Z-", "Z-Z-"]);
+const sexLinkedFemaleSchema = z.enum(["Z+W", "Z-W"]);
+const dominantRiskSchema = z.enum(["nn", "Nn", "NN"]);
+
+// Aceita tanto os genótipos de macho quanto de fêmea pros campos
+// sexo-ligados — a validação de qual é o correto pro sexo informado
+// acontece dentro de calculateColorCross (lança erro claro se inválido).
+const sexLinkedSchema = z.union([sexLinkedMaleSchema, sexLinkedFemaleSchema]);
+
+const parentGenotypesSchema = z.object({
+  sex: z.enum(["macho", "fêmea"]),
+  agata: sexLinkedSchema.optional(),
+  canela: sexLinkedSchema.optional(),
+  ino: sexLinkedSchema.optional(),
+  pastel: autosomalRecessiveSchema.optional(),
+  opala: autosomalRecessiveSchema.optional(),
+  crista: dominantRiskSchema.optional(),
+  brancoDominante: dominantRiskSchema.optional(),
+  plumagem: dominantRiskSchema.optional(),
+});
 
 async function loadBirdMap(db: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<Map<number, PedigreeBird>> {
   const all = await db.select().from(birds);
@@ -177,7 +200,7 @@ export const geneticsRouter = router({
 
       try {
         const result = await invokeLLM({
-          model: "claude-sonnet-4-6",
+          model: "gemini-2.5-flash",
           messages: [
             {
               role: "system",
@@ -197,5 +220,23 @@ export const geneticsRouter = router({
       }
 
       return { summary, candidates };
+    }),
+
+  // ============================================================================
+  // Calculadora Genética de Cores — cálculo determinístico (Punnett square),
+  // sem IA. Ver server/_core/colorGenetics.ts para as regras de herança.
+  // ============================================================================
+  calculateColorCross: protectedProcedure
+    .input(
+      z.object({
+        male: parentGenotypesSchema,
+        female: parentGenotypesSchema,
+      })
+    )
+    .query(({ input }) => {
+      // Puramente matemático — não toca no banco, não precisa de pássaros
+      // cadastrados. Lança erro claro (capturado pelo tRPC) se os sexos
+      // dos genótipos não baterem com macho/fêmea.
+      return calculateColorCross(input as any);
     }),
 });

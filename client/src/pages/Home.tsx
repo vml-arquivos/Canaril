@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
-import { Bird, Egg, Heart, Trophy, Wheat, Bone, Leaf, Droplets, AlertTriangle, ImageOff, Zap } from "lucide-react";
+import { Bird, Egg, Heart, Trophy, Wheat, Bone, Leaf, Droplets, AlertTriangle, ImageOff, Zap, Calculator, ChevronDown } from "lucide-react";
 import { SPECIALTIES, COLORS_BY_SPECIALTY } from "@shared/constants";
 import { trpc } from "@/lib/trpc";
 
@@ -53,18 +53,94 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="container mx-auto px-4 py-20 sm:py-28 text-center">
-        <div className="max-w-2xl mx-auto">
-          <p className="text-amber-600 font-medium tracking-wide uppercase text-sm mb-4">
-            {breeder.city}, {breeder.state}
-          </p>
-          <h2 className="text-4xl sm:text-5xl font-bold text-amber-950 mb-6 tracking-tight leading-tight">
-            {breeder.name}
-          </h2>
-          <p className="text-lg text-amber-900/70 leading-relaxed">
-            {breeder.description}
-          </p>
+      {/* Hero Premium — imagem de fundo com overlay */}
+      <section className="relative min-h-[70vh] flex items-center justify-center overflow-hidden">
+        {/* Imagem de fundo */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: "url('/assets/canaril/hero-plantel-colorido.webp')" }}
+        />
+        {/* Overlay gradiente âmbar escuro */}
+        <div className="absolute inset-0 bg-gradient-to-b from-amber-950/70 via-amber-900/60 to-amber-950/80" />
+
+        {/* Conteúdo do hero */}
+        <div className="relative z-10 container mx-auto px-4 py-24 sm:py-32 text-center">
+          <div className="max-w-3xl mx-auto">
+            {(breeder.city || breeder.state) && (
+              <p className="text-amber-300 font-medium tracking-widest uppercase text-xs mb-5 drop-shadow">
+                {[breeder.city, breeder.state].filter(Boolean).join(", ")}
+              </p>
+            )}
+            <h2 className="text-4xl sm:text-6xl font-bold text-white mb-6 tracking-tight leading-tight drop-shadow-lg">
+              {breeder.name}
+            </h2>
+            <p className="text-lg sm:text-xl text-amber-100/90 leading-relaxed mb-10 max-w-2xl mx-auto drop-shadow">
+              {breeder.description}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              {isAuthenticated ? (
+                <Link href="/dashboard">
+                  <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold shadow-lg px-8">
+                    Acessar Dashboard
+                  </Button>
+                </Link>
+              ) : (
+                <a href={getLoginUrl()}>
+                  <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold shadow-lg px-8">
+                    Entrar no Sistema
+                  </Button>
+                </a>
+              )}
+              <a href="#vitrine">
+                <Button size="lg" variant="outline" className="border-white/40 text-white hover:bg-white/10 backdrop-blur-sm px-8">
+                  Ver Plantel
+                </Button>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* Seta de scroll */}
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 animate-bounce">
+          <a href="#vitrine">
+            <ChevronDown className="w-8 h-8 text-white/60" />
+          </a>
+        </div>
+      </section>
+
+      {/* Destaques do sistema */}
+      <section className="bg-white border-y border-amber-100 py-10">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center">
+                <Bird className="w-6 h-6 text-amber-600" />
+              </div>
+              <h4 className="text-2xl font-bold text-amber-950">{SPECIALTIES.length}</h4>
+              <p className="text-amber-700/70 text-sm">Especialidades</p>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center">
+                <Trophy className="w-6 h-6 text-amber-600" />
+              </div>
+              <h4 className="text-2xl font-bold text-amber-950">FOB</h4>
+              <p className="text-amber-700/70 text-sm">Padrão de Julgamento</p>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center">
+                <Egg className="w-6 h-6 text-amber-600" />
+              </div>
+              <h4 className="text-2xl font-bold text-amber-950">100%</h4>
+              <p className="text-amber-700/70 text-sm">Controle Genealógico</p>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center">
+                <Calculator className="w-6 h-6 text-amber-600" />
+              </div>
+              <h4 className="text-2xl font-bold text-amber-950">IA</h4>
+              <p className="text-amber-700/70 text-sm">Calculadora Genética</p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -141,6 +217,28 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Calculadora Genética — chamada de ação */}
+      {isAuthenticated && (
+        <section className="bg-gradient-to-r from-amber-700 to-amber-600 py-16">
+          <div className="container mx-auto px-4 text-center">
+            <div className="max-w-2xl mx-auto">
+              <Calculator className="w-12 h-12 text-amber-200 mx-auto mb-4" />
+              <h3 className="text-2xl font-bold text-white mb-3">Calculadora Genética</h3>
+              <p className="text-amber-100/90 mb-6 leading-relaxed">
+                Simule cruzamentos, calcule probabilidades de filhotes, verifique consanguinidade e
+                obtenha recomendações genéticas antes de formar um casal.
+              </p>
+              <Link href="/genetics-calculator">
+                <Button size="lg" className="bg-white text-amber-800 hover:bg-amber-50 font-semibold shadow-lg px-8">
+                  <Zap className="w-4 h-4 mr-2" />
+                  Abrir Calculadora
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Nutrição */}
       <section id="nutricao" className="container mx-auto px-4 py-16 border-t border-amber-100">
         <div className="max-w-2xl mb-10">
@@ -215,34 +313,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Stats */}
-      <section className="bg-white border-y border-amber-100 py-16">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-            <div>
-              <Bird className="w-9 h-9 text-amber-500 mx-auto mb-3" />
-              <h4 className="text-2xl font-bold text-amber-950">{SPECIALTIES.length}</h4>
-              <p className="text-amber-700/70 text-sm">Especialidades</p>
-            </div>
-            <div>
-              <Trophy className="w-9 h-9 text-amber-500 mx-auto mb-3" />
-              <h4 className="text-2xl font-bold text-amber-950">FOB</h4>
-              <p className="text-amber-700/70 text-sm">Padrão de Julgamento</p>
-            </div>
-            <div>
-              <Egg className="w-9 h-9 text-amber-500 mx-auto mb-3" />
-              <h4 className="text-2xl font-bold text-amber-950">100%</h4>
-              <p className="text-amber-700/70 text-sm">Controle Genealógico</p>
-            </div>
-            <div>
-              <Heart className="w-9 h-9 text-amber-500 mx-auto mb-3" />
-              <h4 className="text-2xl font-bold text-amber-950">∞</h4>
-              <p className="text-amber-700/70 text-sm">Bem-estar Animal</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Sobre */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-2xl mx-auto text-center">
@@ -268,9 +338,11 @@ export default function Home() {
       <footer className="border-t border-amber-100 bg-white py-8">
         <div className="container mx-auto px-4 text-center text-amber-800/70 text-sm">
           <p>&copy; {new Date().getFullYear()} {breeder.name}. Todos os direitos reservados.</p>
-          <p className="mt-2">
-            {breeder.city}, {breeder.state} · {breeder.phone} · {breeder.email}
-          </p>
+          {(breeder.city || breeder.phone || breeder.email) && (
+            <p className="mt-2">
+              {[breeder.city && breeder.state ? `${breeder.city}, ${breeder.state}` : null, breeder.phone, breeder.email].filter(Boolean).join(" · ")}
+            </p>
+          )}
         </div>
       </footer>
     </div>

@@ -16,6 +16,7 @@ import Championships from "@/pages/Championships";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import PedigreeTree from "@/pages/PedigreeTree";
+import GeneticsCalculator from "@/pages/GeneticsCalculator";
 import LoginPage from "@/pages/Login";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -99,6 +100,9 @@ function Router() {
       </Route>
       <Route path={"/pedigree/:birdId"}>
         {(params) => <ProtectedRoute component={PedigreeTree} {...params} />}
+      </Route>
+      <Route path={"/genetics-calculator"}>
+        {(params) => <ProtectedRoute component={GeneticsCalculator} {...params} />}
       </Route>
 
       {/* Fallback */}
