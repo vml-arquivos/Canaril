@@ -10,13 +10,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
-import { Plus, Edit2, Trash2, GitBranch, Eye } from "lucide-react";
+import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { AIJudgePanel } from "@/components/AIJudgePanel";
 import { HealthLog } from "@/components/HealthLog";
 import { BirdFicha } from "@/components/BirdFicha";
+import { BirdPhotoIdentifier } from "@/components/BirdPhotoIdentifier";
 
 const emptyForm = {
   ring: "",
@@ -36,14 +37,31 @@ export default function Birds() {
 
   const { data: birds, refetch } = trpc.birds.list.useQuery({});
   const [fichaBird, setFichaBird] = useState<NonNullable<typeof birds>[number] | null>(null);
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const { data: primaryPhotos } = trpc.photos.primaryByEntityType.useQuery({ entityType: "bird" });
   const { data: editingPhotos } = trpc.photos.listByEntity.useQuery(
     { entityType: "bird", entityId: editingId ?? 0 },
     { enabled: !!editingId }
   );
 
+  const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const uploadPendingPhoto = trpc.photos.create.useMutation();
+
   const createBird = trpc.birds.create.useMutation({
-    onSuccess: () => {
+    onSuccess: async (data) => {
       toast.success("Pássaro cadastrado com sucesso!");
+      if (pendingPhoto && data.bird) {
+        try {
+          await uploadPendingPhoto.mutateAsync({
+            entityType: "bird",
+            entityId: data.bird.id,
+            dataUrl: pendingPhoto,
+            isPrimary: true,
+          });
+        } catch {
+          toast.error("Pássaro salvo, mas a foto não pôde ser anexada. Adicione-a editando o pássaro.");
+        }
+      }
       refetch();
       closeDialog();
     },
@@ -70,6 +88,7 @@ export default function Birds() {
     setOpen(false);
     setEditingId(null);
     setFormData(emptyForm);
+    setPendingPhoto(null);
   };
 
   const openCreate = () => {
@@ -134,7 +153,24 @@ export default function Birds() {
             <h1 className="text-3xl font-bold text-gray-900">Gestão de Pássaros</h1>
             <p className="text-gray-600 mt-2">Cadastre e gerencie seus pássaros</p>
           </div>
-          <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
+          <div className="flex items-center gap-2">
+            <div className="flex border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setView("grid")}
+                className={`p-2 ${view === "grid" ? "bg-blue-600 text-white" : "bg-white text-gray-500"}`}
+                title="Visualização em blocos"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setView("list")}
+                className={`p-2 ${view === "list" ? "bg-blue-600 text-white" : "bg-white text-gray-500"}`}
+                title="Visualização em lista"
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+            <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
             <DialogTrigger asChild>
               <Button className="bg-blue-600 hover:bg-blue-700" onClick={openCreate}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -149,6 +185,14 @@ export default function Birds() {
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
+                {!editingId && (
+                  <BirdPhotoIdentifier
+                    onIdentified={(result) => {
+                      setFormData((prev) => ({ ...prev, specialty: result.specialty_code, color: result.color_code }));
+                      setPendingPhoto(result.dataUrl);
+                    }}
+                  />
+                )}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="ring">Anilha *</Label>
@@ -275,9 +319,52 @@ export default function Birds() {
               )}
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
-        {/* Table */}
+        {/* Visualização em blocos (grade com avatar) ou lista (tabela) */}
+        {view === "grid" ? (
+          <div>
+            {birds && birds.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {birds.map((bird) => {
+                  const photoUrl = primaryPhotos?.[bird.id];
+                  return (
+                    <button
+                      key={bird.id}
+                      onClick={() => setFichaBird(bird)}
+                      className="text-left rounded-xl border bg-white overflow-hidden hover:shadow-md hover:border-blue-300 transition-all"
+                    >
+                      <div className="aspect-square bg-gray-100">
+                        {photoUrl ? (
+                          <img src={photoUrl} alt={bird.ring} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-300">
+                            <BirdIcon className="w-10 h-10" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-2.5">
+                        <p className="font-mono font-bold text-sm text-gray-900 truncate">{bird.ring}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name ?? bird.specialty_code}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {COLORS.find((c) => c.id === bird.color_code)?.name ?? bird.color_code}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-16 text-gray-400 border border-dashed rounded-xl">
+                <BirdIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p>Nenhum pássaro cadastrado ainda.</p>
+              </div>
+            )}
+          </div>
+        ) : (
         <Card>
           <CardHeader>
             <CardTitle>Pássaros Cadastrados</CardTitle>
@@ -345,6 +432,7 @@ export default function Birds() {
             )}
           </CardContent>
         </Card>
+        )}
       </div>
 
       <BirdFicha

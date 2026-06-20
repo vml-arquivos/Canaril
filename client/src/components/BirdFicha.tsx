@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
-import { Bird as BirdIcon, GitBranch, Edit2, Calendar, MapPin, Ruler, Scale } from "lucide-react";
+import { Bird as BirdIcon, GitBranch, Edit2, Calendar, MapPin, Ruler, Scale, Loader2, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 
 type BirdRecord = {
@@ -129,6 +129,12 @@ export function BirdFicha({
           </div>
         )}
 
+        {(bird.sex === "macho" || bird.sex === "fêmea") && (
+          <div className="border-t pt-4">
+            <PairingSuggestions birdId={bird.id} />
+          </div>
+        )}
+
         <div className="flex gap-2 justify-end border-t pt-4">
           <Link href={`/pedigree/${bird.id}`}>
             <Button variant="outline" size="sm">
@@ -143,6 +149,51 @@ export function BirdFicha({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PairingSuggestions({ birdId }: { birdId: number }) {
+  const recommend = trpc.genetics.recommendPairing.useMutation();
+
+  return (
+    <div>
+      {!recommend.data && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={recommend.isPending}
+          onClick={() => recommend.mutate({ birdId })}
+        >
+          {recommend.isPending ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Sparkles className="w-4 h-4 mr-2" />
+          )}
+          {recommend.isPending ? "Buscando melhores pares..." : "Sugerir melhor par (IA)"}
+        </Button>
+      )}
+
+      {recommend.data && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400 uppercase">Melhores pares sugeridos</p>
+          {recommend.data.candidates.length > 0 ? (
+            <div className="space-y-1.5">
+              {recommend.data.candidates.map((c, i) => (
+                <div key={c.id} className="flex items-center justify-between text-sm rounded-lg border p-2">
+                  <div>
+                    <span className="font-mono font-semibold">{i === 0 ? "🏆 " : ""}{c.ring}</span>
+                    <span className="text-gray-400 ml-2">COI {(c.coi * 100).toFixed(1)}%</span>
+                  </div>
+                  {c.bestScore != null && <span className="text-xs text-gray-500">nota {c.bestScore}</span>}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p className="text-sm text-gray-600 italic">{recommend.data.summary}</p>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -10,6 +10,11 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Chave da API da Anthropic (https://console.anthropic.com), usada pelo
+  // Juiz Virtual, identificação de espécie/cor por foto e recomendação de
+  // cruzamento. Sem ela, esses recursos de IA ficam indisponíveis (o resto
+  // do sistema funciona normalmente).
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   // Diretório local onde fotos e outros arquivos enviados pelo sistema são
   // gravados em disco. Deve apontar para um volume persistente montado no
   // Coolify (Configuration > Persistent Storage), senão os arquivos somem

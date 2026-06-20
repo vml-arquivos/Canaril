@@ -41,6 +41,25 @@ export const photosRouter = router({
         .orderBy(desc(photos.isPrimary), desc(photos.createdAt));
     }),
 
+  // Foto principal de TODAS as entidades de um tipo, numa única consulta —
+  // usado pela visualização em blocos (grade) para não fazer uma query de
+  // foto por pássaro.
+  primaryByEntityType: protectedProcedure
+    .input(z.object({ entityType: entityTypeSchema }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return {} as Record<number, string>;
+
+      const rows = await db
+        .select()
+        .from(photos)
+        .where(and(eq(photos.entityType, input.entityType), eq(photos.isPrimary, true)));
+
+      const map: Record<number, string> = {};
+      for (const row of rows) map[row.entityId] = row.url;
+      return map;
+    }),
+
   create: protectedProcedure
     .input(
       z.object({
