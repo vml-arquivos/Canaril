@@ -16,6 +16,10 @@ import { championshipsRouter } from "./routers/championships";
 import { reportsRouter } from "./routers/reports";
 import { showroomRouter } from "./routers/showroom";
 import { settingsRouter } from "./routers/settings";
+import { remindersRouter } from "./routers/reminders";
+import { geneticsRouter } from "./routers/genetics";
+import { healthRouter } from "./routers/health";
+import { iotRouter } from "./routers/iot";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -97,6 +101,10 @@ export const appRouter = router({
   reports: reportsRouter,
   showroom: showroomRouter,
   settings: settingsRouter,
+  reminders: remindersRouter,
+  genetics: geneticsRouter,
+  health: healthRouter,
+  iot: iotRouter,
 });
 
 export type AppRouter = typeof appRouter;

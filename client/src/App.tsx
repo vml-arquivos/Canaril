@@ -15,6 +15,7 @@ import Cages from "@/pages/Cages";
 import Championships from "@/pages/Championships";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
+import PedigreeTree from "@/pages/PedigreeTree";
 import LoginPage from "@/pages/Login";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -95,6 +96,9 @@ function Router() {
       </Route>
       <Route path={"/settings"}>
         {(params) => <ProtectedRoute component={Settings} {...params} />}
+      </Route>
+      <Route path={"/pedigree/:birdId"}>
+        {(params) => <ProtectedRoute component={PedigreeTree} {...params} />}
       </Route>
 
       {/* Fallback */}

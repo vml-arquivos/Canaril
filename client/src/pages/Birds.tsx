@@ -10,10 +10,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
-import { Plus, Edit2, Trash2 } from "lucide-react";
+import { Plus, Edit2, Trash2, GitBranch } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { AIJudgePanel } from "@/components/AIJudgePanel";
+import { HealthLog } from "@/components/HealthLog";
 
 const emptyForm = {
   ring: "",
@@ -263,6 +265,10 @@ export default function Birds() {
                     <h3 className="font-semibold text-gray-900 mb-2">Juiz Virtual (IA)</h3>
                     <AIJudgePanel birdId={editingId} specialtyCode={formData.specialty} primaryPhotoUrl={primaryPhotoUrl} />
                   </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-2">Saúde e Alimentação</h3>
+                    <HealthLog birdId={editingId} />
+                  </div>
                 </div>
               )}
             </DialogContent>
@@ -305,6 +311,11 @@ export default function Birds() {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
+                            <Link href={`/pedigree/${bird.id}`}>
+                              <Button size="sm" variant="ghost" title="Ver pedigree e consanguinidade">
+                                <GitBranch className="w-4 h-4" />
+                              </Button>
+                            </Link>
                             <Button size="sm" variant="ghost" onClick={() => openEdit(bird)}>
                               <Edit2 className="w-4 h-4" />
                             </Button>

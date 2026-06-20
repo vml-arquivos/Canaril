@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS } from "@shared/constants";
-import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart } from "lucide-react";
+import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
@@ -215,6 +215,9 @@ export default function Couples() {
                     </div>
                   )}
                 </div>
+
+                <CoiWarning maleId={formData.maleId} femaleId={formData.femaleId} />
+
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="outline" onClick={closeDialog}>
                     Cancelar
@@ -354,6 +357,34 @@ export default function Couples() {
         }}
       />
     </DashboardLayout>
+  );
+}
+
+function CoiWarning({ maleId, femaleId }: { maleId: string; femaleId: string }) {
+  const enabled = !!maleId && !!femaleId;
+  const { data } = trpc.genetics.coiForPair.useQuery(
+    { maleId: parseInt(maleId || "0"), femaleId: parseInt(femaleId || "0") },
+    { enabled }
+  );
+
+  if (!enabled || !data) return null;
+
+  const config = {
+    low: { label: "Parentesco baixo ou ausente — situação genética saudável.", className: "bg-green-50 border-green-200 text-green-800" },
+    moderate: { label: "Parentesco moderado entre os pais — vale acompanhar com atenção.", className: "bg-yellow-50 border-yellow-200 text-yellow-800" },
+    high: { label: "Parentesco ALTO entre os pais — risco genético elevado para os filhotes. Considere outro par.", className: "bg-red-50 border-red-300 text-red-800" },
+  } as const;
+
+  const c = config[data.risk as keyof typeof config];
+
+  return (
+    <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${c.className}`}>
+      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+      <div>
+        <p className="font-semibold">Consanguinidade estimada do filhote: {(data.coi * 100).toFixed(1)}%</p>
+        <p>{c.label}</p>
+      </div>
+    </div>
   );
 }
 

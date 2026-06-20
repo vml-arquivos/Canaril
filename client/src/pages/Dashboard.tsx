@@ -2,13 +2,15 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
-import { Bird, Egg, Heart, Feather } from "lucide-react";
+import { Bird, Egg, Heart, Feather, Calendar, CheckCircle2 } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 
 export default function Dashboard() {
   const { user, isAuthenticated } = useAuth();
   const { data: stats, isLoading } = trpc.management.dashboard.stats.useQuery();
+  const { data: reminders, refetch: refetchReminders } = trpc.reminders.upcoming.useQuery({ daysAhead: 30 });
+  const markCompleted = trpc.reminders.markCompleted.useMutation({ onSuccess: () => refetchReminders() });
 
   if (!isAuthenticated) {
     return (
@@ -124,22 +126,36 @@ export default function Dashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Informações do Criadouro</CardTitle>
-              <CardDescription>Canário Lima - Brasília, DF</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-amber-600" />
+                Próximos Lembretes
+              </CardTitle>
+              <CardDescription>Calendário automático de reprodução (próximos 30 dias)</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div>
-                <p className="font-semibold text-gray-700">Telefone</p>
-                <p className="text-gray-600">(61) 9999-9999</p>
-              </div>
-              <div>
-                <p className="font-semibold text-gray-700">Email</p>
-                <p className="text-gray-600">contato@canarioslima.com.br</p>
-              </div>
-              <div>
-                <p className="font-semibold text-gray-700">Localização</p>
-                <p className="text-gray-600">Brasília, Distrito Federal</p>
-              </div>
+            <CardContent>
+              {reminders && reminders.length > 0 ? (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {reminders.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2 border-b pb-2 text-sm">
+                      <div>
+                        <p className="font-medium text-gray-800">{r.eventLabel}</p>
+                        <p className="text-gray-400 text-xs">{new Date(r.expectedDate).toLocaleDateString("pt-BR")}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-green-600 shrink-0"
+                        onClick={() => markCompleted.mutate({ id: r.id, completed: true })}
+                        title="Marcar como concluído"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">Nenhum lembrete pendente nos próximos 30 dias.</p>
+              )}
             </CardContent>
           </Card>
         </div>

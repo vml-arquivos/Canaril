@@ -433,6 +433,73 @@ export const breeder_settings = pgTable("breeder_settings", {
 });
 
 /**
+ * Registros de Saúde e Alimentação
+ *
+ * Cobre vacinas, tratamentos, pesagens, quarentena e diário alimentar num
+ * único histórico por pássaro — mais simples de consultar do que separar
+ * em várias tabelas, já que tudo é "um evento numa data, com uma nota".
+ */
+export const health_records = pgTable("health_records", {
+  id: serial("id").primaryKey(),
+  birdId: integer("birdId").notNull(),
+  type: varchar("type", { length: 20 }).notNull(), // vaccine | treatment | weight | quarantine | diet | other
+  description: varchar("description", { length: 300 }).notNull(),
+  date: timestamp("date").notNull(),
+  weightGrams: real("weightGrams"), // preenchido quando type = 'weight'
+  dietPhase: varchar("dietPhase", { length: 20 }), // muda | reproducao | descanso — quando type = 'diet'
+  nextDueDate: timestamp("nextDueDate"), // próxima dose/retorno, quando aplicável
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  birdIdx: index("health_records_bird_idx").on(table.birdId),
+  typeIdx: index("health_records_type_idx").on(table.type),
+}));
+
+/**
+ * Lembretes Automáticos de Reprodução
+ *
+ * Gerados automaticamente quando um casal é formado (ver
+ * server/_core/breeding.ts), com as datas estimadas de cada etapa do
+ * ciclo reprodutivo. O criador marca como concluído conforme acontece —
+ * isso também alimenta o calendário/dashboard.
+ */
+export const breeding_reminders = pgTable("breeding_reminders", {
+  id: serial("id").primaryKey(),
+  coupleId: integer("coupleId").notNull(),
+  eventType: varchar("eventType", { length: 30 }).notNull(), // posture_start | candling | egg_return | hatching | ringing | weaning
+  expectedDate: timestamp("expectedDate").notNull(),
+  completed: boolean("completed").default(false).notNull(),
+  completedAt: timestamp("completedAt"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  coupleIdx: index("breeding_reminders_couple_idx").on(table.coupleId),
+  dateIdx: index("breeding_reminders_date_idx").on(table.expectedDate),
+}));
+
+/**
+ * Leituras de Sensores de Ambiente (IoT) — preparo de schema
+ *
+ * Estrutura pronta para receber dados de sensores de temperatura, umidade,
+ * luminosidade e amônia por gaiola/setor, quando o criador instalar esse
+ * tipo de equipamento. Faixas de referência: temperatura 16–24°C, umidade
+ * 40–60% (ver server/_core/iotThresholds.ts).
+ */
+export const cage_sensor_readings = pgTable("cage_sensor_readings", {
+  id: serial("id").primaryKey(),
+  cageId: integer("cageId"),
+  section: varchar("section", { length: 100 }), // alternativa a cageId, pra sensor por setor/galpão inteiro
+  temperatureC: real("temperatureC"),
+  humidityPct: real("humidityPct"),
+  luminosityLux: real("luminosityLux"),
+  ammoniaPpm: real("ammoniaPpm"),
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+}, (table) => ({
+  cageIdx: index("cage_sensor_readings_cage_idx").on(table.cageId),
+  recordedIdx: index("cage_sensor_readings_recorded_idx").on(table.recordedAt),
+}));
+
+/**
  * Types exportados
  */
 export type User = typeof users.$inferSelect;
@@ -458,3 +525,6 @@ export type Judge = typeof judges.$inferSelect;
 export type Score = typeof scores.$inferSelect;
 export type AiJudgeAnalysis = typeof ai_judge_analyses.$inferSelect;
 export type BreederSettings = typeof breeder_settings.$inferSelect;
+export type HealthRecord = typeof health_records.$inferSelect;
+export type BreedingReminder = typeof breeding_reminders.$inferSelect;
+export type CageSensorReading = typeof cage_sensor_readings.$inferSelect;

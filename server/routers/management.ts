@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { birds, ring_batches, rings, couples, clutches, chicks } from "../../drizzle/schema";
+import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
 import { and, eq, desc } from "drizzle-orm";
+import { generateBreedingReminders } from "../_core/breeding";
 
 async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, year: number, startNumber: number, endNumber: number) {
   const now = new Date();
@@ -199,6 +200,30 @@ export const managementRouter = router({
             formationDate: input.formationDate,
             status: "active",
           });
+
+          // Planejador de Acasalamento: gera automaticamente os 6 lembretes
+          // do ciclo reprodutivo (postura, ovoscopia, retorno dos ovos,
+          // eclosão, anilhamento, desmame) com datas estimadas a partir da
+          // formação do casal.
+          const [createdCouple] = await db
+            .select()
+            .from(couples)
+            .where(and(eq(couples.maleId, input.maleId), eq(couples.femaleId, input.femaleId)))
+            .orderBy(desc(couples.id))
+            .limit(1);
+
+          if (createdCouple) {
+            const seeds = generateBreedingReminders(input.formationDate);
+            await db.insert(breeding_reminders).values(
+              seeds.map((s) => ({
+                coupleId: createdCouple.id,
+                eventType: s.eventType,
+                expectedDate: s.expectedDate,
+                notes: s.notes,
+              }))
+            );
+          }
+
           return { success: true };
         } catch (error) {
           console.error("Error creating couple:", error);
