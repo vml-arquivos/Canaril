@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { birds, rings } from "../../drizzle/schema";
+import { bird_genetic_inference_logs, bird_genetic_profiles, birds, official_bird_classes, rings } from "../../drizzle/schema";
 import { eq, desc, and, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { generateBirdDisplayTitle, deriveLegacyColorCode, deriveLegacySpecialtyCode } from "../_core/birdIdentity";
+import { interpretOfficialClass } from "../_core/officialClassInterpreter";
 
 // Schema reutilizável para birthDate: aceita Date (superjson) ou string 'YYYY-MM-DD'
 const birthDateSchema = z
@@ -18,6 +20,98 @@ function normalizeBirthDate(raw: Date | string | null | undefined): Date | null 
   // string 'YYYY-MM-DD' — usa T12:00:00Z para evitar off-by-one de fuso
   const d = new Date(raw + "T12:00:00Z");
   return isNaN(d.getTime()) ? null : d;
+}
+
+
+const birdIdentitySchema = {
+  displayTitle: z.string().max(250).optional().nullable(),
+  nickname: z.string().max(100).optional().nullable(),
+  speciesName: z.string().max(50).optional().nullable(),
+  modality: z.string().max(20).optional().nullable(),
+  breedName: z.string().max(100).optional().nullable(),
+  officialClassId: z.number().int().positive().optional().nullable(),
+};
+
+type DbClient = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+async function getOfficialClassById(db: DbClient, officialClassId?: number | null) {
+  if (!officialClassId) return null;
+  const [cls] = await db
+    .select()
+    .from(official_bird_classes)
+    .where(eq(official_bird_classes.id, officialClassId))
+    .limit(1);
+  return cls ?? null;
+}
+
+async function upsertGeneticProfileFromOfficialClass(db: DbClient, birdId: number, officialClass: Awaited<ReturnType<typeof getOfficialClassById>>) {
+  if (!officialClass) return;
+
+  const interpreted = interpretOfficialClass(officialClass.officialName, officialClass.modality as "COR" | "PORTE");
+  const now = new Date();
+
+  const payload = {
+    birdId,
+    officialClassId: officialClass.id,
+    modality: officialClass.modality,
+    officialCode: officialClass.officialCode,
+    officialName: officialClass.officialName,
+    officialAbbreviation: officialClass.abbreviation ?? null,
+    officialGroup: officialClass.groupName ?? null,
+    breedName: officialClass.breedName ?? interpreted.breedName ?? null,
+    bitola: officialClass.bitola ?? null,
+    phenotypeName: officialClass.officialName,
+    visualColorDescription: officialClass.officialName,
+    lipochromeBase: interpreted.lipochromeBase ?? null,
+    melaninSeries: interpreted.melaninSeries ?? null,
+    featherCategory: interpreted.featherCategory ?? null,
+    crestType: interpreted.crestType ?? null,
+    dominantWhiteStatus: interpreted.dominantWhiteStatus ?? null,
+    recessiveWhiteStatus: interpreted.recessiveWhiteStatus ?? null,
+    ivoryStatus: interpreted.ivoryStatus ?? null,
+    redFactorStatus: interpreted.redFactorStatus ?? null,
+    visibleMutations: interpreted.visibleMutations ?? [],
+    unknownTraits: ["Genes ocultos não confirmados apenas pela classe oficial"],
+    confidenceScore: interpreted.confidenceScore ?? 0.2,
+    geneticWarnings: interpreted.geneticWarnings ?? [],
+    nutritionRecommendations: interpreted.nutritionRecommendations ?? [],
+    manualOverride: false,
+    lastInferenceAt: now,
+    updatedAt: now,
+  };
+
+  const [existing] = await db
+    .select()
+    .from(bird_genetic_profiles)
+    .where(eq(bird_genetic_profiles.birdId, birdId))
+    .limit(1);
+
+  if (existing?.manualOverride) {
+    await db.insert(bird_genetic_inference_logs).values({
+      birdId,
+      sourceType: "OFFICIAL_CLASS",
+      beforeJson: existing,
+      afterJson: payload,
+      confidence: interpreted.confidenceScore ?? 0.2,
+      reason: "Classe oficial selecionada, mas perfil manualOverride=true não foi sobrescrito.",
+    });
+    return;
+  }
+
+  if (existing) {
+    await db.update(bird_genetic_profiles).set(payload).where(eq(bird_genetic_profiles.id, existing.id));
+  } else {
+    await db.insert(bird_genetic_profiles).values({ ...payload, createdAt: now });
+  }
+
+  await db.insert(bird_genetic_inference_logs).values({
+    birdId,
+    sourceType: "OFFICIAL_CLASS",
+    beforeJson: existing ?? null,
+    afterJson: payload,
+    confidence: interpreted.confidenceScore ?? 0.2,
+    reason: `Perfil genético criado/atualizado a partir da classe oficial ${officialClass.officialCode} — ${officialClass.officialName}.`,
+  });
 }
 
 export const birdsRouter = router({
@@ -76,14 +170,15 @@ export const birdsRouter = router({
   create: protectedProcedure
     .input(z.object({
       ring: z.string().min(1, "Anilha é obrigatória"),
-      specialty_code: z.string().min(1, "Especialidade é obrigatória"),
+      specialty_code: z.string().optional().nullable(),
       sex: z.string().min(1, "Sexo é obrigatório"),
-      color_code: z.string().min(1, "Cor é obrigatória"),
+      color_code: z.string().optional().nullable(),
       birthDate: birthDateSchema,
       procedence: z.string().optional().nullable(),
       fatherId: z.number().optional().nullable(),
       motherId: z.number().optional().nullable(),
       notes: z.string().optional().nullable(),
+      ...birdIdentitySchema,
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -104,13 +199,36 @@ export const birdsRouter = router({
       }
 
       const birthDate = normalizeBirthDate(input.birthDate);
+      const officialClass = await getOfficialClassById(db, input.officialClassId);
+      const speciesName = input.speciesName?.trim() || "Canário";
+      const modality = input.modality?.trim() || officialClass?.modality || null;
+      const breedName = input.breedName?.trim() || officialClass?.breedName || null;
+      const specialtyCode = input.specialty_code?.trim() || deriveLegacySpecialtyCode(breedName, modality);
+      const colorCode = input.color_code?.trim() || deriveLegacyColorCode(officialClass?.officialName);
+      const displayTitle = input.displayTitle?.trim() || generateBirdDisplayTitle({
+        ring: input.ring,
+        sex: input.sex,
+        specialtyCode,
+        colorCode,
+        speciesName,
+        modality,
+        breedName,
+        officialName: officialClass?.officialName,
+        nickname: input.nickname,
+      });
 
       try {
         const [createdBird] = await db.insert(birds).values({
           ring: input.ring,
-          specialty_code: input.specialty_code,
+          displayTitle,
+          nickname: input.nickname?.trim() || null,
+          speciesName,
+          modality,
+          breedName,
+          officialClassId: officialClass?.id ?? input.officialClassId ?? null,
+          specialty_code: specialtyCode,
           sex: input.sex,
-          color_code: input.color_code,
+          color_code: colorCode,
           birthDate: birthDate,
           procedence: input.procedence || null,
           fatherId: input.fatherId ?? null,
@@ -118,6 +236,10 @@ export const birdsRouter = router({
           notes: input.notes || null,
           status: "active",
         }).returning();
+
+        if (createdBird && officialClass) {
+          await upsertGeneticProfileFromOfficialClass(db, createdBird.id, officialClass);
+        }
 
         if (createdBird) {
           // Marca a anilha como em uso na tabela rings (se existir lá)
@@ -175,6 +297,7 @@ export const birdsRouter = router({
       status: z.string().optional(),
       isPublic: z.boolean().optional(),
       notes: z.string().optional().nullable(),
+      ...birdIdentitySchema,
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -186,10 +309,49 @@ export const birdsRouter = router({
       const birthDate = rawBirthDate !== undefined ? normalizeBirthDate(rawBirthDate) : undefined;
 
       try {
-        const updateFields: Record<string, unknown> = { ...fields, updatedAt: new Date() };
+        const [existingBird] = await db.select().from(birds).where(eq(birds.id, id)).limit(1);
+        if (!existingBird) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
+        }
+
+        const officialClass = await getOfficialClassById(db, input.officialClassId ?? existingBird.officialClassId);
+        const nextRing = input.ring ?? existingBird.ring;
+        const nextSex = input.sex ?? existingBird.sex;
+        const nextSpeciesName = input.speciesName?.trim() || existingBird.speciesName || "Canário";
+        const nextModality = input.modality?.trim() || existingBird.modality || officialClass?.modality || null;
+        const nextBreedName = input.breedName?.trim() || existingBird.breedName || officialClass?.breedName || null;
+        const nextSpecialty = input.specialty_code?.trim() || existingBird.specialty_code || deriveLegacySpecialtyCode(nextBreedName, nextModality);
+        const nextColor = input.color_code?.trim() || existingBird.color_code || deriveLegacyColorCode(officialClass?.officialName);
+        const nextTitle = input.displayTitle?.trim() || generateBirdDisplayTitle({
+          ring: nextRing,
+          sex: nextSex,
+          specialtyCode: nextSpecialty,
+          colorCode: nextColor,
+          speciesName: nextSpeciesName,
+          modality: nextModality,
+          breedName: nextBreedName,
+          officialName: officialClass?.officialName,
+          nickname: input.nickname ?? existingBird.nickname,
+        });
+
+        const updateFields: Record<string, unknown> = {
+          ...fields,
+          displayTitle: nextTitle,
+          speciesName: nextSpeciesName,
+          modality: nextModality,
+          breedName: nextBreedName,
+          officialClassId: officialClass?.id ?? input.officialClassId ?? existingBird.officialClassId ?? null,
+          updatedAt: new Date(),
+        };
+        if (input.nickname !== undefined) updateFields.nickname = input.nickname?.trim() || null;
         if (birthDate !== undefined) updateFields.birthDate = birthDate;
 
         await db.update(birds).set(updateFields as any).where(eq(birds.id, id));
+
+        if (officialClass) {
+          await upsertGeneticProfileFromOfficialClass(db, id, officialClass);
+        }
+
         return { success: true };
       } catch (error: any) {
         console.error("Error updating bird:", error);

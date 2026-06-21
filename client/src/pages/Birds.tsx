@@ -23,6 +23,13 @@ import { BirdPhotoIdentifier } from "@/components/BirdPhotoIdentifier";
 
 const emptyForm = {
   ring: "",
+  nickname: "",
+  speciesName: "Canário",
+  modality: "COR",
+  officialClassId: "",
+  breedName: "",
+  fatherId: "",
+  motherId: "",
   specialty: "",
   sex: "",
   color: "",
@@ -32,15 +39,86 @@ const emptyForm = {
   isPublic: false,
 };
 
+const SPECIES_OPTIONS = [
+  { id: "Canário", name: "Canário" },
+  { id: "Ave ornamental", name: "Ave ornamental / outra espécie" },
+];
+
+const MODALITY_OPTIONS = [
+  { id: "COR", name: "Canário de Cor" },
+  { id: "PORTE", name: "Canário de Porte" },
+  { id: "CANTO", name: "Canário de Canto" },
+  { id: "OUTRA", name: "Outra modalidade" },
+];
+
+function deriveColorFromOfficialName(name?: string | null) {
+  const upper = (name ?? "").toUpperCase();
+  if (upper.includes("RUBINO")) return "vermelho_intenso";
+  if (upper.includes("LUTINO")) return "amarelo_intenso";
+  if (upper.includes("ALBINO")) return "albino";
+  if (upper.includes("BRANCO")) return "branco";
+  if (upper.includes("VERMELHO") && upper.includes("MOSAICO")) return "vermelho_mosaico";
+  if (upper.includes("VERMELHO") && upper.includes("NEVADO")) return "vermelho_nevado";
+  if (upper.includes("VERMELHO")) return "vermelho_intenso";
+  if (upper.includes("AMARELO") && upper.includes("MOSAICO")) return "amarelo_mosaico";
+  if (upper.includes("AMARELO") && upper.includes("NEVADO")) return "amarelo_nevado";
+  if (upper.includes("OPALINO")) return "opalino";
+  if (upper.includes("FEO")) return "feo";
+  if (upper.includes("TOPÁZIO") || upper.includes("TOPAZIO")) return "topázio";
+  return "";
+}
+
+function deriveSpecialtyFromOfficialClass(cls?: { breedName?: string | null; modality?: string | null }) {
+  const breed = (cls?.breedName ?? "").toLowerCase();
+  const exact = SPECIALTIES.find((s) => s.name.toLowerCase() === breed || s.id.toLowerCase() === breed);
+  if (exact) return exact.id;
+  const partial = SPECIALTIES.find((s) => breed && (breed.includes(s.name.toLowerCase()) || s.name.toLowerCase().includes(breed)));
+  if (partial) return partial.id;
+  if (breed.includes("gloster") && breed.includes("corona")) return "gloster_corona";
+  if (breed.includes("gloster")) return "gloster_consort";
+  if (breed.includes("frisado") && breed.includes("norte")) return "frisado_norte";
+  if (breed.includes("frisado") && breed.includes("sul")) return "frisado_sul";
+  if (breed.includes("fife")) return "fife";
+  if (breed.includes("border")) return "border";
+  if (breed.includes("norwich")) return "norwich";
+  if (breed.includes("yorkshire")) return "yorkshire";
+  if (breed.includes("lizard")) return "lizard";
+  if (breed.includes("crest")) return "crest";
+  if (breed.includes("lancashire")) return "lancashire";
+  return cls?.modality === "PORTE" ? "belga_clássico" : "belga_clássico";
+}
+
+function labelFromId<T extends { id: string; name: string }>(items: readonly T[], id?: string | null) {
+  return items.find((i) => i.id === id)?.name ?? id ?? "";
+}
+
+function previewTitle(form: typeof emptyForm, officialName?: string | null) {
+  const modalityName = MODALITY_OPTIONS.find((m) => m.id === form.modality)?.name ?? "Canário";
+  const breedOrMode = form.breedName || modalityName || labelFromId(SPECIALTIES, form.specialty) || "Canário";
+  const phenotype = officialName || labelFromId(COLORS, form.color) || "Classe não informada";
+  const sex = labelFromId(SEXES, form.sex) || "Sexo não informado";
+  return `${form.ring || "Sem anilha"} — ${breedOrMode} — ${phenotype} — ${sex}`;
+}
+
 export default function Birds() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [officialClassSearch, setOfficialClassSearch] = useState("");
 
   // Genótipo draft — usado apenas no modal de CRIAÇÃO (sem birdId ainda)
   const [genotypeDraft, setGenotypeDraft] = useState<GenotypeDraft>(EMPTY_GENOTYPE_DRAFT);
 
   const { data: birds, refetch } = trpc.birds.list.useQuery({});
+  const { data: officialClassResults } = trpc.catalog.searchOfficialClasses.useQuery(
+    {
+      query: officialClassSearch || undefined,
+      modality: formData.modality === "COR" || formData.modality === "PORTE" ? formData.modality : undefined,
+      limit: 50,
+      offset: 0,
+    },
+    { enabled: open && (formData.modality === "COR" || formData.modality === "PORTE") }
+  );
   const [fichaBird, setFichaBird] = useState<NonNullable<typeof birds>[number] | null>(null);
   const [view, setView] = useState<"grid" | "list">("grid");
   const { data: primaryPhotos } = trpc.photos.primaryByEntityType.useQuery({ entityType: "bird" });
@@ -129,7 +207,24 @@ export default function Birds() {
     if (open && !editingId && nextRing?.fullCode && !formData.ring) {
       setFormData(prev => ({ ...prev, ring: nextRing.fullCode }));
     }
-  }, [open, editingId, nextRing]);
+  }, [open, editingId, nextRing, formData.ring]);
+
+  const selectedOfficialClass = officialClassResults?.items.find((cls) => String(cls.id) === formData.officialClassId);
+
+  useEffect(() => {
+    if (!selectedOfficialClass) return;
+    setFormData((prev) => {
+      const nextSpecialty = prev.specialty || deriveSpecialtyFromOfficialClass(selectedOfficialClass);
+      const nextColor = prev.color || deriveColorFromOfficialName(selectedOfficialClass.officialName);
+      return {
+        ...prev,
+        modality: selectedOfficialClass.modality,
+        breedName: selectedOfficialClass.breedName ?? prev.breedName,
+        specialty: nextSpecialty,
+        color: nextColor,
+      };
+    });
+  }, [selectedOfficialClass]);
 
   const closeDialog = () => {
     setOpen(false);
@@ -137,12 +232,14 @@ export default function Birds() {
     setFormData(emptyForm);
     setPendingPhoto(null);
     setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
+    setOfficialClassSearch("");
   };
 
   const openCreate = () => {
     setEditingId(null);
     setFormData(emptyForm);
     setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
+    setOfficialClassSearch("");
     setOpen(true);
   };
 
@@ -150,6 +247,13 @@ export default function Birds() {
     setEditingId(bird.id);
     setFormData({
       ring: bird.ring,
+      nickname: bird.nickname ?? "",
+      speciesName: bird.speciesName ?? "Canário",
+      modality: bird.modality ?? "COR",
+      officialClassId: bird.officialClassId ? String(bird.officialClassId) : "",
+      breedName: bird.breedName ?? "",
+      fatherId: bird.fatherId ? String(bird.fatherId) : "",
+      motherId: bird.motherId ? String(bird.motherId) : "",
       specialty: bird.specialty_code,
       sex: bird.sex,
       color: bird.color_code,
@@ -158,23 +262,30 @@ export default function Birds() {
       notes: bird.notes ?? "",
       isPublic: bird.isPublic ?? false,
     });
+    setOfficialClassSearch(bird.breedName ?? "");
     setOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.ring || !formData.specialty || !formData.sex || !formData.color) {
-      toast.error("Preencha todos os campos obrigatórios");
+    if (!formData.ring || !formData.sex) {
+      toast.error("Informe anilha e sexo. Classe oficial, especialidade e cor podem ser preenchidas por select ou inferidas pela classe oficial.");
       return;
     }
 
-    // birthDate é enviado como string 'YYYY-MM-DD' (ou undefined se vazio)
-    // O servidor aceita string ISO via birthDateSchema (z.union([z.date(), z.string()]))
+    const officialId = formData.officialClassId ? Number(formData.officialClassId) : undefined;
     const payload = {
       ring: formData.ring,
-      specialty_code: formData.specialty,
+      nickname: formData.nickname || undefined,
+      speciesName: formData.speciesName || "Canário",
+      modality: formData.modality || undefined,
+      officialClassId: Number.isFinite(officialId) ? officialId : undefined,
+      breedName: formData.breedName || undefined,
+      fatherId: formData.fatherId && formData.fatherId !== "none" ? Number(formData.fatherId) : undefined,
+      motherId: formData.motherId && formData.motherId !== "none" ? Number(formData.motherId) : undefined,
+      specialty_code: formData.specialty || undefined,
       sex: formData.sex,
-      color_code: formData.color,
+      color_code: formData.color || undefined,
       birthDate: formData.birthDate || undefined,
       procedence: formData.procedence || undefined,
       notes: formData.notes || undefined,
@@ -244,6 +355,137 @@ export default function Birds() {
                     }}
                   />
                 )}
+                <div className="rounded-xl border bg-blue-50/60 p-3 space-y-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-sm">Ficha inteligente do pássaro</h3>
+                    <p className="text-xs text-gray-500">Use os selects oficiais para gerar título, ficha genética e dados para confronto de casais.</p>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="nickname">Apelido / nome interno</Label>
+                      <Input
+                        id="nickname"
+                        value={formData.nickname}
+                        onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
+                        placeholder="Ex: Matriz 01, Campeão, Fêmea Topete"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="speciesName">Espécie *</Label>
+                      <Select value={formData.speciesName} onValueChange={(value) => setFormData({ ...formData, speciesName: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SPECIES_OPTIONS.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="modality">Modalidade</Label>
+                      <Select
+                        value={formData.modality}
+                        onValueChange={(value) => setFormData({ ...formData, modality: value, officialClassId: "" })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MODALITY_OPTIONS.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="breedName">Raça / linhagem visual</Label>
+                      <Input
+                        id="breedName"
+                        value={formData.breedName}
+                        onChange={(e) => setFormData({ ...formData, breedName: e.target.value })}
+                        placeholder="Preenchido pela classe oficial quando houver"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="officialClassSearch">Classe oficial FOB/OBJO</Label>
+                    <Input
+                      id="officialClassSearch"
+                      value={officialClassSearch}
+                      onChange={(e) => setOfficialClassSearch(e.target.value)}
+                      placeholder="Busque para filtrar: ágata, gloster, branco, vermelho, mosaico..."
+                      disabled={formData.modality !== "COR" && formData.modality !== "PORTE"}
+                    />
+                    <Select
+                      value={formData.officialClassId}
+                      onValueChange={(value) => setFormData({ ...formData, officialClassId: value })}
+                      disabled={formData.modality !== "COR" && formData.modality !== "PORTE"}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma classe oficial do catálogo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(officialClassResults?.items ?? []).map((cls) => (
+                          <SelectItem key={cls.id} value={String(cls.id)}>
+                            {cls.officialCode} — {cls.officialName}
+                            {cls.breedName ? ` · ${cls.breedName}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedOfficialClass && (
+                      <p className="text-xs text-green-700 bg-green-50 rounded p-2">
+                        Selecionado: {selectedOfficialClass.officialCode} — {selectedOfficialClass.officialName}.
+                        O sistema criará/atualizará o perfil genético interpretado automaticamente.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="fatherId">Pai conhecido</Label>
+                      <Select value={formData.fatherId} onValueChange={(value) => setFormData({ ...formData, fatherId: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Não informado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Não informado</SelectItem>
+                          {(birds ?? []).filter((b) => b.id !== editingId && b.sex !== "fêmea").map((b) => (
+                            <SelectItem key={b.id} value={String(b.id)}>
+                              {(b.displayTitle || b.ring)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="motherId">Mãe conhecida</Label>
+                      <Select value={formData.motherId} onValueChange={(value) => setFormData({ ...formData, motherId: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Não informado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Não informado</SelectItem>
+                          {(birds ?? []).filter((b) => b.id !== editingId && b.sex !== "macho").map((b) => (
+                            <SelectItem key={b.id} value={String(b.id)}>
+                              {(b.displayTitle || b.ring)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-white p-2">
+                    <p className="text-xs text-gray-400 uppercase">Título automático</p>
+                    <p className="text-sm font-medium text-gray-900">{previewTitle(formData, selectedOfficialClass?.officialName)}</p>
+                  </div>
+                </div>
+
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="ring" className="flex items-center gap-2">
@@ -285,7 +527,7 @@ export default function Birds() {
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="specialty">Especialidade *</Label>
+                    <Label htmlFor="specialty">Especialidade / resumo</Label>
                     <Select value={formData.specialty} onValueChange={(value) => setFormData({ ...formData, specialty: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
@@ -315,7 +557,7 @@ export default function Birds() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="color">Cor/Mutação *</Label>
+                    <Label htmlFor="color">Cor/Mutação / resumo</Label>
                     <Select value={formData.color} onValueChange={(value) => setFormData({ ...formData, color: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
@@ -457,9 +699,10 @@ export default function Birds() {
                         )}
                       </div>
                       <div className="p-2.5">
-                        <p className="font-mono font-bold text-sm text-gray-900 truncate">{bird.ring}</p>
+                        <p className="font-bold text-sm text-gray-900 truncate">{bird.displayTitle || bird.ring}</p>
+                        {bird.nickname && <p className="text-xs text-blue-600 truncate">{bird.nickname}</p>}
                         <p className="text-xs text-gray-500 truncate">
-                          {SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name ?? bird.specialty_code}
+                          {bird.breedName || SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name || bird.specialty_code}
                         </p>
                         <p className="text-xs text-gray-400 truncate">
                           {COLORS.find((c) => c.id === bird.color_code)?.name ?? bird.color_code}
@@ -488,8 +731,8 @@ export default function Birds() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Anilha</TableHead>
-                      <TableHead>Especialidade</TableHead>
+                      <TableHead>Pássaro</TableHead>
+                      <TableHead>Identificação</TableHead>
                       <TableHead>Sexo</TableHead>
                       <TableHead>Cor</TableHead>
                       <TableHead>Data Nascimento</TableHead>
@@ -504,8 +747,18 @@ export default function Birds() {
                         className="cursor-pointer hover:bg-gray-50"
                         onClick={() => setFichaBird(bird)}
                       >
-                        <TableCell className="font-mono font-semibold">{bird.ring}</TableCell>
-                        <TableCell>{SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name ?? bird.specialty_code}</TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-semibold text-gray-900">{bird.displayTitle || bird.ring}</p>
+                            {bird.nickname && <p className="text-xs text-blue-600">{bird.nickname}</p>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p>{bird.breedName || SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name || bird.specialty_code}</p>
+                            <p className="text-xs text-gray-400 font-mono">{bird.ring}</p>
+                          </div>
+                        </TableCell>
                         <TableCell>{SEXES.find((s) => s.id === bird.sex)?.name ?? bird.sex}</TableCell>
                         <TableCell>{COLORS.find((c) => c.id === bird.color_code)?.name ?? bird.color_code}</TableCell>
                         <TableCell>{bird.birthDate ? new Date(bird.birthDate).toLocaleDateString("pt-BR") : "-"}</TableCell>

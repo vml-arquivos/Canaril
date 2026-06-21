@@ -10,6 +10,12 @@ import { Link } from "wouter";
 type BirdRecord = {
   id: number;
   ring: string;
+  displayTitle?: string | null;
+  nickname?: string | null;
+  speciesName?: string | null;
+  modality?: string | null;
+  breedName?: string | null;
+  officialClassId?: number | null;
   specialty_code: string;
   color_code: string;
   sex: string;
@@ -70,7 +76,7 @@ export function BirdFicha({
     <Dialog open={!!bird} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-mono">{bird.ring}</DialogTitle>
+          <DialogTitle>{bird.displayTitle || bird.ring}</DialogTitle>
         </DialogHeader>
 
         {/* Foto + identificação */}
@@ -85,8 +91,10 @@ export function BirdFicha({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-lg font-bold text-gray-900">{specialty?.name ?? bird.specialty_code}</p>
+            {bird.nickname && <p className="text-sm font-semibold text-blue-600">{bird.nickname}</p>}
+            <p className="text-lg font-bold text-gray-900">{bird.breedName || specialty?.name || bird.specialty_code}</p>
             <p className="text-sm text-gray-500">{color?.name ?? bird.color_code} · {sex?.name ?? bird.sex}</p>
+            <p className="text-xs text-gray-400">{bird.speciesName || "Canário"}{bird.modality ? ` · ${bird.modality}` : ""}</p>
             <span className="inline-block mt-2 px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">
               {bird.status}
             </span>
@@ -105,6 +113,8 @@ export function BirdFicha({
           <InfoItem icon={Ruler} label="Porte" value={specialty?.size ?? "—"} />
           <InfoItem icon={Scale} label="Peso de referência" value={specialty?.weight ?? "—"} />
           <InfoItem icon={MapPin} label="Procedência" value={bird.procedence || "Plantel próprio"} />
+          <InfoItem icon={Info} label="Espécie" value={bird.speciesName || "Canário"} />
+          <InfoItem icon={Info} label="Modalidade" value={bird.modality || "—"} />
         </div>
 
         {/* Pais */}

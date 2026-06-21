@@ -146,6 +146,17 @@ export const ring_batches = pgTable("ring_batches", {
 export const birds = pgTable("birds", {
   id: serial("id").primaryKey(),
   ring: varchar("ring", { length: 50 }).notNull().unique(),
+  // Título humano gerado automaticamente para identificação rápida no plantel.
+  // Ex.: GF-003-2026-027 — Gloster Consort — Opalino — Macho
+  displayTitle: varchar("displayTitle", { length: 250 }),
+  // Apelido opcional escolhido pelo criador, sem substituir a anilha oficial.
+  nickname: varchar("nickname", { length: 100 }),
+  // Campos de classificação evoluída. Mantidos nullable para compatibilidade
+  // total com os pássaros já cadastrados antes da ficha genética oficial.
+  speciesName: varchar("speciesName", { length: 50 }).default("Canário"),
+  modality: varchar("modality", { length: 20 }), // COR | PORTE | CANTO | OUTRA
+  breedName: varchar("breedName", { length: 100 }),
+  officialClassId: integer("officialClassId"),
   specialty_code: varchar("specialty_code", { length: 50 }).notNull(),
   sex: varchar("sex", { length: 20 }).notNull(),
   color_code: varchar("color_code", { length: 50 }).notNull(),
@@ -164,6 +175,10 @@ export const birds = pgTable("birds", {
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   ringIdx: index("birds_ring_idx").on(table.ring),
+  displayTitleIdx: index("birds_display_title_idx").on(table.displayTitle),
+  officialClassIdx: index("birds_official_class_idx").on(table.officialClassId),
+  speciesIdx: index("birds_species_idx").on(table.speciesName),
+  modalityIdx: index("birds_modality_idx").on(table.modality),
   specialtyIdx: index("birds_specialty_idx").on(table.specialty_code),
   colorIdx: index("birds_color_idx").on(table.color_code),
   cageIdx: index("birds_cage_idx").on(table.cageId),
