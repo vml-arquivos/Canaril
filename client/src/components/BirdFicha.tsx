@@ -196,6 +196,10 @@ function GeneticProfileSection({ birdId, sex }: { birdId: number; sex: string })
   const [open, setOpen] = useState(false);
   const { data: genotype } = trpc.mendelian.getGenotype.useQuery(birdId);
   const { data: coiData } = trpc.genetics.coi.useQuery(birdId);
+  const { data: geneProfile } = trpc.geneticProfile.getByBird.useQuery(
+    { birdId },
+    { enabled: open }
+  );
 
   const hasGenotype = genotype && (
     genotype.backgroundColor ||
@@ -257,6 +261,43 @@ function GeneticProfileSection({ birdId, sex }: { birdId: number; sex: string })
 
       {open && (
         <div className="space-y-4">
+          {/* Classe oficial cadastrada via geneticProfile router */}
+          {geneProfile && (geneProfile.officialCode || geneProfile.officialName) && (
+            <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-3">
+              <p className="text-xs font-semibold text-amber-700 uppercase mb-2">Classe Oficial Cadastrada</p>
+              <div className="space-y-1">
+                {geneProfile.officialCode && (
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs font-mono bg-amber-100 px-1.5 py-0.5 rounded text-amber-800">{geneProfile.officialCode}</code>
+                    {geneProfile.modality && <Badge variant="outline" className="text-xs">{geneProfile.modality}</Badge>}
+                    {geneProfile.manualOverride && <Badge className="bg-green-100 text-green-800 text-xs">✓ Verificado</Badge>}
+                  </div>
+                )}
+                {geneProfile.officialName && (
+                  <p className="text-xs text-gray-700 font-medium">{geneProfile.officialName}</p>
+                )}
+                {geneProfile.lipochromeBase && (
+                  <GeneticTraitRow label="Lipocromo" value={geneProfile.lipochromeBase} confidence={geneProfile.manualOverride ? "CONFIRMADO" : "INFERIDO"} />
+                )}
+                {geneProfile.melaninSeries && (
+                  <GeneticTraitRow label="Melanina" value={geneProfile.melaninSeries} confidence={geneProfile.manualOverride ? "CONFIRMADO" : "INFERIDO"} />
+                )}
+                {geneProfile.featherCategory && (
+                  <GeneticTraitRow label="Categoria" value={geneProfile.featherCategory} confidence={geneProfile.manualOverride ? "CONFIRMADO" : "INFERIDO"} />
+                )}
+                {geneProfile.confidenceScore != null && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-gray-400">Confiança:</span>
+                    <div className="flex-1 bg-gray-200 rounded-full h-1.5 max-w-24">
+                      <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: `${Math.round((geneProfile.confidenceScore ?? 0) * 100)}%` }} />
+                    </div>
+                    <span className="text-xs font-medium text-gray-600">{Math.round((geneProfile.confidenceScore ?? 0) * 100)}%</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {!hasGenotype ? (
             <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/50 p-4 text-center">
               <Dna className="w-8 h-8 text-amber-300 mx-auto mb-2" />

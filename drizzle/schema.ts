@@ -633,6 +633,55 @@ export const bird_genetic_profiles = pgTable("bird_genetic_profiles", {
 }));
 
 /**
+ * Análises fenotípicas por foto (IA)
+ *
+ * Registra cada análise feita pela IA com base em fotos do pássaro.
+ * O usuário deve CONFIRMAR antes de salvar no perfil genético.
+ */
+export const bird_photo_analyses = pgTable("bird_photo_analyses", {
+  id: serial("id").primaryKey(),
+  birdId: integer("birdId").notNull(),
+  photos: jsonb("photos").$type<string[]>(),
+  aiProvider: varchar("aiProvider", { length: 50 }).default("gemini"),
+  modelUsed: varchar("modelUsed", { length: 100 }),
+  rawResponseJson: jsonb("rawResponseJson"),
+  visualTraitsJson: jsonb("visualTraitsJson"),
+  possibleOfficialClassesJson: jsonb("possibleOfficialClassesJson"),
+  confidenceOverall: real("confidenceOverall").default(0),
+  warnings: jsonb("warnings").$type<string[]>(),
+  recommendations: jsonb("recommendations").$type<string[]>(),
+  fieldsNotConfirmed: jsonb("fieldsNotConfirmed").$type<string[]>(),
+  acceptedByUser: boolean("acceptedByUser").default(false).notNull(),
+  acceptedOfficialClassId: integer("acceptedOfficialClassId"),
+  processingTimeMs: integer("processingTimeMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  birdIdx: index("bird_photo_analyses_bird_idx").on(table.birdId),
+}));
+
+/**
+ * Log de inferências genéticas
+ *
+ * Registra cada vez que o perfil genético de um pássaro é atualizado,
+ * com a fonte, o estado anterior e o novo estado.
+ * Fontes: PHOTO_AI | OFFICIAL_CLASS | PEDIGREE | OFFSPRING_RESULT | MANUAL
+ */
+export const bird_genetic_inference_logs = pgTable("bird_genetic_inference_logs", {
+  id: serial("id").primaryKey(),
+  birdId: integer("birdId").notNull(),
+  sourceType: varchar("sourceType", { length: 30 }).notNull(),
+  beforeJson: jsonb("beforeJson"),
+  afterJson: jsonb("afterJson"),
+  confidence: real("confidence").default(0),
+  reason: text("reason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  birdIdx: index("bird_genetic_inference_logs_bird_idx").on(table.birdId),
+  sourceIdx: index("bird_genetic_inference_logs_source_idx").on(table.sourceType),
+}));
+
+/**
  * Types exportados
  */
 export type User = typeof users.$inferSelect;
@@ -666,3 +715,7 @@ export type OfficialBirdClass = typeof official_bird_classes.$inferSelect;
 export type InsertOfficialBirdClass = typeof official_bird_classes.$inferInsert;
 export type BirdGeneticProfile = typeof bird_genetic_profiles.$inferSelect;
 export type InsertBirdGeneticProfile = typeof bird_genetic_profiles.$inferInsert;
+export type BirdPhotoAnalysis = typeof bird_photo_analyses.$inferSelect;
+export type InsertBirdPhotoAnalysis = typeof bird_photo_analyses.$inferInsert;
+export type BirdGeneticInferenceLog = typeof bird_genetic_inference_logs.$inferSelect;
+export type InsertBirdGeneticInferenceLog = typeof bird_genetic_inference_logs.$inferInsert;

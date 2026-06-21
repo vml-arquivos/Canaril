@@ -145,3 +145,163 @@ export const FEATHER_TYPES = [
   { id: "intenso", name: "Intenso (pena curta e lisa)" },
   { id: "nevado", name: "Nevado / Buff (pena longa e macia)" },
 ] as const;
+
+// ============================================================================
+// CATÁLOGOS PARA A SUPERCALCULADORA GENÉTICA DINÂMICA
+// ============================================================================
+
+/**
+ * Categorias de pena completas (inclui mosaico por sexo)
+ */
+export const FEATHER_CATEGORIES = [
+  { id: "intenso",          name: "Intenso",              description: "Pena curta e lisa, cor concentrada" },
+  { id: "nevado",           name: "Nevado / Buff",         description: "Pena longa e macia, borda branca" },
+  { id: "mosaico_macho",    name: "Mosaico (Macho)",       description: "Distribuição de cor em manchas — macho" },
+  { id: "mosaico_femea",    name: "Mosaico (Fêmea)",       description: "Distribuição de cor em manchas — fêmea" },
+  { id: "duplo_nevado",     name: "Duplo Nevado",          description: "Nevado × Nevado — alerta de risco" },
+  { id: "desconhecido",     name: "Desconhecido",          description: "Categoria de pena não identificada" },
+] as const;
+
+/**
+ * Tipos de crista/topete
+ */
+export const CREST_TYPES = [
+  { id: "sem_topete",       name: "Sem Topete / Liso",    description: "Cabeça lisa, sem crista" },
+  { id: "com_topete",       name: "Com Topete",            description: "Topete presente (crista)" },
+  { id: "corona",           name: "Corona (Gloster)",      description: "Crista circular — Gloster Corona" },
+  { id: "consort",          name: "Consort (Gloster)",     description: "Sem crista — Gloster Consort" },
+  { id: "crista_plana",     name: "Crista Plana",          description: "Crista achatada (Lancashire, Crest)" },
+  { id: "nao_aplicavel",    name: "Não Aplicável",         description: "Raça sem topete por padrão" },
+  { id: "desconhecido",     name: "Desconhecido",          description: "Tipo de crista não identificado" },
+] as const;
+
+/**
+ * Lipocromo base (cor de fundo do canário)
+ */
+export const LIPOCHROME_BASE = [
+  { id: "amarelo",               name: "Amarelo",                  description: "Lipocromo amarelo puro" },
+  { id: "amarelo_marfim",        name: "Amarelo-Marfim",           description: "Amarelo diluído pelo gene marfim" },
+  { id: "vermelho",              name: "Vermelho",                  description: "Fator vermelho visual" },
+  { id: "vermelho_marfim",       name: "Vermelho-Marfim (Rosa)",   description: "Vermelho diluído pelo gene marfim" },
+  { id: "laranja_intermediario", name: "Laranja / Intermediário",  description: "Cruzamento vermelho × amarelo" },
+  { id: "branco_dominante",      name: "Branco Dominante",         description: "Gene dominante suprime lipocromo" },
+  { id: "branco_recessivo",      name: "Branco Recessivo",         description: "Ausência total de lipocromo" },
+  { id: "desconhecido",          name: "Desconhecido",             description: "Lipocromo não identificado" },
+] as const;
+
+/**
+ * Série de melanina (pigmento escuro)
+ */
+export const MELANIN_SERIES = [
+  { id: "negro",         name: "Negro",          description: "Melanina preta dominante" },
+  { id: "agata",         name: "Ágata",           description: "Melanina ágata (sex-linked)" },
+  { id: "canela",        name: "Canela",          description: "Melanina canela (sex-linked)" },
+  { id: "isabel",        name: "Isabelino",       description: "Ágata + Canela combinados" },
+  { id: "sem_melanina",  name: "Sem Melanina",    description: "100% lipocrômico" },
+  { id: "desconhecido",  name: "Desconhecido",    description: "Melanina não identificada" },
+] as const;
+
+/**
+ * Níveis de certeza genética (confidence levels)
+ */
+export const GENETIC_CERTAINTY_LEVELS = [
+  { id: "confirmado",              name: "Confirmado",                color: "bg-green-100 text-green-800 border-green-200",   description: "Gene confirmado por classe oficial ou resultado real de ninhada" },
+  { id: "inferido_foto",           name: "Inferido pela foto",        color: "bg-blue-100 text-blue-800 border-blue-200",     description: "Inferido por análise visual de foto via IA" },
+  { id: "inferido_classe",         name: "Inferido pela classe",      color: "bg-indigo-100 text-indigo-800 border-indigo-200", description: "Inferido pela classe oficial selecionada" },
+  { id: "inferido_pedigree",       name: "Inferido pelo pedigree",    color: "bg-violet-100 text-violet-800 border-violet-200", description: "Inferido pelo histórico genealógico" },
+  { id: "possivel",                name: "Possível",                  color: "bg-yellow-100 text-yellow-800 border-yellow-200", description: "Possível mas não confirmado" },
+  { id: "desconhecido",            name: "Desconhecido",              color: "bg-gray-100 text-gray-600 border-gray-200",     description: "Gene desconhecido — cálculo aproximado" },
+  { id: "corrigido_manualmente",   name: "Corrigido manualmente",     color: "bg-orange-100 text-orange-800 border-orange-200", description: "Corrigido pelo criador — prioridade máxima" },
+  { id: "nao_aplicavel",           name: "Não Aplicável",             color: "bg-slate-100 text-slate-500 border-slate-200",  description: "Campo não aplicável para esta ave" },
+] as const;
+
+export type GeneticCertaintyLevel = typeof GENETIC_CERTAINTY_LEVELS[number]["id"];
+
+/**
+ * Definições completas de genes para a calculadora dinâmica.
+ * Cada gene tem: herança, grupo, se é ligado ao sexo, se é letal em homozigose.
+ */
+export const GENE_DEFINITIONS = [
+  // ── Ligados ao sexo (ZW) ──────────────────────────────────────────────────
+  { id: "agata",          name: "Ágata",                          group: "melanin",    inheritance: "sex_linked_recessive" as InheritanceType, sexLinked: true,  homozygousLethal: false, description: "Dilui melanina preta para ágata" },
+  { id: "canela",         name: "Canela (Cinnamon)",              group: "melanin",    inheritance: "sex_linked_recessive" as InheritanceType, sexLinked: true,  homozygousLethal: false, description: "Dilui melanina para tons canela" },
+  { id: "isabel",         name: "Isabelino (Ágata + Canela)",     group: "melanin",    inheritance: "sex_linked_recessive" as InheritanceType, sexLinked: true,  homozygousLethal: false, description: "Combinação de ágata e canela" },
+  { id: "acetinado",      name: "Acetinado (Satinê)",             group: "melanin",    inheritance: "sex_linked_recessive" as InheritanceType, sexLinked: true,  homozygousLethal: false, description: "Reduz melanina, pena brilhante" },
+  { id: "asas_cinza",     name: "Asas Cinza",                     group: "melanin",    inheritance: "sex_linked_recessive" as InheritanceType, sexLinked: true,  homozygousLethal: false, description: "Asas com melanina cinza reduzida" },
+  { id: "ino",            name: "Ino (Lutino / Albino / Rubino)", group: "melanin",    inheritance: "sex_linked_recessive" as InheritanceType, sexLinked: true,  homozygousLethal: false, description: "Elimina melanina — resultado depende do lipocromo" },
+  { id: "marfim",         name: "Marfim",                         group: "lipochrome", inheritance: "sex_linked_recessive" as InheritanceType, sexLinked: true,  homozygousLethal: false, description: "Dilui amarelo→marfim, vermelho→rosa" },
+  // ── Autossômicas recessivas ────────────────────────────────────────────────
+  { id: "pastel",         name: "Pastel",                         group: "melanin",    inheritance: "autosomal_recessive"  as InheritanceType, sexLinked: false, homozygousLethal: false, description: "Dilui melanina para tons pastel" },
+  { id: "opala",          name: "Opalino (Opala)",                group: "melanin",    inheritance: "autosomal_recessive"  as InheritanceType, sexLinked: false, homozygousLethal: false, description: "Redistribui melanina — efeito opalescente" },
+  { id: "branco_recessivo", name: "Branco Recessivo",             group: "lipochrome", inheritance: "autosomal_recessive"  as InheritanceType, sexLinked: false, homozygousLethal: false, description: "Suprime lipocromo — portador invisível" },
+  { id: "feo",            name: "Feo",                            group: "melanin",    inheritance: "autosomal_recessive"  as InheritanceType, sexLinked: false, homozygousLethal: false, description: "Elimina melanina preta, mantém marrom" },
+  { id: "topazio",        name: "Topázio",                        group: "melanin",    inheritance: "autosomal_recessive"  as InheritanceType, sexLinked: false, homozygousLethal: false, description: "Mutação de melanina — efeito topázio" },
+  // ── Autossômicas dominantes ────────────────────────────────────────────────
+  { id: "crista",         name: "Crista / Topete",                group: "structure",  inheritance: "autosomal_dominant"   as InheritanceType, sexLinked: false, homozygousLethal: true,  description: "Topete/crista — homozigoto letal (~25% não viáveis)" },
+  { id: "branco_dominante", name: "Branco Dominante",             group: "lipochrome", inheritance: "autosomal_dominant"   as InheritanceType, sexLinked: false, homozygousLethal: true,  description: "Suprime lipocromo — homozigoto letal" },
+  { id: "plumagem",       name: "Plumagem (Nevado/Intenso)",      group: "structure",  inheritance: "autosomal_dominant"   as InheritanceType, sexLinked: false, homozygousLethal: false, description: "Controla tipo de pena" },
+] as const;
+
+export type GeneId = typeof GENE_DEFINITIONS[number]["id"];
+
+/**
+ * Regras de cruzamento obrigatórias (genética honesta)
+ */
+export const PAIRING_RULES = [
+  {
+    id: "branco_dom_x_branco_dom",
+    label: "Branco Dominante × Branco Dominante",
+    level: "danger" as const,
+    message: "25% dos filhotes serão não viáveis (homozigoto letal). Evite este cruzamento.",
+    genes: ["branco_dominante"],
+  },
+  {
+    id: "crista_x_crista",
+    label: "Crista × Crista (Topetado × Topetado)",
+    level: "danger" as const,
+    message: "~25% dos filhotes serão não viáveis. Sempre cruzar topetado com liso.",
+    genes: ["crista"],
+  },
+  {
+    id: "nevado_x_nevado",
+    label: "Nevado × Nevado",
+    level: "warning" as const,
+    message: "Duplo nevado — filhotes podem ter plumagem excessiva e problemas de fertilidade.",
+    genes: ["plumagem"],
+  },
+  {
+    id: "intenso_x_intenso",
+    label: "Intenso × Intenso",
+    level: "info" as const,
+    message: "Pode reduzir qualidade de pena nas gerações seguintes. Prefira intenso × nevado.",
+    genes: ["plumagem"],
+  },
+  {
+    id: "vermelho_x_amarelo",
+    label: "Vermelho × Amarelo",
+    level: "info" as const,
+    message: "Filhotes intermediários (laranja). Alimentação pigmentante não altera o genótipo.",
+    genes: [],
+  },
+] as const;
+
+/**
+ * Prioridade de fontes de informação genética
+ * (maior número = maior prioridade)
+ */
+export const GENETIC_SOURCE_PRIORITY = [
+  { id: "manual_override",    name: "Correção manual do criador",   priority: 6 },
+  { id: "offspring_result",   name: "Resultado real de ninhada",    priority: 5 },
+  { id: "pedigree",           name: "Pedigree confirmado",          priority: 4 },
+  { id: "official_class",     name: "Classe oficial selecionada",   priority: 3 },
+  { id: "photo_ai",           name: "Análise por foto (IA)",        priority: 2 },
+  { id: "generic_suggestion", name: "Sugestão genérica",            priority: 1 },
+] as const;
+
+/**
+ * Modalidades do sistema FOB/OBJO
+ */
+export const BIRD_MODALITIES = [
+  { id: "COR",   name: "Canário de Cor",   description: "Classificado por cor e mutações" },
+  { id: "PORTE", name: "Canário de Porte", description: "Classificado por raça e conformação" },
+] as const;
