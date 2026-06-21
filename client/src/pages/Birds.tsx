@@ -17,6 +17,7 @@ import { PhotoUploader } from "@/components/PhotoUploader";
 import { AIJudgePanel } from "@/components/AIJudgePanel";
 import { HealthLog } from "@/components/HealthLog";
 import { GenotypeEditor } from "@/components/GenotypeEditor";
+import { GenotypeEditorDraft, EMPTY_GENOTYPE_DRAFT, type GenotypeDraft } from "@/components/GenotypeEditorDraft";
 import { BirdFicha } from "@/components/BirdFicha";
 import { BirdPhotoIdentifier } from "@/components/BirdPhotoIdentifier";
 
@@ -36,6 +37,9 @@ export default function Birds() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState(emptyForm);
 
+  // Genótipo draft — usado apenas no modal de CRIAÇÃO (sem birdId ainda)
+  const [genotypeDraft, setGenotypeDraft] = useState<GenotypeDraft>(EMPTY_GENOTYPE_DRAFT);
+
   const { data: birds, refetch } = trpc.birds.list.useQuery({});
   const [fichaBird, setFichaBird] = useState<NonNullable<typeof birds>[number] | null>(null);
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -48,9 +52,18 @@ export default function Birds() {
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const uploadPendingPhoto = trpc.photos.create.useMutation();
 
+  // Salva genótipo draft após criar o pássaro
+  const saveGenotype = trpc.mendelian.upsertGenotype.useMutation({
+    onError: () => {
+      toast.warning("Pássaro cadastrado, mas o genótipo não pôde ser salvo. Edite o pássaro para tentar novamente.");
+    },
+  });
+
   const createBird = trpc.birds.create.useMutation({
     onSuccess: async (data) => {
       toast.success("Pássaro cadastrado com sucesso!");
+
+      // Salva a foto pendente
       if (pendingPhoto && data.bird) {
         try {
           await uploadPendingPhoto.mutateAsync({
@@ -63,6 +76,26 @@ export default function Birds() {
           toast.error("Pássaro salvo, mas a foto não pôde ser anexada. Adicione-a editando o pássaro.");
         }
       }
+
+      // Salva o genótipo draft se tiver algum dado preenchido
+      if (data.bird) {
+        const hasGenotype =
+          genotypeDraft.backgroundColor ||
+          genotypeDraft.featherType ||
+          genotypeDraft.hasCrest ||
+          genotypeDraft.mutations.length > 0;
+
+        if (hasGenotype) {
+          saveGenotype.mutate({
+            birdId: data.bird.id,
+            backgroundColor: genotypeDraft.backgroundColor || undefined,
+            featherType: (genotypeDraft.featherType as "intenso" | "nevado") || undefined,
+            hasCrest: genotypeDraft.hasCrest,
+            mutations: genotypeDraft.mutations,
+          });
+        }
+      }
+
       refetch();
       closeDialog();
     },
@@ -103,11 +136,13 @@ export default function Birds() {
     setEditingId(null);
     setFormData(emptyForm);
     setPendingPhoto(null);
+    setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
   };
 
   const openCreate = () => {
     setEditingId(null);
     setFormData(emptyForm);
+    setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
     setOpen(true);
   };
 
@@ -133,14 +168,16 @@ export default function Birds() {
       return;
     }
 
+    // birthDate é enviado como string 'YYYY-MM-DD' (ou undefined se vazio)
+    // O servidor aceita string ISO via birthDateSchema (z.union([z.date(), z.string()]))
     const payload = {
       ring: formData.ring,
       specialty_code: formData.specialty,
       sex: formData.sex,
       color_code: formData.color,
-      birthDate: formData.birthDate ? new Date(formData.birthDate) : undefined,
-      procedence: formData.procedence,
-      notes: formData.notes,
+      birthDate: formData.birthDate || undefined,
+      procedence: formData.procedence || undefined,
+      notes: formData.notes || undefined,
     };
 
     if (editingId) {
@@ -320,18 +357,42 @@ export default function Birds() {
                     placeholder="Notas adicionais..."
                   />
                 </div>
+
+                {/* Genótipo Avançado disponível TAMBÉM no modal de criação */}
+                {!editingId && (
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-1 text-sm">Genótipo Avançado (opcional)</h3>
+                    <p className="text-xs text-gray-400 mb-2">
+                      Preencha para liberar a predição mendeliana de cruzamento (cor de fundo, plumagem, crista e mutações)
+                    </p>
+                    <GenotypeEditorDraft
+                      sex={formData.sex}
+                      value={genotypeDraft}
+                      onChange={setGenotypeDraft}
+                    />
+                  </div>
+                )}
+
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="outline" onClick={closeDialog}>
                     {editingId ? "Fechar" : "Cancelar"}
                   </Button>
-                  <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                    {editingId ? "Salvar alterações" : "Cadastrar"}
+                  <Button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700"
+                    disabled={createBird.isPending || updateBird.isPending}
+                  >
+                    {createBird.isPending || updateBird.isPending
+                      ? "Salvando..."
+                      : editingId
+                      ? "Salvar alterações"
+                      : "Cadastrar"}
                   </Button>
                 </div>
               </form>
 
-              {/* Fotos e Juiz Virtual só ficam disponíveis depois que o
-                  pássaro já existe (precisam de um ID para vincular). */}
+              {/* Fotos, Juiz Virtual, Saúde e Genótipo Avançado (modo edição)
+                  ficam disponíveis depois que o pássaro já existe (precisam de um ID). */}
               {editingId && (
                 <div className="border-t pt-4 mt-2 space-y-5">
                   <div className="flex items-center justify-between rounded-lg border p-3">

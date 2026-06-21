@@ -11,8 +11,8 @@
  *   - Toda operação de escrita usa transação explícita
  */
 
-import { and, eq, asc, isNull, sql } from "drizzle-orm";
-import { ring_batches, rings } from "../../drizzle/schema";
+import { and, eq, asc, isNull, sql, notInArray } from "drizzle-orm";
+import { ring_batches, rings, birds } from "../../drizzle/schema";
 import { generateRingCode, generateBatchCodes } from "./ringParser";
 import type { Pool } from "pg";
 
@@ -36,11 +36,18 @@ export interface NextRingResult {
 /**
  * Busca a próxima anilha disponível compatível com os critérios.
  * NÃO aloca — apenas retorna a sugestão.
+ *
+ * REGRA INQUERÁVEL: nunca sugere código já presente em birds.ring,
+ * independente do status na tabela rings.
  */
 export async function getNextAvailableRing(
   db: DB,
   criteria: RingCriteria
 ): Promise<NextRingResult | null> {
+  // Coleta todos os códigos já usados em birds.ring para exclusão
+  const usedRings = await db.select({ ring: birds.ring }).from(birds);
+  const usedCodes = new Set(usedRings.map((b) => b.ring));
+
   // Monta condições de filtro para o lote
   const batchConditions = [
     eq(ring_batches.status, "available"),
@@ -62,7 +69,7 @@ export async function getNextAvailableRing(
     batchConditions.push(eq(ring_batches.ringGaugeMm, criteria.ringGaugeMm));
   }
 
-  // Busca lotes compatíveis ordenados por ano desc (mais recente primeiro)
+  // Busca lotes compatíveis ordenados por ano asc (mais antigo com vagas primeiro)
   const compatibleBatches = await db
     .select()
     .from(ring_batches)
@@ -70,8 +77,8 @@ export async function getNextAvailableRing(
     .orderBy(asc(ring_batches.year));
 
   for (const batch of compatibleBatches) {
-    // Busca a próxima anilha disponível do lote
-    const available = await db
+    // Busca as próximas anilhas disponíveis do lote (pega algumas para filtrar)
+    const candidates = await db
       .select()
       .from(rings)
       .where(
@@ -82,14 +89,19 @@ export async function getNextAvailableRing(
         )
       )
       .orderBy(asc(rings.sequence))
-      .limit(1);
+      .limit(50); // pega até 50 candidatas para filtrar as já usadas em birds
 
-    if (available.length > 0) {
-      const ring = available[0];
+    // Filtra excluindo códigos já presentes em birds.ring
+    const firstFree = candidates.find((r) => {
+      const code = r.fullCode ?? r.number;
+      return !usedCodes.has(code);
+    });
+
+    if (firstFree) {
       return {
-        ring,
+        ring: firstFree,
         batch,
-        fullCode: ring.fullCode ?? ring.number,
+        fullCode: firstFree.fullCode ?? firstFree.number,
       };
     }
   }
