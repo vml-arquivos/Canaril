@@ -22,6 +22,7 @@ import {
   BookOpen,
   FlaskConical,
   Users,
+  Sparkles,
 } from "lucide-react";
 
 // ============================================================================
@@ -786,6 +787,15 @@ function ModoAvancado() {
     !!maleGenotype.data &&
     !!femaleGenotype.data;
 
+  // Sugestão de melhores combinações: assim que UM dos dois é
+  // selecionado (e o outro ainda não), mostra quais pássaros do plantel
+  // combinariam melhor com ele — considerando COI e genes letais.
+  const suggestFor = maleId !== NONE_VALUE && femaleId === NONE_VALUE ? maleId : femaleId !== NONE_VALUE && maleId === NONE_VALUE ? femaleId : null;
+  const suggestions = trpc.mendelian.suggestMatches.useQuery(
+    { birdId: Number(suggestFor), limit: 5 },
+    { enabled: suggestFor !== null }
+  );
+
   const ZYGOSITY_LABEL: Record<string, string> = {
     homozygous_mutant: "manifesta",
     heterozygous_carrier: "portador",
@@ -900,6 +910,66 @@ function ModoAvancado() {
           </CardContent>
         </Card>
       </div>
+
+      {suggestFor !== null && (
+        <Card className="border-emerald-100">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              Melhores Combinações pra {suggestions.data?.target?.ring ?? "este pássaro"}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Ranqueado por consanguinidade (COI) e compatibilidade genética — clique pra usar como par
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {suggestions.isLoading ? (
+              <p className="text-sm text-gray-400 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />Calculando combinações...</p>
+            ) : !suggestions.data?.target?.hasGenotype ? (
+              <p className="text-sm text-amber-600 bg-amber-50 rounded p-2 border border-amber-100">
+                Preencha o Genótipo Avançado deste pássaro pra sugestões mais precisas — por enquanto, o ranking usa só consanguinidade (COI).
+              </p>
+            ) : null}
+            {suggestions.data && suggestions.data.candidates.length === 0 && (
+              <p className="text-sm text-gray-400">Nenhum pássaro do sexo oposto disponível no plantel pra sugerir.</p>
+            )}
+            <div className="space-y-2">
+              {suggestions.data?.candidates.map((c, i) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    if (maleId === NONE_VALUE) setMaleId(String(c.id));
+                    else setFemaleId(String(c.id));
+                    setCalculated(false);
+                  }}
+                  className="w-full text-left flex items-center justify-between gap-3 bg-white border rounded-lg p-2.5 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors"
+                >
+                  <div className="min-w-0 flex items-center gap-2">
+                    {i === 0 && <span className="text-base">🏆</span>}
+                    <div className="min-w-0">
+                      <p className="font-mono font-semibold text-sm text-gray-800">{c.ring}</p>
+                      <p className="text-xs text-gray-500 truncate">{c.specialtyName} · {c.colorName}</p>
+                      {c.highlights.map((h, j) => (
+                        <p key={j} className="text-xs text-emerald-700">✓ {h}</p>
+                      ))}
+                      {c.warnings.map((w, j) => (
+                        <p key={j} className="text-xs text-red-600">⚠ {w}</p>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className={`text-sm font-bold ${c.compatibilityScore >= 70 ? "text-emerald-600" : c.compatibilityScore >= 40 ? "text-amber-600" : "text-red-600"}`}>
+                      {c.compatibilityScore}/100
+                    </p>
+                    <p className="text-xs text-gray-400">COI {(c.coi * 100).toFixed(1)}%</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {!hasBothProfiles && maleId !== NONE_VALUE && femaleId !== NONE_VALUE && (
         <Alert className="border-amber-200 bg-amber-50">

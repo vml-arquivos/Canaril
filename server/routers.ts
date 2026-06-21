@@ -23,6 +23,7 @@ import { iotRouter } from "./routers/iot";
 import { mendelianRouter } from "./routers/mendelian";
 import { catalogRouter } from "./routers/catalog";
 import { geneticProfileRouter } from "./routers/geneticProfile";
+import { photoAnalysisRouter } from "./routers/photoAnalysis";
 import { ringsRouter } from "./routers/rings";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
@@ -112,6 +113,7 @@ export const appRouter = router({
   mendelian: mendelianRouter,
   catalog: catalogRouter,
   geneticProfile: geneticProfileRouter,
+  photoAnalysis: photoAnalysisRouter,
   ringsV2: ringsRouter,
 });
 

@@ -14,6 +14,7 @@ import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
+import { BirdPhotoRecognition } from "@/components/BirdPhotoRecognition";
 import { AIJudgePanel } from "@/components/AIJudgePanel";
 import { HealthLog } from "@/components/HealthLog";
 import { GenotypeEditor } from "@/components/GenotypeEditor";
@@ -653,6 +654,13 @@ export default function Birds() {
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-2">Fotos</h3>
                     <PhotoUploader entityType="bird" entityId={editingId} />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-1">Reconhecimento por Foto (IA)</h3>
+                    <p className="text-xs text-gray-400 mb-2">
+                      Sugere a classe oficial FOB/OBJO a partir das fotos já cadastradas — você sempre confirma antes de aplicar.
+                    </p>
+                    <BirdPhotoRecognition birdId={editingId} />
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-2">Juiz Virtual (IA)</h3>

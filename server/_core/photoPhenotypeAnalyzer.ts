@@ -125,7 +125,7 @@ export async function analyzePhotoPhenotype(
   const userContent: Array<{ type: string; text?: string; image_url?: { url: string; detail: string } }> = [
     {
       type: "text",
-      text: `Analise ${photos.length === 1 ? "esta foto" : `estas ${photos.length} fotos"}`} de canário e retorne o JSON com as características fenotípicas visíveis.${
+      text: `Analise ${photos.length === 1 ? "esta foto" : `estas ${photos.length} fotos`} de canário e retorne o JSON com as características fenotípicas visíveis.${
         input.birdSex ? `\n\nSexo informado pelo criador: ${input.birdSex}` : ""
       }${
         input.additionalContext ? `\n\nInformações adicionais: ${input.additionalContext}` : ""
@@ -139,9 +139,14 @@ Retorne APENAS o JSON válido, sem texto adicional.`,
     })),
   ];
 
-  // Chama a IA
+  // IMPORTANTE: a integração real de IA deste sistema (server/_core/llm.ts)
+  // chama a API da Anthropic diretamente — não existe integração com
+  // Gemini neste repositório. Usa o mesmo modelo já usado em
+  // server/routers/aiJudge.ts e genetics.ts, direto, sem depender de uma
+  // variável de ambiente GEMINI_* que, se configurada, quebraria a
+  // chamada (o valor seria passado como "model" pra API da Anthropic).
   const result = await invokeLLM({
-    model: process.env.GEMINI_MODEL_VISION ?? process.env.GEMINI_MODEL_PRO ?? "gemini-2.5-flash",
+    model: "claude-sonnet-4-6",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userContent as any },
