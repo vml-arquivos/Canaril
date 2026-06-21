@@ -34,7 +34,6 @@ const menuItems = [
   { icon: Calculator, label: "Calculadora Genética", path: "/genetics-calculator" },
   { icon: Egg, label: "Posturas", path: "/clutches" },
   { icon: Feather, label: "Anilhas", path: "/rings" },
-  { icon: Tag, label: "Lotes de Anilhas", path: "/ring-batches" },
   { icon: DoorOpen, label: "Gaiolas", path: "/cages" },
   { icon: Trophy, label: "Campeonatos", path: "/championships" },
   { icon: BarChart3, label: "Relatórios", path: "/reports" },

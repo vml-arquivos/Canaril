@@ -76,6 +76,9 @@ function Router() {
         {(params) => <ProtectedRoute component={Couples} {...params} />}
       </Route>
       <Route path={"/rings"}>
+        {(params) => <ProtectedRoute component={RingBatches} {...params} />}
+      </Route>
+      <Route path={"/rings-legado"}>
         {(params) => <ProtectedRoute component={Rings} {...params} />}
       </Route>
       <Route path={"/clutches"}>

@@ -42,6 +42,19 @@ async function startServer() {
     process.exit(1);
   }
 
+  // Popula o catálogo oficial de classes (FOB/OBJO) se ainda não estiver
+  // populado. Idempotente (ON CONFLICT DO NOTHING) — seguro rodar em todo
+  // boot. Não-crítico: se falhar, registra aviso mas não derruba o servidor
+  // (diferente das migrations de schema, que são bloqueantes).
+  try {
+    const { seedOfficialClasses } = await import("./officialClassesSeed");
+    const result = await seedOfficialClasses();
+    console.log(`[Startup] Catálogo oficial: ${result.inserted} classes novas, ${result.skipped} já existiam.`);
+  } catch (error) {
+    console.warn("[Startup] Aviso: não foi possível popular o catálogo oficial de classes (sistema continua funcionando normalmente).");
+    console.warn(error);
+  }
+
   const app = express();
   const server = createServer(app);
   // Health check endpoint

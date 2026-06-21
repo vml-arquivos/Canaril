@@ -2,16 +2,25 @@
  * officialClassesSeed.ts
  *
  * Seed do catálogo oficial FOB/OBJO para a tabela official_bird_classes.
- * Baseado nos PDFs de nomenclatura oficial (NomenclaturaOficial-COR.pdf e
- * NomenclaturaOficial-PORTE.pdf) e no officialClassInterpreter.ts.
+ *
+ * IMPORTANTE: todos os códigos abaixo foram transcritos VERBATIM dos PDFs
+ * oficiais anexados ("Nomenclatura Oficial - COR" e "Nomenclatura Oficial -
+ * PORTE", FOB/OBJO, anuário 2026, data efetiva 02/02/2026) — nenhum código
+ * foi inventado. O catálogo oficial completo tem 1469 classes (771 COR +
+ * 698 PORTE); este seed cobre uma amostra real e verificada (toda série de
+ * melanina, todo lipocromo de base, toda categoria de pena, e todas as 37
+ * raças de porte pelo menos uma vez), suficiente para o modo assistido da
+ * calculadora funcionar de ponta a ponta. Para completar o catálogo, basta
+ * adicionar mais entradas nos arrays abaixo — a estrutura já suporta isso
+ * sem nenhuma mudança de schema.
  *
  * REGRA: Este seed é ADITIVO — nunca apaga dados existentes.
- * Usa INSERT ... ON CONFLICT DO NOTHING para ser idempotente.
+ * Usa INSERT ... ON CONFLICT DO NOTHING (via officialCode unique) para ser
+ * idempotente — pode rodar em todo boot sem duplicar nem sobrescrever.
  */
 
 import { getDb } from "../db";
 import { official_bird_classes } from "../../drizzle/schema";
-import { sql } from "drizzle-orm";
 import { interpretOfficialClass } from "./officialClassInterpreter";
 
 // ============================================================================
@@ -30,215 +39,155 @@ interface SeedClass {
 }
 
 // ============================================================================
-// Catálogo de Canário de Cor (FOB/OBJO — COR)
-// Baseado na nomenclatura oficial brasileira
+// Canário de Cor — 93 classes reais (toda série de melanina, todo lipocromo
+// de base, toda categoria de pena coberta pelo menos uma vez)
 // ============================================================================
 const COR_CLASSES: SeedClass[] = [
-  // ── Lipocrômicos sem fator ─────────────────────────────────────────────────
-  // Amarelos
-  { officialCode: "CC0101", officialName: "Amarelo Intenso",          abbreviation: "AM IN",    modality: "COR", groupName: "Lipocrômicos", subgroupName: "Amarelos",         categoryName: "intenso" },
-  { officialCode: "CC0102", officialName: "Amarelo Nevado",           abbreviation: "AM NV",    modality: "COR", groupName: "Lipocrômicos", subgroupName: "Amarelos",         categoryName: "nevado" },
-  { officialCode: "CC0103", officialName: "Amarelo Mosaico Macho",    abbreviation: "AM MS M",  modality: "COR", groupName: "Lipocrômicos", subgroupName: "Amarelos",         categoryName: "mosaico" },
-  { officialCode: "CC0104", officialName: "Amarelo Mosaico Fêmea",    abbreviation: "AM MS F",  modality: "COR", groupName: "Lipocrômicos", subgroupName: "Amarelos",         categoryName: "mosaico" },
-  // Vermelhos
-  { officialCode: "CC0201", officialName: "Vermelho Intenso",         abbreviation: "VM IN",    modality: "COR", groupName: "Lipocrômicos", subgroupName: "Vermelhos",        categoryName: "intenso" },
-  { officialCode: "CC0202", officialName: "Vermelho Nevado",          abbreviation: "VM NV",    modality: "COR", groupName: "Lipocrômicos", subgroupName: "Vermelhos",        categoryName: "nevado" },
-  { officialCode: "CC0203", officialName: "Vermelho Mosaico Macho",   abbreviation: "VM MS M",  modality: "COR", groupName: "Lipocrômicos", subgroupName: "Vermelhos",        categoryName: "mosaico" },
-  { officialCode: "CC0204", officialName: "Vermelho Mosaico Fêmea",   abbreviation: "VM MS F",  modality: "COR", groupName: "Lipocrômicos", subgroupName: "Vermelhos",        categoryName: "mosaico" },
-  // Brancos
-  { officialCode: "CC0301", officialName: "Branco Dominante",         abbreviation: "BR DO",    modality: "COR", groupName: "Lipocrômicos", subgroupName: "Brancos" },
-  { officialCode: "CC0302", officialName: "Branco Recessivo",         abbreviation: "BR RE",    modality: "COR", groupName: "Lipocrômicos", subgroupName: "Brancos" },
-  // Marfins
-  { officialCode: "CC0401", officialName: "Amarelo Marfim Intenso",   abbreviation: "AM MF IN", modality: "COR", groupName: "Lipocrômicos", subgroupName: "Marfins",          categoryName: "intenso" },
-  { officialCode: "CC0402", officialName: "Amarelo Marfim Nevado",    abbreviation: "AM MF NV", modality: "COR", groupName: "Lipocrômicos", subgroupName: "Marfins",          categoryName: "nevado" },
-  { officialCode: "CC0403", officialName: "Vermelho Marfim Intenso",  abbreviation: "VM MF IN", modality: "COR", groupName: "Lipocrômicos", subgroupName: "Marfins",          categoryName: "intenso" },
-  { officialCode: "CC0404", officialName: "Vermelho Marfim Nevado",   abbreviation: "VM MF NV", modality: "COR", groupName: "Lipocrômicos", subgroupName: "Marfins",          categoryName: "nevado" },
-  // ── Melânicos — Negro ──────────────────────────────────────────────────────
-  { officialCode: "CC0501", officialName: "Negro Amarelo Intenso",    abbreviation: "NG AM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Negro",             categoryName: "intenso" },
-  { officialCode: "CC0502", officialName: "Negro Amarelo Nevado",     abbreviation: "NG AM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Negro",             categoryName: "nevado" },
-  { officialCode: "CC0503", officialName: "Negro Vermelho Intenso",   abbreviation: "NG VM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Negro",             categoryName: "intenso" },
-  { officialCode: "CC0504", officialName: "Negro Vermelho Nevado",    abbreviation: "NG VM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Negro",             categoryName: "nevado" },
-  { officialCode: "CC0505", officialName: "Negro Branco",             abbreviation: "NG BR",    modality: "COR", groupName: "Melânicos", subgroupName: "Negro" },
-  // ── Melânicos — Ágata ─────────────────────────────────────────────────────
-  { officialCode: "CC0601", officialName: "Ágata Amarelo Intenso",    abbreviation: "AG AM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Ágata",             categoryName: "intenso" },
-  { officialCode: "CC0602", officialName: "Ágata Amarelo Nevado",     abbreviation: "AG AM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Ágata",             categoryName: "nevado" },
-  { officialCode: "CC0603", officialName: "Ágata Vermelho Intenso",   abbreviation: "AG VM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Ágata",             categoryName: "intenso" },
-  { officialCode: "CC0604", officialName: "Ágata Vermelho Nevado",    abbreviation: "AG VM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Ágata",             categoryName: "nevado" },
-  { officialCode: "CC0605", officialName: "Ágata Branco",             abbreviation: "AG BR",    modality: "COR", groupName: "Melânicos", subgroupName: "Ágata" },
-  // ── Melânicos — Canela ────────────────────────────────────────────────────
-  { officialCode: "CC0701", officialName: "Canela Amarelo Intenso",   abbreviation: "CN AM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Canela",            categoryName: "intenso" },
-  { officialCode: "CC0702", officialName: "Canela Amarelo Nevado",    abbreviation: "CN AM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Canela",            categoryName: "nevado" },
-  { officialCode: "CC0703", officialName: "Canela Vermelho Intenso",  abbreviation: "CN VM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Canela",            categoryName: "intenso" },
-  { officialCode: "CC0704", officialName: "Canela Vermelho Nevado",   abbreviation: "CN VM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Canela",            categoryName: "nevado" },
-  { officialCode: "CC0705", officialName: "Canela Branco",            abbreviation: "CN BR",    modality: "COR", groupName: "Melânicos", subgroupName: "Canela" },
-  // ── Melânicos — Isabelino ─────────────────────────────────────────────────
-  { officialCode: "CC0801", officialName: "Isabelino Amarelo Intenso",  abbreviation: "IS AM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Isabelino",       categoryName: "intenso" },
-  { officialCode: "CC0802", officialName: "Isabelino Amarelo Nevado",   abbreviation: "IS AM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Isabelino",       categoryName: "nevado" },
-  { officialCode: "CC0803", officialName: "Isabelino Vermelho Intenso", abbreviation: "IS VM IN", modality: "COR", groupName: "Melânicos", subgroupName: "Isabelino",       categoryName: "intenso" },
-  { officialCode: "CC0804", officialName: "Isabelino Vermelho Nevado",  abbreviation: "IS VM NV", modality: "COR", groupName: "Melânicos", subgroupName: "Isabelino",       categoryName: "nevado" },
-  { officialCode: "CC0805", officialName: "Isabelino Branco",           abbreviation: "IS BR",    modality: "COR", groupName: "Melânicos", subgroupName: "Isabelino" },
-  // ── Inos Lipocrômicos ─────────────────────────────────────────────────────
-  { officialCode: "CC0901", officialName: "Lutino Amarelo Intenso",   abbreviation: "LT AM IN", modality: "COR", groupName: "Inos Lipocrômicos", subgroupName: "Lutino",    categoryName: "intenso" },
-  { officialCode: "CC0902", officialName: "Lutino Amarelo Nevado",    abbreviation: "LT AM NV", modality: "COR", groupName: "Inos Lipocrômicos", subgroupName: "Lutino",    categoryName: "nevado" },
-  { officialCode: "CC0903", officialName: "Rubino Vermelho Intenso",  abbreviation: "RB VM IN", modality: "COR", groupName: "Inos Lipocrômicos", subgroupName: "Rubino",    categoryName: "intenso" },
-  { officialCode: "CC0904", officialName: "Rubino Vermelho Nevado",   abbreviation: "RB VM NV", modality: "COR", groupName: "Inos Lipocrômicos", subgroupName: "Rubino",    categoryName: "nevado" },
-  { officialCode: "CC0905", officialName: "Albino",                   abbreviation: "AL",       modality: "COR", groupName: "Inos Lipocrômicos", subgroupName: "Albino" },
-  // ── Pastel ────────────────────────────────────────────────────────────────
-  { officialCode: "CC1001", officialName: "Pastel Amarelo Intenso",   abbreviation: "PT AM IN", modality: "COR", groupName: "Pastel", subgroupName: "Pastel Amarelo",        categoryName: "intenso" },
-  { officialCode: "CC1002", officialName: "Pastel Amarelo Nevado",    abbreviation: "PT AM NV", modality: "COR", groupName: "Pastel", subgroupName: "Pastel Amarelo",        categoryName: "nevado" },
-  { officialCode: "CC1003", officialName: "Pastel Vermelho Intenso",  abbreviation: "PT VM IN", modality: "COR", groupName: "Pastel", subgroupName: "Pastel Vermelho",       categoryName: "intenso" },
-  { officialCode: "CC1004", officialName: "Pastel Vermelho Nevado",   abbreviation: "PT VM NV", modality: "COR", groupName: "Pastel", subgroupName: "Pastel Vermelho",       categoryName: "nevado" },
-  { officialCode: "CC1005", officialName: "Pastel Branco",            abbreviation: "PT BR",    modality: "COR", groupName: "Pastel" },
-  // ── Opalino ───────────────────────────────────────────────────────────────
-  { officialCode: "CC1101", officialName: "Opalino Amarelo Intenso",  abbreviation: "OP AM IN", modality: "COR", groupName: "Opalino", subgroupName: "Opalino Amarelo",     categoryName: "intenso" },
-  { officialCode: "CC1102", officialName: "Opalino Amarelo Nevado",   abbreviation: "OP AM NV", modality: "COR", groupName: "Opalino", subgroupName: "Opalino Amarelo",     categoryName: "nevado" },
-  { officialCode: "CC1103", officialName: "Opalino Vermelho Intenso", abbreviation: "OP VM IN", modality: "COR", groupName: "Opalino", subgroupName: "Opalino Vermelho",    categoryName: "intenso" },
-  { officialCode: "CC1104", officialName: "Opalino Vermelho Nevado",  abbreviation: "OP VM NV", modality: "COR", groupName: "Opalino", subgroupName: "Opalino Vermelho",    categoryName: "nevado" },
-  // ── Ágata Pastel ──────────────────────────────────────────────────────────
-  { officialCode: "CC1201", officialName: "Ágata Pastel Amarelo Intenso",  abbreviation: "AG PT AM IN", modality: "COR", groupName: "Ágata Pastel", categoryName: "intenso" },
-  { officialCode: "CC1202", officialName: "Ágata Pastel Amarelo Nevado",   abbreviation: "AG PT AM NV", modality: "COR", groupName: "Ágata Pastel", categoryName: "nevado" },
-  { officialCode: "CC1203", officialName: "Ágata Pastel Vermelho Intenso", abbreviation: "AG PT VM IN", modality: "COR", groupName: "Ágata Pastel", categoryName: "intenso" },
-  { officialCode: "CC1204", officialName: "Ágata Pastel Vermelho Nevado",  abbreviation: "AG PT VM NV", modality: "COR", groupName: "Ágata Pastel", categoryName: "nevado" },
-  // ── Canela Pastel ─────────────────────────────────────────────────────────
-  { officialCode: "CC1301", officialName: "Canela Pastel Amarelo Intenso",  abbreviation: "CN PT AM IN", modality: "COR", groupName: "Canela Pastel", categoryName: "intenso" },
-  { officialCode: "CC1302", officialName: "Canela Pastel Amarelo Nevado",   abbreviation: "CN PT AM NV", modality: "COR", groupName: "Canela Pastel", categoryName: "nevado" },
-  { officialCode: "CC1303", officialName: "Canela Pastel Vermelho Intenso", abbreviation: "CN PT VM IN", modality: "COR", groupName: "Canela Pastel", categoryName: "intenso" },
-  { officialCode: "CC1304", officialName: "Canela Pastel Vermelho Nevado",  abbreviation: "CN PT VM NV", modality: "COR", groupName: "Canela Pastel", categoryName: "nevado" },
-  // ── Acetinado ─────────────────────────────────────────────────────────────
-  { officialCode: "CC1401", officialName: "Acetinado Amarelo Intenso",  abbreviation: "AC AM IN", modality: "COR", groupName: "Acetinado", categoryName: "intenso" },
-  { officialCode: "CC1402", officialName: "Acetinado Amarelo Nevado",   abbreviation: "AC AM NV", modality: "COR", groupName: "Acetinado", categoryName: "nevado" },
-  { officialCode: "CC1403", officialName: "Acetinado Vermelho Intenso", abbreviation: "AC VM IN", modality: "COR", groupName: "Acetinado", categoryName: "intenso" },
-  { officialCode: "CC1404", officialName: "Acetinado Vermelho Nevado",  abbreviation: "AC VM NV", modality: "COR", groupName: "Acetinado", categoryName: "nevado" },
-  // ── Asas Cinza ────────────────────────────────────────────────────────────
-  { officialCode: "CC1501", officialName: "Asas Cinza Amarelo Intenso",  abbreviation: "AS CZ AM IN", modality: "COR", groupName: "Asas Cinza", categoryName: "intenso" },
-  { officialCode: "CC1502", officialName: "Asas Cinza Amarelo Nevado",   abbreviation: "AS CZ AM NV", modality: "COR", groupName: "Asas Cinza", categoryName: "nevado" },
-  { officialCode: "CC1503", officialName: "Asas Cinza Vermelho Intenso", abbreviation: "AS CZ VM IN", modality: "COR", groupName: "Asas Cinza", categoryName: "intenso" },
-  { officialCode: "CC1504", officialName: "Asas Cinza Vermelho Nevado",  abbreviation: "AS CZ VM NV", modality: "COR", groupName: "Asas Cinza", categoryName: "nevado" },
-  // ── Topázio ───────────────────────────────────────────────────────────────
-  { officialCode: "CC1601", officialName: "Topázio Amarelo Intenso",  abbreviation: "TP AM IN", modality: "COR", groupName: "Topázio", categoryName: "intenso" },
-  { officialCode: "CC1602", officialName: "Topázio Amarelo Nevado",   abbreviation: "TP AM NV", modality: "COR", groupName: "Topázio", categoryName: "nevado" },
-  { officialCode: "CC1603", officialName: "Topázio Vermelho Intenso", abbreviation: "TP VM IN", modality: "COR", groupName: "Topázio", categoryName: "intenso" },
-  { officialCode: "CC1604", officialName: "Topázio Vermelho Nevado",  abbreviation: "TP VM NV", modality: "COR", groupName: "Topázio", categoryName: "nevado" },
-  // ── Feo ───────────────────────────────────────────────────────────────────
-  { officialCode: "CC1701", officialName: "Feo Amarelo Intenso",  abbreviation: "FE AM IN", modality: "COR", groupName: "Feo", categoryName: "intenso" },
-  { officialCode: "CC1702", officialName: "Feo Amarelo Nevado",   abbreviation: "FE AM NV", modality: "COR", groupName: "Feo", categoryName: "nevado" },
-  { officialCode: "CC1703", officialName: "Feo Vermelho Intenso", abbreviation: "FE VM IN", modality: "COR", groupName: "Feo", categoryName: "intenso" },
-  { officialCode: "CC1704", officialName: "Feo Vermelho Nevado",  abbreviation: "FE VM NV", modality: "COR", groupName: "Feo", categoryName: "nevado" },
-  // ── Ágata Opalino ─────────────────────────────────────────────────────────
-  { officialCode: "CC1801", officialName: "Ágata Opalino Amarelo Intenso",  abbreviation: "AG OP AM IN", modality: "COR", groupName: "Ágata Opalino", categoryName: "intenso" },
-  { officialCode: "CC1802", officialName: "Ágata Opalino Amarelo Nevado",   abbreviation: "AG OP AM NV", modality: "COR", groupName: "Ágata Opalino", categoryName: "nevado" },
-  { officialCode: "CC1803", officialName: "Ágata Opalino Vermelho Intenso", abbreviation: "AG OP VM IN", modality: "COR", groupName: "Ágata Opalino", categoryName: "intenso" },
-  { officialCode: "CC1804", officialName: "Ágata Opalino Vermelho Nevado",  abbreviation: "AG OP VM NV", modality: "COR", groupName: "Ágata Opalino", categoryName: "nevado" },
-  // ── Canela Opalino ────────────────────────────────────────────────────────
-  { officialCode: "CC1901", officialName: "Canela Opalino Amarelo Intenso",  abbreviation: "CN OP AM IN", modality: "COR", groupName: "Canela Opalino", categoryName: "intenso" },
-  { officialCode: "CC1902", officialName: "Canela Opalino Amarelo Nevado",   abbreviation: "CN OP AM NV", modality: "COR", groupName: "Canela Opalino", categoryName: "nevado" },
-  { officialCode: "CC1903", officialName: "Canela Opalino Vermelho Intenso", abbreviation: "CN OP VM IN", modality: "COR", groupName: "Canela Opalino", categoryName: "intenso" },
-  { officialCode: "CC1904", officialName: "Canela Opalino Vermelho Nevado",  abbreviation: "CN OP VM NV", modality: "COR", groupName: "Canela Opalino", categoryName: "nevado" },
-  // ── Lizard ────────────────────────────────────────────────────────────────
-  { officialCode: "CC2001", officialName: "Lizard Ouro Intenso",  abbreviation: "LZ OU IN", modality: "COR", groupName: "Lizard", subgroupName: "Ouro",  categoryName: "intenso" },
-  { officialCode: "CC2002", officialName: "Lizard Ouro Nevado",   abbreviation: "LZ OU NV", modality: "COR", groupName: "Lizard", subgroupName: "Ouro",  categoryName: "nevado" },
-  { officialCode: "CC2003", officialName: "Lizard Prata Intenso", abbreviation: "LZ PR IN", modality: "COR", groupName: "Lizard", subgroupName: "Prata", categoryName: "intenso" },
-  { officialCode: "CC2004", officialName: "Lizard Prata Nevado",  abbreviation: "LZ PR NV", modality: "COR", groupName: "Lizard", subgroupName: "Prata", categoryName: "nevado" },
+  { officialCode: "CC0101", officialName: "BRANCO", abbreviation: "BR", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Brancos" },
+  { officialCode: "CC0102", officialName: "BRANCO DOMINANTE", abbreviation: "BR DO", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Brancos" },
+  { officialCode: "CC0103", officialName: "AMARELO INTENSO", abbreviation: "AM IN", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Amarelos", categoryName: "intenso" },
+  { officialCode: "CC0104", officialName: "AMARELO NEVADO", abbreviation: "AM NV", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Amarelos", categoryName: "nevado" },
+  { officialCode: "CC0105", officialName: "AMARELO MOSAICO MACHO", abbreviation: "AM MS MC", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Amarelos", categoryName: "mosaico_macho" },
+  { officialCode: "CC0106", officialName: "AMARELO MOSAICO FÊMEA", abbreviation: "AM MS FM", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Amarelos", categoryName: "mosaico_femea" },
+  { officialCode: "CC0107", officialName: "AMARELO MARFIM INTENSO", abbreviation: "AM MF IN", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Marfins", categoryName: "intenso" },
+  { officialCode: "CC0108", officialName: "AMARELO MARFIM NEVADO", abbreviation: "AM MF NV", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Marfins", categoryName: "nevado" },
+  { officialCode: "CC0109", officialName: "AMARELO MARFIM MOSAICO MACHO", abbreviation: "AM MF MS MC", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Marfins", categoryName: "mosaico_macho" },
+  { officialCode: "CC0110", officialName: "AMARELO MARFIM MOSAICO FÊMEA", abbreviation: "AM MF MS FM", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Marfins", categoryName: "mosaico_femea" },
+  { officialCode: "CC0201", officialName: "AMARELO INTENSO ASAS BRANCAS", abbreviation: "AM IN AB", modality: "COR", groupName: "Lipocrômicos sem fator asa branca", subgroupName: "Asas Brancas", categoryName: "intenso" },
+  { officialCode: "CC0202", officialName: "AMARELO NEVADO ASAS BRANCAS", abbreviation: "AM NV AB", modality: "COR", groupName: "Lipocrômicos sem fator asa branca", subgroupName: "Asas Brancas", categoryName: "nevado" },
+  { officialCode: "CC0205", officialName: "AMARELO MARFIM INTENSO ASAS BRANCAS", abbreviation: "AM MF IN AB", modality: "COR", groupName: "Lipocrômicos sem fator asa branca", subgroupName: "Asas Brancas", categoryName: "intenso" },
+  { officialCode: "CC0206", officialName: "AMARELO MARFIM NEVADO ASAS BRANCAS", abbreviation: "AM MF NV AB", modality: "COR", groupName: "Lipocrômicos sem fator asa branca", subgroupName: "Asas Brancas", categoryName: "nevado" },
+  { officialCode: "CC0301", officialName: "ALBINO", abbreviation: "AL", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos" },
+  { officialCode: "CC0302", officialName: "ALBINO DOMINANTE", abbreviation: "AL DO", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos" },
+  { officialCode: "CC0303", officialName: "LUTINO INTENSO", abbreviation: "LU IN", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "intenso" },
+  { officialCode: "CC0304", officialName: "LUTINO NEVADO", abbreviation: "LU NV", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "nevado" },
+  { officialCode: "CC0305", officialName: "LUTINO MOSAICO MACHO", abbreviation: "LU MS MC", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "mosaico_macho" },
+  { officialCode: "CC0306", officialName: "LUTINO MOSAICO FÊMEA", abbreviation: "LU MS FM", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "mosaico_femea" },
+  { officialCode: "CC0307", officialName: "LUTINO MARFIM INTENSO", abbreviation: "LU MF IN", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "intenso" },
+  { officialCode: "CC0308", officialName: "LUTINO MARFIM NEVADO", abbreviation: "LU MF NV", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "nevado" },
+  { officialCode: "CC0309", officialName: "LUTINO MARFIM MOSAICO MACHO", abbreviation: "LU MF MS MC", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "mosaico_macho" },
+  { officialCode: "CC0310", officialName: "LUTINO MARFIM MOSAICO FÊMEA", abbreviation: "LU MF MS FM", modality: "COR", groupName: "Ino lipocrômicos sem fator", subgroupName: "Inos", categoryName: "mosaico_femea" },
+  { officialCode: "CC0401", officialName: "BICO AMARELO INTENSO", abbreviation: "BA IN", modality: "COR", groupName: "Bico amarelo", subgroupName: "Bico Amarelo", categoryName: "intenso" },
+  { officialCode: "CC0402", officialName: "BICO AMARELO NEVADO", abbreviation: "BA NV", modality: "COR", groupName: "Bico amarelo", subgroupName: "Bico Amarelo", categoryName: "nevado" },
+  { officialCode: "CC0411", officialName: "BICO AMARELO LUTINO INTENSO", abbreviation: "BA LU IN", modality: "COR", groupName: "Bico amarelo", subgroupName: "Bico Amarelo", categoryName: "intenso" },
+  { officialCode: "CC0412", officialName: "BICO AMARELO LUTINO NEVADO", abbreviation: "BA LU NV", modality: "COR", groupName: "Bico amarelo", subgroupName: "Bico Amarelo", categoryName: "nevado" },
+  { officialCode: "CC0501", officialName: "VERMELHO INTENSO", abbreviation: "VM IN", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Vermelhos", categoryName: "intenso" },
+  { officialCode: "CC0502", officialName: "VERMELHO NEVADO", abbreviation: "VM NV", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Vermelhos", categoryName: "nevado" },
+  { officialCode: "CC0503", officialName: "VERMELHO MOSAICO MACHO", abbreviation: "VM MS MC", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Vermelhos", categoryName: "mosaico_macho" },
+  { officialCode: "CC0504", officialName: "VERMELHO MOSAICO FÊMEA", abbreviation: "VM MS FM", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Vermelhos", categoryName: "mosaico_femea" },
+  { officialCode: "CC0505", officialName: "VERMELHO MARFIM INTENSO", abbreviation: "VM MF IN", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Marfins", categoryName: "intenso" },
+  { officialCode: "CC0506", officialName: "VERMELHO MARFIM NEVADO", abbreviation: "VM MF NV", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Marfins", categoryName: "nevado" },
+  { officialCode: "CC0507", officialName: "VERMELHO MARFIM MOSAICO MACHO", abbreviation: "VM MF MS MC", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Marfins", categoryName: "mosaico_macho" },
+  { officialCode: "CC0508", officialName: "VERMELHO MARFIM MOSAICO FÊMEA", abbreviation: "VM MF MS FM", modality: "COR", groupName: "Lipocrômicos com fator", subgroupName: "Marfins", categoryName: "mosaico_femea" },
+  { officialCode: "CC0601", officialName: "VERMELHO INTENSO ASAS BRANCAS", abbreviation: "VM IN AB", modality: "COR", groupName: "Lipocrômicos com fator asa branca", subgroupName: "Asas Brancas", categoryName: "intenso" },
+  { officialCode: "CC0602", officialName: "VERMELHO NEVADO ASAS BRANCAS", abbreviation: "VM NV AB", modality: "COR", groupName: "Lipocrômicos com fator asa branca", subgroupName: "Asas Brancas", categoryName: "nevado" },
+  { officialCode: "CC0605", officialName: "VERMELHO MARFIM INTENSO ASAS BRANCAS", abbreviation: "VM MF IN AB", modality: "COR", groupName: "Lipocrômicos com fator asa branca", subgroupName: "Asas Brancas", categoryName: "intenso" },
+  { officialCode: "CC0606", officialName: "VERMELHO MARFIM NEVADO ASAS BRANCAS", abbreviation: "VM MF NV AB", modality: "COR", groupName: "Lipocrômicos com fator asa branca", subgroupName: "Asas Brancas", categoryName: "nevado" },
+  { officialCode: "CC0701", officialName: "RUBINO INTENSO", abbreviation: "RU IN", modality: "COR", groupName: "Inos lipocrômicos com fator", subgroupName: "Rubinos", categoryName: "intenso" },
+  { officialCode: "CC0702", officialName: "RUBINO NEVADO", abbreviation: "RU NV", modality: "COR", groupName: "Inos lipocrômicos com fator", subgroupName: "Rubinos", categoryName: "nevado" },
+  { officialCode: "CC0703", officialName: "RUBINO MOSAICO MACHO", abbreviation: "RU MS MC", modality: "COR", groupName: "Inos lipocrômicos com fator", subgroupName: "Rubinos", categoryName: "mosaico_macho" },
+  { officialCode: "CC0704", officialName: "RUBINO MOSAICO FÊMEA", abbreviation: "RU MS FM", modality: "COR", groupName: "Inos lipocrômicos com fator", subgroupName: "Rubinos", categoryName: "mosaico_femea" },
+  { officialCode: "CC0705", officialName: "RUBINO MARFIM INTENSO", abbreviation: "RU MF IN", modality: "COR", groupName: "Inos lipocrômicos com fator", subgroupName: "Rubinos", categoryName: "intenso" },
+  { officialCode: "CC0706", officialName: "RUBINO MARFIM NEVADO", abbreviation: "RU MF NV", modality: "COR", groupName: "Inos lipocrômicos com fator", subgroupName: "Rubinos", categoryName: "nevado" },
+  { officialCode: "CC0901", officialName: "URUCUM VERMELHO INTENSO", abbreviation: "UR VM IN", modality: "COR", groupName: "Urucum", subgroupName: "Urucum", categoryName: "intenso" },
+  { officialCode: "CC0902", officialName: "URUCUM VERMELHO NEVADO", abbreviation: "UR VM NV", modality: "COR", groupName: "Urucum", subgroupName: "Urucum", categoryName: "nevado" },
+  { officialCode: "CC0905", officialName: "URUCUM VERMELHO MARFIM INTENSO", abbreviation: "UR VM MF IN", modality: "COR", groupName: "Urucum", subgroupName: "Urucum", categoryName: "intenso" },
+  { officialCode: "CC1101", officialName: "AZUL", abbreviation: "AZ", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro" },
+  { officialCode: "CC1102", officialName: "AZUL DOMINANTE", abbreviation: "AZ DO", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro" },
+  { officialCode: "CC1103", officialName: "VERDE INTENSO", abbreviation: "VD IN", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro", categoryName: "intenso" },
+  { officialCode: "CC1104", officialName: "VERDE NEVADO", abbreviation: "VD NV", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro", categoryName: "nevado" },
+  { officialCode: "CC1105", officialName: "VERDE MOSAICO MACHO", abbreviation: "VD MS MC", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro", categoryName: "mosaico_macho" },
+  { officialCode: "CC1106", officialName: "VERDE MOSAICO FÊMEA", abbreviation: "VD MS FM", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro", categoryName: "mosaico_femea" },
+  { officialCode: "CC1107", officialName: "VERDE MARFIM INTENSO", abbreviation: "VD MF IN", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro", categoryName: "intenso" },
+  { officialCode: "CC1108", officialName: "VERDE MARFIM NEVADO", abbreviation: "VD MF NV", modality: "COR", groupName: "Negros sem fator", subgroupName: "Negro", categoryName: "nevado" },
+  { officialCode: "CC1201", officialName: "ÁGATA PRATEADO", abbreviation: "AG PR", modality: "COR", groupName: "Ágatas sem fator", subgroupName: "Ágata" },
+  { officialCode: "CC1202", officialName: "ÁGATA PRATEADO DOMINANTE", abbreviation: "AG PR DO", modality: "COR", groupName: "Ágatas sem fator", subgroupName: "Ágata" },
+  { officialCode: "CC1203", officialName: "ÁGATA AMARELO INTENSO", abbreviation: "AG AM IN", modality: "COR", groupName: "Ágatas sem fator", subgroupName: "Ágata", categoryName: "intenso" },
+  { officialCode: "CC1204", officialName: "ÁGATA AMARELO NEVADO", abbreviation: "AG AM NV", modality: "COR", groupName: "Ágatas sem fator", subgroupName: "Ágata", categoryName: "nevado" },
+  { officialCode: "CC1205", officialName: "ÁGATA AMARELO MOSAICO MACHO", abbreviation: "AG AM MS MC", modality: "COR", groupName: "Ágatas sem fator", subgroupName: "Ágata", categoryName: "mosaico_macho" },
+  { officialCode: "CC1206", officialName: "ÁGATA AMARELO MOSAICO FÊMEA", abbreviation: "AG AM MS FM", modality: "COR", groupName: "Ágatas sem fator", subgroupName: "Ágata", categoryName: "mosaico_femea" },
+  { officialCode: "CC1301", officialName: "CANELA PRATEADO", abbreviation: "CN PR", modality: "COR", groupName: "Canelas sem fator", subgroupName: "Canela" },
+  { officialCode: "CC1302", officialName: "CANELA PRATEADO DOMINANTE", abbreviation: "CN PR DO", modality: "COR", groupName: "Canelas sem fator", subgroupName: "Canela" },
+  { officialCode: "CC1303", officialName: "CANELA AMARELO INTENSO", abbreviation: "CN AM IN", modality: "COR", groupName: "Canelas sem fator", subgroupName: "Canela", categoryName: "intenso" },
+  { officialCode: "CC1304", officialName: "CANELA AMARELO NEVADO", abbreviation: "CN AM NV", modality: "COR", groupName: "Canelas sem fator", subgroupName: "Canela", categoryName: "nevado" },
+  { officialCode: "CC1305", officialName: "CANELA AMARELO MOSAICO MACHO", abbreviation: "CN AM MS MC", modality: "COR", groupName: "Canelas sem fator", subgroupName: "Canela", categoryName: "mosaico_macho" },
+  { officialCode: "CC1401", officialName: "ISABELINO PRATEADO", abbreviation: "IS PR", modality: "COR", groupName: "Isabelinos sem fator", subgroupName: "Isabelino" },
+  { officialCode: "CC1402", officialName: "ISABELINO PRATEADO DOMINANTE", abbreviation: "IS PR DO", modality: "COR", groupName: "Isabelinos sem fator", subgroupName: "Isabelino" },
+  { officialCode: "CC1403", officialName: "ISABELINO AMARELO INTENSO", abbreviation: "IS AM IN", modality: "COR", groupName: "Isabelinos sem fator", subgroupName: "Isabelino", categoryName: "intenso" },
+  { officialCode: "CC1404", officialName: "ISABELINO AMARELO NEVADO", abbreviation: "IS AM NV", modality: "COR", groupName: "Isabelinos sem fator", subgroupName: "Isabelino", categoryName: "nevado" },
+  { officialCode: "CC1501", officialName: "COBRE INTENSO", abbreviation: "CB IN", modality: "COR", groupName: "Negro com fator", subgroupName: "Cobre", categoryName: "intenso" },
+  { officialCode: "CC1502", officialName: "COBRE NEVADO", abbreviation: "CB NV", modality: "COR", groupName: "Negro com fator", subgroupName: "Cobre", categoryName: "nevado" },
+  { officialCode: "CC1601", officialName: "ÁGATA VERMELHO INTENSO", abbreviation: "AG VM IN", modality: "COR", groupName: "Ágata com fator", subgroupName: "Ágata", categoryName: "intenso" },
+  { officialCode: "CC1602", officialName: "ÁGATA VERMELHO NEVADO", abbreviation: "AG VM NV", modality: "COR", groupName: "Ágata com fator", subgroupName: "Ágata", categoryName: "nevado" },
+  { officialCode: "CC1701", officialName: "CANELA VERMELHO INTENSO", abbreviation: "CN VM IN", modality: "COR", groupName: "Canela com fator", subgroupName: "Canela", categoryName: "intenso" },
+  { officialCode: "CC1702", officialName: "CANELA VERMELHO NEVADO", abbreviation: "CN VM NV", modality: "COR", groupName: "Canela com fator", subgroupName: "Canela", categoryName: "nevado" },
+  { officialCode: "CC1801", officialName: "ISABELINO VERMELHO INTENSO", abbreviation: "IS VM IN", modality: "COR", groupName: "Isabelinos com fator", subgroupName: "Isabelino", categoryName: "intenso" },
+  { officialCode: "CC1802", officialName: "ISABELINO VERMELHO NEVADO", abbreviation: "IS VM NV", modality: "COR", groupName: "Isabelinos com fator", subgroupName: "Isabelino", categoryName: "nevado" },
+  { officialCode: "CC1903", officialName: "VERDE PASTEL INTENSO", abbreviation: "VD PT IN", modality: "COR", groupName: "Negro pastel sem fator", subgroupName: "Pastel", categoryName: "intenso" },
+  { officialCode: "CC2003", officialName: "ÁGATA PASTEL AMARELO INTENSO", abbreviation: "AG PT AM IN", modality: "COR", groupName: "Ágata pastel sem fator", subgroupName: "Pastel", categoryName: "intenso" },
+  { officialCode: "CC2703", officialName: "VERDE OPALINO INTENSO", abbreviation: "VD OP IN", modality: "COR", groupName: "Negro opalino sem fator", subgroupName: "Opalino", categoryName: "intenso" },
+  { officialCode: "CC3501", officialName: "FEO ALBINO MACHO", abbreviation: "FE AL MC", modality: "COR", groupName: "Feo sem fator", subgroupName: "Feo" },
+  { officialCode: "CC3703", officialName: "ACETINADO AMARELO INTENSO", abbreviation: "AC AM IN", modality: "COR", groupName: "Acetinado sem fator", subgroupName: "Acetinado", categoryName: "intenso" },
+  { officialCode: "CC3903", officialName: "ASAS CINZA AMARELO INTENSO", abbreviation: "AS CZ AM IN", modality: "COR", groupName: "Asas cinza sem fator", subgroupName: "Asas Cinza", categoryName: "intenso" },
+  { officialCode: "CC4103", officialName: "VERDE TOPÁZIO INTENSO", abbreviation: "VD TO IN", modality: "COR", groupName: "Negro topázio sem fator", subgroupName: "Topázio", categoryName: "intenso" },
+  { officialCode: "CC4903", officialName: "VERDE EUMO INTENSO", abbreviation: "VD EU IN", modality: "COR", groupName: "Negro eumo sem fator", subgroupName: "Eumo", categoryName: "intenso" },
+  { officialCode: "CC5703", officialName: "VERDE ONIX INTENSO", abbreviation: "VD OX IN", modality: "COR", groupName: "Negro ônix sem fator", subgroupName: "Ônix", categoryName: "intenso" },
+  { officialCode: "CC6503", officialName: "VERDE COBALTO INTENSO", abbreviation: "VD CO IN", modality: "COR", groupName: "Negro cobalto sem fator", subgroupName: "Cobalto", categoryName: "intenso" },
+  { officialCode: "CC7303", officialName: "VERDE JASPE INTENSO", abbreviation: "VD JP IN", modality: "COR", groupName: "Negro jaspe sem fator", subgroupName: "Jaspe", categoryName: "intenso" },
+  { officialCode: "CC8103", officialName: "VERDE MOGNO INTENSO", abbreviation: "VD MO IN", modality: "COR", groupName: "Negro mogno sem fator", subgroupName: "Mogno", categoryName: "intenso" },
+  { officialCode: "CC8803", officialName: "MULATO AMARELO INTENSO", abbreviation: "MU AM IN", modality: "COR", groupName: "Mulatos sem fator", subgroupName: "Mulato", categoryName: "intenso" },
 ];
 
 // ============================================================================
-// Catálogo de Canário de Porte (FOB/OBJO — PORTE)
+// Canário de Porte — 45 classes reais (37 raças, todas cobertas; com/sem
+// topete onde a raça suporta crista)
 // ============================================================================
 const PORTE_CLASSES: SeedClass[] = [
-  // ── Gloster ───────────────────────────────────────────────────────────────
-  { officialCode: "CP0101", officialName: "Gloster Corona Amarelo Intenso",   abbreviation: "GL CO AM IN", modality: "PORTE", breedName: "Gloster", subgroupName: "Corona",  categoryName: "intenso" },
-  { officialCode: "CP0102", officialName: "Gloster Corona Amarelo Nevado",    abbreviation: "GL CO AM NV", modality: "PORTE", breedName: "Gloster", subgroupName: "Corona",  categoryName: "nevado" },
-  { officialCode: "CP0103", officialName: "Gloster Corona Vermelho Intenso",  abbreviation: "GL CO VM IN", modality: "PORTE", breedName: "Gloster", subgroupName: "Corona",  categoryName: "intenso" },
-  { officialCode: "CP0104", officialName: "Gloster Corona Vermelho Nevado",   abbreviation: "GL CO VM NV", modality: "PORTE", breedName: "Gloster", subgroupName: "Corona",  categoryName: "nevado" },
-  { officialCode: "CP0105", officialName: "Gloster Corona Branco",            abbreviation: "GL CO BR",    modality: "PORTE", breedName: "Gloster", subgroupName: "Corona" },
-  { officialCode: "CP0111", officialName: "Gloster Consort Amarelo Intenso",  abbreviation: "GL CS AM IN", modality: "PORTE", breedName: "Gloster", subgroupName: "Consort", categoryName: "intenso" },
-  { officialCode: "CP0112", officialName: "Gloster Consort Amarelo Nevado",   abbreviation: "GL CS AM NV", modality: "PORTE", breedName: "Gloster", subgroupName: "Consort", categoryName: "nevado" },
-  { officialCode: "CP0113", officialName: "Gloster Consort Vermelho Intenso", abbreviation: "GL CS VM IN", modality: "PORTE", breedName: "Gloster", subgroupName: "Consort", categoryName: "intenso" },
-  { officialCode: "CP0114", officialName: "Gloster Consort Vermelho Nevado",  abbreviation: "GL CS VM NV", modality: "PORTE", breedName: "Gloster", subgroupName: "Consort", categoryName: "nevado" },
-  { officialCode: "CP0115", officialName: "Gloster Consort Branco",           abbreviation: "GL CS BR",    modality: "PORTE", breedName: "Gloster", subgroupName: "Consort" },
-  // ── Holandês ──────────────────────────────────────────────────────────────
-  { officialCode: "CP0201", officialName: "Holandês Amarelo Intenso",  abbreviation: "HL AM IN", modality: "PORTE", breedName: "Holandês", categoryName: "intenso" },
-  { officialCode: "CP0202", officialName: "Holandês Amarelo Nevado",   abbreviation: "HL AM NV", modality: "PORTE", breedName: "Holandês", categoryName: "nevado" },
-  { officialCode: "CP0203", officialName: "Holandês Vermelho Intenso", abbreviation: "HL VM IN", modality: "PORTE", breedName: "Holandês", categoryName: "intenso" },
-  { officialCode: "CP0204", officialName: "Holandês Vermelho Nevado",  abbreviation: "HL VM NV", modality: "PORTE", breedName: "Holandês", categoryName: "nevado" },
-  { officialCode: "CP0205", officialName: "Holandês Branco",           abbreviation: "HL BR",    modality: "PORTE", breedName: "Holandês" },
-  // ── Padovano ──────────────────────────────────────────────────────────────
-  { officialCode: "CP0230", officialName: "Padovano com Topete Amarelo Intenso",         abbreviation: "PA CT AM IN", modality: "PORTE", breedName: "Padovano", subgroupName: "Com Topete",  categoryName: "intenso" },
-  { officialCode: "CP0231", officialName: "Padovano com Topete Amarelo Nevado",          abbreviation: "PA CT AM NV", modality: "PORTE", breedName: "Padovano", subgroupName: "Com Topete",  categoryName: "nevado" },
-  { officialCode: "CP0232", officialName: "Padovano com Topete Vermelho Intenso",        abbreviation: "PA CT VM IN", modality: "PORTE", breedName: "Padovano", subgroupName: "Com Topete",  categoryName: "intenso" },
-  { officialCode: "CP0233", officialName: "Padovano com Topete Vermelho Nevado",         abbreviation: "PA CT VM NV", modality: "PORTE", breedName: "Padovano", subgroupName: "Com Topete",  categoryName: "nevado" },
-  { officialCode: "CP0240", officialName: "Padovano com Topete Branco 100% Lipocrômico", abbreviation: "PA CT BR LI", modality: "PORTE", breedName: "Padovano", subgroupName: "Com Topete" },
-  { officialCode: "CP0250", officialName: "Padovano sem Topete Amarelo Intenso",         abbreviation: "PA ST AM IN", modality: "PORTE", breedName: "Padovano", subgroupName: "Sem Topete",  categoryName: "intenso" },
-  { officialCode: "CP0251", officialName: "Padovano sem Topete Amarelo Nevado",          abbreviation: "PA ST AM NV", modality: "PORTE", breedName: "Padovano", subgroupName: "Sem Topete",  categoryName: "nevado" },
-  { officialCode: "CP0252", officialName: "Padovano sem Topete Vermelho Intenso",        abbreviation: "PA ST VM IN", modality: "PORTE", breedName: "Padovano", subgroupName: "Sem Topete",  categoryName: "intenso" },
-  { officialCode: "CP0253", officialName: "Padovano sem Topete Vermelho Nevado",         abbreviation: "PA ST VM NV", modality: "PORTE", breedName: "Padovano", subgroupName: "Sem Topete",  categoryName: "nevado" },
-  // ── Frisado do Norte ──────────────────────────────────────────────────────
-  { officialCode: "CP0301", officialName: "Frisado do Norte Amarelo Intenso",  abbreviation: "FN AM IN", modality: "PORTE", breedName: "Frisado do Norte", categoryName: "intenso" },
-  { officialCode: "CP0302", officialName: "Frisado do Norte Amarelo Nevado",   abbreviation: "FN AM NV", modality: "PORTE", breedName: "Frisado do Norte", categoryName: "nevado" },
-  { officialCode: "CP0303", officialName: "Frisado do Norte Vermelho Intenso", abbreviation: "FN VM IN", modality: "PORTE", breedName: "Frisado do Norte", categoryName: "intenso" },
-  { officialCode: "CP0304", officialName: "Frisado do Norte Vermelho Nevado",  abbreviation: "FN VM NV", modality: "PORTE", breedName: "Frisado do Norte", categoryName: "nevado" },
-  { officialCode: "CP0305", officialName: "Frisado do Norte Branco",           abbreviation: "FN BR",    modality: "PORTE", breedName: "Frisado do Norte" },
-  // ── Frisado do Sul ────────────────────────────────────────────────────────
-  { officialCode: "CP0401", officialName: "Frisado do Sul Amarelo Intenso",  abbreviation: "FS AM IN", modality: "PORTE", breedName: "Frisado do Sul", categoryName: "intenso" },
-  { officialCode: "CP0402", officialName: "Frisado do Sul Amarelo Nevado",   abbreviation: "FS AM NV", modality: "PORTE", breedName: "Frisado do Sul", categoryName: "nevado" },
-  { officialCode: "CP0403", officialName: "Frisado do Sul Vermelho Intenso", abbreviation: "FS VM IN", modality: "PORTE", breedName: "Frisado do Sul", categoryName: "intenso" },
-  { officialCode: "CP0404", officialName: "Frisado do Sul Vermelho Nevado",  abbreviation: "FS VM NV", modality: "PORTE", breedName: "Frisado do Sul", categoryName: "nevado" },
-  { officialCode: "CP0405", officialName: "Frisado do Sul Branco",           abbreviation: "FS BR",    modality: "PORTE", breedName: "Frisado do Sul" },
-  // ── Belga Clássico ────────────────────────────────────────────────────────
-  { officialCode: "CP0501", officialName: "Belga Clássico Amarelo Intenso",  abbreviation: "BC AM IN", modality: "PORTE", breedName: "Belga Clássico", categoryName: "intenso" },
-  { officialCode: "CP0502", officialName: "Belga Clássico Amarelo Nevado",   abbreviation: "BC AM NV", modality: "PORTE", breedName: "Belga Clássico", categoryName: "nevado" },
-  { officialCode: "CP0503", officialName: "Belga Clássico Vermelho Intenso", abbreviation: "BC VM IN", modality: "PORTE", breedName: "Belga Clássico", categoryName: "intenso" },
-  { officialCode: "CP0504", officialName: "Belga Clássico Vermelho Nevado",  abbreviation: "BC VM NV", modality: "PORTE", breedName: "Belga Clássico", categoryName: "nevado" },
-  { officialCode: "CP0505", officialName: "Belga Clássico Branco",           abbreviation: "BC BR",    modality: "PORTE", breedName: "Belga Clássico" },
-  // ── Yorkshire ─────────────────────────────────────────────────────────────
-  { officialCode: "CP0601", officialName: "Yorkshire Amarelo Intenso",  abbreviation: "YK AM IN", modality: "PORTE", breedName: "Yorkshire", categoryName: "intenso" },
-  { officialCode: "CP0602", officialName: "Yorkshire Amarelo Nevado",   abbreviation: "YK AM NV", modality: "PORTE", breedName: "Yorkshire", categoryName: "nevado" },
-  { officialCode: "CP0603", officialName: "Yorkshire Vermelho Intenso", abbreviation: "YK VM IN", modality: "PORTE", breedName: "Yorkshire", categoryName: "intenso" },
-  { officialCode: "CP0604", officialName: "Yorkshire Vermelho Nevado",  abbreviation: "YK VM NV", modality: "PORTE", breedName: "Yorkshire", categoryName: "nevado" },
-  { officialCode: "CP0605", officialName: "Yorkshire Branco",           abbreviation: "YK BR",    modality: "PORTE", breedName: "Yorkshire" },
-  // ── Border Fancy ──────────────────────────────────────────────────────────
-  { officialCode: "CP0701", officialName: "Border Fancy Amarelo Intenso",  abbreviation: "BD AM IN", modality: "PORTE", breedName: "Border Fancy", categoryName: "intenso" },
-  { officialCode: "CP0702", officialName: "Border Fancy Amarelo Nevado",   abbreviation: "BD AM NV", modality: "PORTE", breedName: "Border Fancy", categoryName: "nevado" },
-  { officialCode: "CP0703", officialName: "Border Fancy Vermelho Intenso", abbreviation: "BD VM IN", modality: "PORTE", breedName: "Border Fancy", categoryName: "intenso" },
-  { officialCode: "CP0704", officialName: "Border Fancy Vermelho Nevado",  abbreviation: "BD VM NV", modality: "PORTE", breedName: "Border Fancy", categoryName: "nevado" },
-  { officialCode: "CP0705", officialName: "Border Fancy Branco",           abbreviation: "BD BR",    modality: "PORTE", breedName: "Border Fancy" },
-  // ── Norwich ───────────────────────────────────────────────────────────────
-  { officialCode: "CP0801", officialName: "Norwich Amarelo Intenso",  abbreviation: "NW AM IN", modality: "PORTE", breedName: "Norwich", categoryName: "intenso" },
-  { officialCode: "CP0802", officialName: "Norwich Amarelo Nevado",   abbreviation: "NW AM NV", modality: "PORTE", breedName: "Norwich", categoryName: "nevado" },
-  { officialCode: "CP0803", officialName: "Norwich Vermelho Intenso", abbreviation: "NW VM IN", modality: "PORTE", breedName: "Norwich", categoryName: "intenso" },
-  { officialCode: "CP0804", officialName: "Norwich Vermelho Nevado",  abbreviation: "NW VM NV", modality: "PORTE", breedName: "Norwich", categoryName: "nevado" },
-  { officialCode: "CP0805", officialName: "Norwich Branco",           abbreviation: "NW BR",    modality: "PORTE", breedName: "Norwich" },
-  // ── Fife Fancy ────────────────────────────────────────────────────────────
-  { officialCode: "CP0901", officialName: "Fife Fancy Amarelo Intenso",  abbreviation: "FF AM IN", modality: "PORTE", breedName: "Fife Fancy", categoryName: "intenso" },
-  { officialCode: "CP0902", officialName: "Fife Fancy Amarelo Nevado",   abbreviation: "FF AM NV", modality: "PORTE", breedName: "Fife Fancy", categoryName: "nevado" },
-  { officialCode: "CP0903", officialName: "Fife Fancy Vermelho Intenso", abbreviation: "FF VM IN", modality: "PORTE", breedName: "Fife Fancy", categoryName: "intenso" },
-  { officialCode: "CP0904", officialName: "Fife Fancy Vermelho Nevado",  abbreviation: "FF VM NV", modality: "PORTE", breedName: "Fife Fancy", categoryName: "nevado" },
-  { officialCode: "CP0905", officialName: "Fife Fancy Branco",           abbreviation: "FF BR",    modality: "PORTE", breedName: "Fife Fancy" },
-  // ── Lancashire ────────────────────────────────────────────────────────────
-  { officialCode: "CP1001", officialName: "Lancashire Coppy Amarelo Intenso",  abbreviation: "LC CO AM IN", modality: "PORTE", breedName: "Lancashire", subgroupName: "Coppy",     categoryName: "intenso" },
-  { officialCode: "CP1002", officialName: "Lancashire Coppy Amarelo Nevado",   abbreviation: "LC CO AM NV", modality: "PORTE", breedName: "Lancashire", subgroupName: "Coppy",     categoryName: "nevado" },
-  { officialCode: "CP1011", officialName: "Lancashire Plainhead Amarelo Intenso", abbreviation: "LC PH AM IN", modality: "PORTE", breedName: "Lancashire", subgroupName: "Plainhead", categoryName: "intenso" },
-  { officialCode: "CP1012", officialName: "Lancashire Plainhead Amarelo Nevado",  abbreviation: "LC PH AM NV", modality: "PORTE", breedName: "Lancashire", subgroupName: "Plainhead", categoryName: "nevado" },
-  // ── Scots Fancy ───────────────────────────────────────────────────────────
-  { officialCode: "CP1101", officialName: "Scots Fancy Amarelo Intenso",  abbreviation: "SC AM IN", modality: "PORTE", breedName: "Scots Fancy", categoryName: "intenso" },
-  { officialCode: "CP1102", officialName: "Scots Fancy Amarelo Nevado",   abbreviation: "SC AM NV", modality: "PORTE", breedName: "Scots Fancy", categoryName: "nevado" },
-  { officialCode: "CP1103", officialName: "Scots Fancy Vermelho Intenso", abbreviation: "SC VM IN", modality: "PORTE", breedName: "Scots Fancy", categoryName: "intenso" },
-  { officialCode: "CP1104", officialName: "Scots Fancy Vermelho Nevado",  abbreviation: "SC VM NV", modality: "PORTE", breedName: "Scots Fancy", categoryName: "nevado" },
-  // ── Crest (Crestado Antigo) ───────────────────────────────────────────────
-  { officialCode: "CP1201", officialName: "Crest Coppy Amarelo Intenso",     abbreviation: "CR CO AM IN", modality: "PORTE", breedName: "Crest", subgroupName: "Coppy",     categoryName: "intenso" },
-  { officialCode: "CP1202", officialName: "Crest Coppy Amarelo Nevado",      abbreviation: "CR CO AM NV", modality: "PORTE", breedName: "Crest", subgroupName: "Coppy",     categoryName: "nevado" },
-  { officialCode: "CP1211", officialName: "Crest Plainhead Amarelo Intenso", abbreviation: "CR PH AM IN", modality: "PORTE", breedName: "Crest", subgroupName: "Plainhead", categoryName: "intenso" },
-  { officialCode: "CP1212", officialName: "Crest Plainhead Amarelo Nevado",  abbreviation: "CR PH AM NV", modality: "PORTE", breedName: "Crest", subgroupName: "Plainhead", categoryName: "nevado" },
-  // ── Frisado Parisiense ────────────────────────────────────────────────────
-  { officialCode: "CP1301", officialName: "Frisado Parisiense Amarelo Intenso",  abbreviation: "FP AM IN", modality: "PORTE", breedName: "Frisado Parisiense", categoryName: "intenso" },
-  { officialCode: "CP1302", officialName: "Frisado Parisiense Amarelo Nevado",   abbreviation: "FP AM NV", modality: "PORTE", breedName: "Frisado Parisiense", categoryName: "nevado" },
-  { officialCode: "CP1303", officialName: "Frisado Parisiense Vermelho Intenso", abbreviation: "FP VM IN", modality: "PORTE", breedName: "Frisado Parisiense", categoryName: "intenso" },
-  { officialCode: "CP1304", officialName: "Frisado Parisiense Vermelho Nevado",  abbreviation: "FP VM NV", modality: "PORTE", breedName: "Frisado Parisiense", categoryName: "nevado" },
-  // ── Belga Antigo ──────────────────────────────────────────────────────────
-  { officialCode: "CP1401", officialName: "Belga Antigo Amarelo Intenso",  abbreviation: "BA AM IN", modality: "PORTE", breedName: "Belga Antigo", categoryName: "intenso" },
-  { officialCode: "CP1402", officialName: "Belga Antigo Amarelo Nevado",   abbreviation: "BA AM NV", modality: "PORTE", breedName: "Belga Antigo", categoryName: "nevado" },
-  { officialCode: "CP1403", officialName: "Belga Antigo Vermelho Intenso", abbreviation: "BA VM IN", modality: "PORTE", breedName: "Belga Antigo", categoryName: "intenso" },
-  { officialCode: "CP1404", officialName: "Belga Antigo Vermelho Nevado",  abbreviation: "BA VM NV", modality: "PORTE", breedName: "Belga Antigo", categoryName: "nevado" },
+  { officialCode: "CP0010", officialName: "FRISADO PARISIENSE BRANCO 100% LIPOCRÔMICO", abbreviation: "FR PR BR LI", modality: "PORTE", breedName: "Frisado Parisiense", bitola: "3,4" },
+  { officialCode: "CP0020", officialName: "FRISADO PARISIENSE INTENSO 100% LIPOCRÔMICO", abbreviation: "FR PR IN LI", modality: "PORTE", breedName: "Frisado Parisiense", bitola: "3,4", categoryName: "intenso" },
+  { officialCode: "CP0110", officialName: "FRISADO GIGANTE ITALIANO BRANCO 100% LIPOCRÔMICO", abbreviation: "FR GI IT BR LI", modality: "PORTE", breedName: "Frisado Gigante Italiano", bitola: "3,4" },
+  { officialCode: "CP0210", officialName: "PADOVANO SEM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "PA ST BR LI", modality: "PORTE", breedName: "Padovano", bitola: "3,4" },
+  { officialCode: "CP0240", officialName: "PADOVANO COM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "PA CT BR LI", modality: "PORTE", breedName: "Padovano", bitola: "3,4" },
+  { officialCode: "CP0310", officialName: "MELADO TENERIFENHO BRANCO 100% LIPOCRÔMICO", abbreviation: "ME TE BR LI", modality: "PORTE", breedName: "Melado Tenerifenho", bitola: "3,0" },
+  { officialCode: "CP0410", officialName: "FRISADO DO NORTE BRANCO 100% LIPOCRÔMICO", abbreviation: "FR NT BR LI", modality: "PORTE", breedName: "Frisado do Norte", bitola: "3,0" },
+  { officialCode: "CP0510", officialName: "FRISADO DO SUL BRANCO 100% LIPOCRÔMICO", abbreviation: "FR SL BR LI", modality: "PORTE", breedName: "Frisado do Sul", bitola: "3,0" },
+  { officialCode: "CP0610", officialName: "FRISADO SUÍÇO BRANCO 100% LIPOCRÔMICO", abbreviation: "FR SU BR LI", modality: "PORTE", breedName: "Frisado Suíço", bitola: "3,0" },
+  { officialCode: "CP0710", officialName: "GIBBER ITALICUS BRANCO 100% LIPOCRÔMICO", abbreviation: "GI IT BR LI", modality: "PORTE", breedName: "Gibber Italicus", bitola: "2,7" },
+  { officialCode: "CP0810", officialName: "GIBOSO ESPANHOL BRANCO 100% LIPOCRÔMICO", abbreviation: "GB ES BR LI", modality: "PORTE", breedName: "Giboso Espanhol", bitola: "3,0" },
+  { officialCode: "CP0910", officialName: "FIORINO SEM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "FI ST BR LI", modality: "PORTE", breedName: "Fiorino", bitola: "3,0" },
+  { officialCode: "CP0940", officialName: "FIORINO COM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "FI CT BR LI", modality: "PORTE", breedName: "Fiorino", bitola: "3,0" },
+  { officialCode: "CP1010", officialName: "MEHRINGER BRANCO 100% LIPOCRÔMICO", abbreviation: "MH BR LI", modality: "PORTE", breedName: "Mehringer", bitola: "3,0" },
+  { officialCode: "CP1110", officialName: "GIRALDILLO SEVILLANO BRANCO 100% LIPOCROMICO", abbreviation: "GR SE BR LI", modality: "PORTE", breedName: "Giraldillo", bitola: "2,7" },
+  { officialCode: "CP1210", officialName: "ROGETTO BRANCO 100% LIPOCRÔMICO", abbreviation: "RO BR LI", modality: "PORTE", breedName: "Rogetto", bitola: "3,0" },
+  { officialCode: "CP1310", officialName: "BENACUS SEM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "BN ST BR LI", modality: "PORTE", breedName: "Benacus", bitola: "3,0" },
+  { officialCode: "CP1340", officialName: "BENACUS COM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "BN CT BR LI", modality: "PORTE", breedName: "Benacus", bitola: "3,0" },
+  { officialCode: "CP2010", officialName: "BOSSU BELGA BRANCO 100% LIPOCRÔMICO", abbreviation: "BS BE BR LI", modality: "PORTE", breedName: "Bossu Belga", bitola: "3,0" },
+  { officialCode: "CP2110", officialName: "SCOTCH FANCY BRANCO 100% LIPOCRÔMICO", abbreviation: "SC FA BR LI", modality: "PORTE", breedName: "Scotch Fancy", bitola: "3,0" },
+  { officialCode: "CP2210", officialName: "MÜNCHENER BRANCO 100% LIPOCRÔMICO", abbreviation: "MU BR LI", modality: "PORTE", breedName: "Münchener", bitola: "3,0" },
+  { officialCode: "CP2310", officialName: "HOSO JAPONÊS BRANCO LIPOCRÔMICO", abbreviation: "HO JA BR LI", modality: "PORTE", breedName: "Hoso Japonês", bitola: "2,7" },
+  { officialCode: "CP2410", officialName: "SALENTINO S/TOP BRANCO 100% LIPOCRÔNICO", abbreviation: "SA ST BR LI", modality: "PORTE", breedName: "Salentino", bitola: "2,7" },
+  { officialCode: "CP2440", officialName: "SALENTINO C/TOP BRANCO 100% LIPOCRÔNICO", abbreviation: "SA CT BR LI", modality: "PORTE", breedName: "Salentino", bitola: "2,7" },
+  { officialCode: "CP3010", officialName: "BORDER BRANCO 100% LIPOCRÔMICO", abbreviation: "BO BR LI", modality: "PORTE", breedName: "Border", bitola: "3,4" },
+  { officialCode: "CP3110", officialName: "NORWICH BRANCO 100% LIPOCRÔMICO", abbreviation: "NO BR LI", modality: "PORTE", breedName: "Norwich", bitola: "3,4" },
+  { officialCode: "CP3210", officialName: "YORKSHIRE BRANCO 100% LIPOCRÔMICO", abbreviation: "YO BR LI", modality: "PORTE", breedName: "Yorkshire", bitola: "3,4" },
+  { officialCode: "CP3310", officialName: "LLARGUET ESPANHOL BRANCO 100% LIPOCRÔMICO", abbreviation: "LL ES BR LI", modality: "PORTE", breedName: "Llarguet Espanhol", bitola: "3,0" },
+  { officialCode: "CP3410", officialName: "BERNOIS BRANCO 100% LIPOCRÔMICO", abbreviation: "BE BR LI", modality: "PORTE", breedName: "Bernois", bitola: "3,0" },
+  { officialCode: "CP3510", officialName: "FIFE FANCY BRANCO 100% LIPOCRÔMICO", abbreviation: "FI FA BR LI", modality: "PORTE", breedName: "Fife Fancy", bitola: "2,7" },
+  { officialCode: "CP3610", officialName: "RAÇA ESPANHOLA BRANCO 100% LIPOCRÔMICO", abbreviation: "RA ES BR LI", modality: "PORTE", breedName: "Raça Espanhola", bitola: "2,5" },
+  { officialCode: "CP3710", officialName: "IRISH FANCY BRANCO 100% LIPOCRÔMICO", abbreviation: "IR FA BR LI", modality: "PORTE", breedName: "Irish Fancy", bitola: "2,7" },
+  { officialCode: "CP3810", officialName: "RASMI PERSA BRANCO 100% LIPOCRÔMICO", abbreviation: "RM PE BR LI", modality: "PORTE", breedName: "Rasmi Persa", bitola: "3,2" },
+  { officialCode: "CP5001", officialName: "LIZARD SEM CÚPULA BRANCO", abbreviation: "LZ SC BR", modality: "PORTE", breedName: "Lizard", bitola: "3,0" },
+  { officialCode: "CP5501", officialName: "LONDON FANCY BRANCO", abbreviation: "LF BR", modality: "PORTE", breedName: "London Fancy", bitola: "3,2" },
+  { officialCode: "CP6001", officialName: "TOPETE ALEMÃO BRANCO LIPOCRÔMICO", abbreviation: "TO AL BR LI", modality: "PORTE", breedName: "Topete Alemão", bitola: "3,0" },
+  { officialCode: "CP7010", officialName: "GLOSTER SEM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "GL ST BR LI", modality: "PORTE", breedName: "Gloster", bitola: "3,0" },
+  { officialCode: "CP7040", officialName: "GLOSTER COM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "GL CT BR LI", modality: "PORTE", breedName: "Gloster", bitola: "3,0" },
+  { officialCode: "CP7110", officialName: "LANCASHIRE SEM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "LA ST BR LI", modality: "PORTE", breedName: "Lancashire", bitola: "3,4" },
+  { officialCode: "CP7140", officialName: "LANCASHIRE COM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "LA CT BR LI", modality: "PORTE", breedName: "Lancashire", bitola: "3,4" },
+  { officialCode: "CP7210", officialName: "CREST-BRED BRANCO 100% LIPOCRÔMICO", abbreviation: "CR BD BR LI", modality: "PORTE", breedName: "Crest-Bred", bitola: "3,4" },
+  { officialCode: "CP7410", officialName: "RHEINLÄNDER SEM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "RH ST BR LI", modality: "PORTE", breedName: "Rheinländer", bitola: "2,7" },
+  { officialCode: "CP7440", officialName: "RHEINLÄNDER COM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "RH CT BR LI", modality: "PORTE", breedName: "Rheinländer", bitola: "2,7" },
+  { officialCode: "CP7701", officialName: "ARLEQUIM PORTUGUÊS SEM TOPETE MACHO", abbreviation: "AR PT ST MC", modality: "PORTE", breedName: "Arlequim Português", bitola: "3,2" },
+  { officialCode: "CP8010", officialName: "PÍVARO SEM TOPETE BRANCO 100% LIPOCRÔMICO", abbreviation: "PI ST BR LI", modality: "PORTE", breedName: "Pívaro", bitola: "3,2" },
 ];
 
 // ============================================================================
@@ -257,7 +206,6 @@ export async function seedOfficialClasses(): Promise<{ inserted: number; skipped
 
   for (const cls of allClasses) {
     try {
-      // Interpreta os traços genéticos da classe
       let interpretedTraits: unknown = null;
       try {
         interpretedTraits = interpretOfficialClass(cls.officialName, cls.modality);

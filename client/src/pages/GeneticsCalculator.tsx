@@ -760,44 +760,60 @@ function ModoAvancado() {
   const males = (birdsQuery.data ?? []).filter((b) => b.sex === "macho" || b.sex === "M");
   const females = (birdsQuery.data ?? []).filter((b) => b.sex === "fêmea" || b.sex === "F");
 
-  const maleProfile = trpc.geneticProfile.getByBird.useQuery(
-    { birdId: Number(maleId) },
+  // CORREÇÃO: lê de bird_genotype (via router mendelian), que é onde o
+  // GenotypeEditor (cadastro/edição do pássaro) realmente grava os dados.
+  // Antes, esse modo lia de bird_genetic_profiles.genotypeJson, uma tabela
+  // diferente que nada preenche no fluxo normal — por isso sempre aparecia
+  // "este pássaro não tem perfil genético cadastrado" mesmo com o genótipo
+  // preenchido na ficha.
+  const maleGenotype = trpc.mendelian.getGenotype.useQuery(
+    Number(maleId),
     { enabled: maleId !== NONE_VALUE }
   );
-  const femaleProfile = trpc.geneticProfile.getByBird.useQuery(
-    { birdId: Number(femaleId) },
+  const femaleGenotype = trpc.mendelian.getGenotype.useQuery(
+    Number(femaleId),
     { enabled: femaleId !== NONE_VALUE }
   );
 
-  const crossResult = trpc.genetics.calculateColorCross.useQuery(
-    {
-      male: {
-        sex: "macho",
-        ...(maleProfile.data?.genotypeJson as Record<string, string> ?? {}),
-      },
-      female: {
-        sex: "fêmea",
-        ...(femaleProfile.data?.genotypeJson as Record<string, string> ?? {}),
-      },
-    },
+  const crossResult = trpc.mendelian.predictCross.useQuery(
+    { fatherId: Number(maleId), motherId: Number(femaleId) },
     { enabled: calculated && maleId !== NONE_VALUE && femaleId !== NONE_VALUE, retry: false }
   );
 
   const hasBothProfiles: boolean =
     maleId !== NONE_VALUE &&
     femaleId !== NONE_VALUE &&
-    !!maleProfile.data?.genotypeJson &&
-    !!femaleProfile.data?.genotypeJson;
+    !!maleGenotype.data &&
+    !!femaleGenotype.data;
+
+  const ZYGOSITY_LABEL: Record<string, string> = {
+    homozygous_mutant: "manifesta",
+    heterozygous_carrier: "portador",
+    homozygous_normal: "normal",
+  };
+
+  function describeGenotype(g: typeof maleGenotype.data) {
+    if (!g) return null;
+    const parts: string[] = [];
+    if (g.backgroundColor) parts.push(g.backgroundColor);
+    if (g.featherType) parts.push(g.featherType);
+    if (g.hasCrest) parts.push("com crista");
+    const mutationsList = (g.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [];
+    return { summary: parts.join(" · ") || "sem traços de fundo definidos", mutations: mutationsList };
+  }
+
+  const maleDesc = describeGenotype(maleGenotype.data);
+  const femaleDesc = describeGenotype(femaleGenotype.data);
 
   return (
     <div className="space-y-6">
       <Alert className="border-purple-200 bg-purple-50">
         <FlaskConical className="h-4 w-4 text-purple-600" />
-        <AlertTitle className="text-purple-800">Plantel Real — Perfis Genéticos Cadastrados</AlertTitle>
+        <AlertTitle className="text-purple-800">Plantel Real — Genótipo Avançado Cadastrado</AlertTitle>
         <AlertDescription className="text-purple-700 text-sm">
-          Selecione dois pássaros do seu plantel. O sistema usa os perfis genéticos cadastrados
-          para calcular os filhotes esperados com maior precisão. Acesse a ficha de cada pássaro
-          para preencher o perfil genético.
+          Selecione dois pássaros do seu plantel. O sistema usa o Genótipo Avançado preenchido na
+          ficha de cada pássaro (Pássaros → editar → seção "Genótipo Avançado") para calcular os
+          filhotes esperados via Punnett.
         </AlertDescription>
       </Alert>
 
@@ -824,21 +840,20 @@ function ModoAvancado() {
                 ))}
               </SelectContent>
             </Select>
-            {maleProfile.data && (
+            {maleDesc && (
               <div className="bg-purple-50 rounded-lg p-3 text-xs space-y-1 border border-purple-100">
-                <p className="font-semibold text-purple-800">Perfil genético:</p>
-                <p><strong>Lipocromo:</strong> {maleProfile.data.lipochromeBase ?? "Não cadastrado"}</p>
-                <p><strong>Melanina:</strong> {maleProfile.data.melaninSeries ?? "Não cadastrado"}</p>
-                <p><strong>Categoria:</strong> {maleProfile.data.featherCategory ?? "Não cadastrado"}</p>
-                <p><strong>Confiança:</strong> {Math.round((maleProfile.data.confidenceScore ?? 0) * 100)}%</p>
-                {maleProfile.data.manualOverride && (
-                  <Badge className="bg-green-100 text-green-800 text-xs mt-1">✓ Verificado manualmente</Badge>
+                <p className="font-semibold text-purple-800">Genótipo avançado:</p>
+                <p>{maleDesc.summary}</p>
+                {maleDesc.mutations.length > 0 && (
+                  <p className="text-purple-700">
+                    {maleDesc.mutations.map((m) => `${m.mutation} (${ZYGOSITY_LABEL[m.zygosity] ?? m.zygosity})`).join(", ")}
+                  </p>
                 )}
               </div>
             )}
-            {maleId !== NONE_VALUE && !maleProfile.data && !maleProfile.isLoading && (
+            {maleId !== NONE_VALUE && !maleGenotype.data && !maleGenotype.isLoading && (
               <p className="text-xs text-amber-600 bg-amber-50 rounded p-2 border border-amber-100">
-                Este pássaro não tem perfil genético cadastrado. Acesse sua ficha para preencher.
+                Este pássaro não tem Genótipo Avançado cadastrado. Edite o pássaro e preencha a seção "Genótipo Avançado".
               </p>
             )}
           </CardContent>
@@ -866,21 +881,20 @@ function ModoAvancado() {
                 ))}
               </SelectContent>
             </Select>
-            {femaleProfile.data && (
+            {femaleDesc && (
               <div className="bg-rose-50 rounded-lg p-3 text-xs space-y-1 border border-rose-100">
-                <p className="font-semibold text-rose-800">Perfil genético:</p>
-                <p><strong>Lipocromo:</strong> {femaleProfile.data.lipochromeBase ?? "Não cadastrado"}</p>
-                <p><strong>Melanina:</strong> {femaleProfile.data.melaninSeries ?? "Não cadastrado"}</p>
-                <p><strong>Categoria:</strong> {femaleProfile.data.featherCategory ?? "Não cadastrado"}</p>
-                <p><strong>Confiança:</strong> {Math.round((femaleProfile.data.confidenceScore ?? 0) * 100)}%</p>
-                {femaleProfile.data.manualOverride && (
-                  <Badge className="bg-green-100 text-green-800 text-xs mt-1">✓ Verificado manualmente</Badge>
+                <p className="font-semibold text-rose-800">Genótipo avançado:</p>
+                <p>{femaleDesc.summary}</p>
+                {femaleDesc.mutations.length > 0 && (
+                  <p className="text-rose-700">
+                    {femaleDesc.mutations.map((m) => `${m.mutation} (${ZYGOSITY_LABEL[m.zygosity] ?? m.zygosity})`).join(", ")}
+                  </p>
                 )}
               </div>
             )}
-            {femaleId !== NONE_VALUE && !femaleProfile.data && !femaleProfile.isLoading && (
+            {femaleId !== NONE_VALUE && !femaleGenotype.data && !femaleGenotype.isLoading && (
               <p className="text-xs text-amber-600 bg-amber-50 rounded p-2 border border-amber-100">
-                Esta pássara não tem perfil genético cadastrado. Acesse sua ficha para preencher.
+                Esta pássara não tem Genótipo Avançado cadastrado. Edite o pássaro e preencha a seção "Genótipo Avançado".
               </p>
             )}
           </CardContent>
@@ -891,8 +905,8 @@ function ModoAvancado() {
         <Alert className="border-amber-200 bg-amber-50">
           <Info className="h-4 w-4 text-amber-600" />
           <AlertDescription className="text-amber-800 text-sm">
-            Um ou ambos os pássaros não têm perfil genético com genótipo cadastrado.
-            Preencha as fichas genéticas para usar o Modo Avançado, ou use o{" "}
+            Um ou ambos os pássaros não têm Genótipo Avançado cadastrado.
+            Preencha-o na ficha de cada um para usar o Modo Avançado, ou use o{" "}
             <strong>Modo Simples</strong> para calcular manualmente.
           </AlertDescription>
         </Alert>
@@ -909,7 +923,7 @@ function ModoAvancado() {
             {crossResult.isLoading ? (
               <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Calculando...</>
             ) : (
-              <><Zap className="w-4 h-4 mr-2" />Calcular com Perfis do Plantel</>
+              <><Zap className="w-4 h-4 mr-2" />Calcular com Genótipo do Plantel</>
             )}
           </Button>
         </div>
@@ -920,22 +934,46 @@ function ModoAvancado() {
           <Separator />
           <div className="flex items-center gap-2 text-green-700 text-sm font-medium">
             <CheckCircle className="w-4 h-4" />
-            Cálculo concluído com base nos perfis genéticos cadastrados
+            Cálculo concluído com base no genótipo avançado cadastrado
           </div>
-          {crossResult.data.warnings && crossResult.data.warnings.length > 0 && (
+          {crossResult.data.warnings.length > 0 && (
             <div className="space-y-2">
-              {crossResult.data.warnings.map((w: string, i: number) => (
+              {crossResult.data.warnings.map((w, i) => (
                 <Alert key={i} className="border-red-200 bg-red-50">
                   <AlertTriangle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800 text-sm font-medium">{w}</AlertDescription>
+                  <AlertDescription className="text-red-800 text-sm font-medium">{w.message}</AlertDescription>
                 </Alert>
               ))}
             </div>
           )}
-          {crossResult.data.summary && (
+          {crossResult.data.mutations.length > 0 ? (
+            <div className="grid sm:grid-cols-2 gap-3">
+              {crossResult.data.mutations.map((m) => (
+                <Card key={m.mutation} className="border-purple-100">
+                  <CardContent className="pt-4 text-sm space-y-1">
+                    <p className="font-semibold text-gray-800 capitalize">{m.mutation.replace(/_/g, " ")}</p>
+                    {m.overall && (
+                      <p className="text-xs text-gray-500">
+                        {Object.entries(m.overall).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_LABEL[k] ?? k}`).join(" · ")}
+                      </p>
+                    )}
+                    {m.sons && m.daughters && (
+                      <div className="text-xs text-gray-500 space-y-0.5">
+                        <p>♂ {Object.entries(m.sons).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_LABEL[k] ?? k}`).join(" · ")}</p>
+                        <p>♀ {Object.entries(m.daughters).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_LABEL[k] ?? k}`).join(" · ")}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
             <Card className="border-purple-100 bg-purple-50/30">
               <CardContent className="pt-4">
-                <p className="text-sm text-gray-700">{crossResult.data.summary}</p>
+                <p className="text-sm text-gray-700">
+                  Nenhuma mutação em comum entre os dois genótipos cadastrados — preencha mais
+                  detalhes na ficha de cada pássaro para uma predição mais completa.
+                </p>
               </CardContent>
             </Card>
           )}
