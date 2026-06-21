@@ -24,9 +24,11 @@ import {
   bird_genetic_inference_logs,
   official_bird_classes,
   birds,
+  bird_genotype,
 } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { interpretOfficialClass } from "../_core/officialClassInterpreter";
+import { calculateCOI, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 
 // ============================================================================
 // Schemas de entrada
@@ -314,4 +316,76 @@ export const geneticProfileRouter = router({
 
       return { success: true };
     }),
+
+  /**
+   * Relatório Genético do Plantel — uma linha por pássaro ativo, juntando
+   * as duas fontes de dado genético que o sistema tem (não exige
+   * preencher os dois):
+   *  - bird_genotype: genótipo operacional (usado pelo motor de Punnett)
+   *  - bird_genetic_profiles: ficha oficial (classe FOB/OBJO interpretada)
+   *
+   * Pensado pra responder de cara "quais pássaros já têm genética
+   * completa, quais estão incompletos, e quais portam quais mutações" —
+   * sem precisar abrir ficha por ficha.
+   */
+  plantelReport: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { generatedAt: new Date(), rows: [], summary: null };
+
+    const allBirds = await db.select().from(birds).where(eq(birds.status, "active"));
+    const allGenotypes = await db.select().from(bird_genotype);
+    const allProfiles = await db.select().from(bird_genetic_profiles);
+
+    const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
+    const profileByBird = new Map(allProfiles.map((p) => [p.birdId, p]));
+    const birdMap: Map<number, PedigreeBird> = new Map(
+      allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+    );
+    const coiCache = new Map<number, number>();
+
+    const rows = allBirds.map((bird) => {
+      const genotype = genotypeByBird.get(bird.id);
+      const profile = profileByBird.get(bird.id);
+      const coi = bird.fatherId && bird.motherId ? calculateCOI(bird.id, birdMap, 5, coiCache) : null;
+
+      const mutations = (genotype?.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [];
+      const carriers = mutations.filter((m) => m.zygosity === "heterozygous_carrier").map((m) => m.mutation);
+      const manifesting = mutations.filter((m) => m.zygosity === "homozygous_mutant").map((m) => m.mutation);
+
+      return {
+        birdId: bird.id,
+        ring: bird.ring,
+        sex: bird.sex,
+        specialtyCode: bird.specialty_code,
+        colorCode: bird.color_code,
+        hasOperationalGenotype: !!genotype,
+        hasOfficialProfile: !!profile,
+        officialCode: profile?.officialCode ?? null,
+        officialName: profile?.officialName ?? null,
+        confidenceScore: profile?.confidenceScore ?? null,
+        manualOverride: profile?.manualOverride ?? false,
+        backgroundColor: genotype?.backgroundColor ?? null,
+        featherType: genotype?.featherType ?? null,
+        hasCrest: genotype?.hasCrest ?? false,
+        manifestingMutations: manifesting,
+        carrierMutations: carriers,
+        coi,
+        coiRisk: coi != null ? classifyCOIRisk(coi) : null,
+        geneticDataComplete: !!genotype || !!profile,
+      };
+    });
+
+    const summary = {
+      total: rows.length,
+      withOperationalGenotype: rows.filter((r) => r.hasOperationalGenotype).length,
+      withOfficialProfile: rows.filter((r) => r.hasOfficialProfile).length,
+      withAnyGeneticData: rows.filter((r) => r.geneticDataComplete).length,
+      withNoGeneticData: rows.filter((r) => !r.geneticDataComplete).length,
+      withCrest: rows.filter((r) => r.hasCrest).length,
+      highCoiRisk: rows.filter((r) => r.coiRisk === "high").length,
+      carrierCount: rows.filter((r) => r.carrierMutations.length > 0).length,
+    };
+
+    return { generatedAt: new Date(), rows, summary };
+  }),
 });

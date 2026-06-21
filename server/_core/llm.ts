@@ -1,15 +1,15 @@
-// Integração com IA — chama a API da Anthropic diretamente.
+// Integração com IA — suporta Gemini e Anthropic, escolhidos automaticamente
+// pela variável de ambiente configurada.
 // ============================================================================
-// Substitui a dependência do Forge da Manus (BUILT_IN_FORGE_API_URL/KEY),
-// que só existe em projetos hospedados pela própria Manus. Como este
-// projeto roda self-hosted, usamos uma ANTHROPIC_API_KEY real (obtida em
-// https://console.anthropic.com), que o criador pode gerar e colocar como
-// variável de ambiente no Coolify.
+// Se GEMINI_API_KEY estiver definida, o sistema usa o Gemini
+// (https://aistudio.google.com/apikey) para todos os recursos de IA. Senão,
+// usa ANTHROPIC_API_KEY (https://console.anthropic.com) como antes. As duas
+// podem coexistir nas variáveis de ambiente — o Gemini tem prioridade.
 //
 // A assinatura pública (invokeLLM, listLLMModels, tipos Message/
-// ImageContent/etc.) foi mantida EXATAMENTE igual à versão anterior — quem
-// chama (server/routers/aiJudge.ts, server/routers/genetics.ts) não precisa
-// mudar nada.
+// ImageContent/etc.) é a MESMA independente do provedor escolhido — quem
+// chama (aiJudge.ts, genetics.ts, mendelian.ts, photoPhenotypeAnalyzer.ts)
+// não precisa saber nem mudar nada.
 // ============================================================================
 
 import fs from "node:fs";
@@ -91,59 +91,79 @@ export type InvokeResult = {
   };
 };
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const DEFAULT_MAX_TOKENS = 4096;
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION = "2023-06-01";
 
-function assertApiKey() {
-  if (!ENV.anthropicApiKey) {
+export type Provider = "gemini" | "anthropic";
+
+/** Qual provedor está ativo, com base nas variáveis de ambiente configuradas. */
+export function getActiveProvider(): Provider | null {
+  if (ENV.geminiApiKey) return "gemini";
+  if (ENV.anthropicApiKey) return "anthropic";
+  return null;
+}
+
+function assertProvider(): Provider {
+  const provider = getActiveProvider();
+  if (!provider) {
     throw new Error(
-      "ANTHROPIC_API_KEY não está configurada. Gere uma chave em https://console.anthropic.com e adicione como variável de ambiente."
+      "Nenhuma chave de IA configurada. Defina GEMINI_API_KEY (https://aistudio.google.com/apikey) " +
+        "ou ANTHROPIC_API_KEY (https://console.anthropic.com) nas variáveis de ambiente."
     );
   }
+  return provider;
 }
 
 /**
- * Resolve uma image_url (que pode ser um data: URL, um caminho local
- * /uploads/... ou uma URL http(s) externa) para o formato de bloco de
- * imagem que a API da Anthropic espera (base64 inline). Inlinar em base64
- * é mais robusto que pedir pra Anthropic buscar a URL — funciona mesmo
- * com caminhos relativos e domínios atrás de firewall/sem DNS público.
+ * Resolve uma image_url (data: URL, caminho local /uploads/... ou URL
+ * http(s) externa) para os bytes + media type da imagem — compartilhado
+ * pelos dois provedores, que só diferem em como EMBRULHAM esses bytes na
+ * mensagem.
  */
-async function resolveImageBlock(url: string): Promise<{ type: "image"; source: { type: "base64"; media_type: string; data: string } }> {
-  // data:image/png;base64,....
+async function resolveImageBytes(url: string): Promise<{ mediaType: string; base64: string }> {
   const dataUrlMatch = /^data:([^;]+);base64,(.+)$/i.exec(url);
   if (dataUrlMatch) {
-    return { type: "image", source: { type: "base64", media_type: dataUrlMatch[1], data: dataUrlMatch[2] } };
+    return { mediaType: dataUrlMatch[1], base64: dataUrlMatch[2] };
   }
 
-  // Caminho local servido pela própria aplicação (/uploads/...) — lê
-  // direto do disco, do mesmo diretório usado por server/storage.ts.
   if (url.startsWith("/uploads/")) {
     const relative = url.replace(/^\/uploads\//, "");
     const filePath = path.join(ENV.uploadsDir, relative);
     const buffer = fs.readFileSync(filePath);
     const ext = path.extname(filePath).replace(".", "").toLowerCase();
     const mediaType = ext === "jpg" ? "image/jpeg" : `image/${ext || "jpeg"}`;
-    return { type: "image", source: { type: "base64", media_type: mediaType, data: buffer.toString("base64") } };
+    return { mediaType, base64: buffer.toString("base64") };
   }
 
-  // URL externa http(s) — busca e converte pra base64.
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Não foi possível baixar a imagem em ${url}: ${response.status}`);
   }
   const contentType = response.headers.get("content-type") || "image/jpeg";
   const buffer = Buffer.from(await response.arrayBuffer());
-  return { type: "image", source: { type: "base64", media_type: contentType, data: buffer.toString("base64") } };
+  return { mediaType: contentType, base64: buffer.toString("base64") };
 }
+
+function resolveSchema(params: InvokeParams): JsonSchema | undefined {
+  return params.responseFormat?.type === "json_schema"
+    ? params.responseFormat.json_schema
+    : params.response_format?.type === "json_schema"
+    ? params.response_format.json_schema
+    : params.outputSchema || params.output_schema;
+}
+
+// ============================================================================
+// Anthropic
+// ============================================================================
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_VERSION = "2023-06-01";
 
 type AnthropicContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
 
-async function normalizeContent(content: MessageContent | MessageContent[]): Promise<AnthropicContentBlock[]> {
+async function normalizeContentAnthropic(content: MessageContent | MessageContent[]): Promise<AnthropicContentBlock[]> {
   const parts = Array.isArray(content) ? content : [content];
   const blocks: AnthropicContentBlock[] = [];
 
@@ -153,12 +173,9 @@ async function normalizeContent(content: MessageContent | MessageContent[]): Pro
     } else if (part.type === "text") {
       blocks.push({ type: "text", text: part.text });
     } else if (part.type === "image_url") {
-      blocks.push(await resolveImageBlock(part.image_url.url));
+      const { mediaType, base64 } = await resolveImageBytes(part.image_url.url);
+      blocks.push({ type: "image", source: { type: "base64", media_type: mediaType, data: base64 } });
     } else if (part.type === "file_url") {
-      // A API de Messages da Anthropic não aceita arquivos genéricos
-      // (áudio/PDF) como bloco de mensagem da mesma forma — registra como
-      // texto descritivo pra não quebrar a chamada, mas isso é uma
-      // limitação conhecida (sem caso de uso no app hoje).
       blocks.push({ type: "text", text: `[arquivo anexado: ${part.file_url.url}]` });
     }
   }
@@ -166,70 +183,46 @@ async function normalizeContent(content: MessageContent | MessageContent[]): Pro
   return blocks;
 }
 
-export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+async function invokeAnthropic(params: InvokeParams): Promise<InvokeResult> {
+  const { messages, model, max_tokens, maxTokens } = params;
 
-  const { messages, outputSchema, output_schema, responseFormat, response_format, model, max_tokens, maxTokens } = params;
-
-  // A Anthropic usa um campo "system" separado, não uma mensagem com
-  // role "system" dentro do array.
-  const systemMessages = messages.filter(m => m.role === "system");
-  const conversationMessages = messages.filter(m => m.role !== "system" && m.role !== "tool" && m.role !== "function");
+  const systemMessages = messages.filter((m) => m.role === "system");
+  const conversationMessages = messages.filter((m) => m.role !== "system" && m.role !== "tool" && m.role !== "function");
 
   const systemText = (
     await Promise.all(
-      systemMessages.map(async m => {
-        const blocks = await normalizeContent(m.content);
-        return blocks.filter((b): b is { type: "text"; text: string } => b.type === "text").map(b => b.text).join("\n");
+      systemMessages.map(async (m) => {
+        const blocks = await normalizeContentAnthropic(m.content);
+        return blocks.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n");
       })
     )
   ).join("\n");
 
   const anthropicMessages = await Promise.all(
-    conversationMessages.map(async m => ({
+    conversationMessages.map(async (m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
-      content: await normalizeContent(m.content),
+      content: await normalizeContentAnthropic(m.content),
     }))
   );
 
   const payload: Record<string, unknown> = {
-    model: model || DEFAULT_MODEL,
+    model: model && !model.startsWith("gemini") ? model : DEFAULT_ANTHROPIC_MODEL,
     max_tokens: max_tokens ?? maxTokens ?? DEFAULT_MAX_TOKENS,
     messages: anthropicMessages,
   };
+  if (systemText) payload.system = systemText;
 
-  if (systemText) {
-    payload.system = systemText;
-  }
-
-  // response_format / outputSchema -> Anthropic não tem "json_schema"
-  // nativo, então usamos o truque padrão de tool-use forçado: declaramos
-  // uma "tool" cujo input_schema é o JSON Schema desejado, e forçamos o
-  // modelo a chamá-la. O resultado estruturado vem em tool_use.input.
-  const schema = responseFormat?.type === "json_schema" ? responseFormat.json_schema
-    : response_format?.type === "json_schema" ? response_format.json_schema
-    : outputSchema || output_schema;
-
+  const schema = resolveSchema(params);
   let forcedToolName: string | null = null;
   if (schema) {
     forcedToolName = schema.name || "structured_output";
-    payload.tools = [
-      {
-        name: forcedToolName,
-        description: "Retorna a resposta estruturada conforme o schema solicitado.",
-        input_schema: schema.schema,
-      },
-    ];
+    payload.tools = [{ name: forcedToolName, description: "Retorna a resposta estruturada conforme o schema solicitado.", input_schema: schema.schema }];
     payload.tool_choice = { type: "tool", name: forcedToolName };
   }
 
   const response = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": ENV.anthropicApiKey,
-      "anthropic-version": ANTHROPIC_VERSION,
-    },
+    headers: { "content-type": "application/json", "x-api-key": ENV.anthropicApiKey, "anthropic-version": ANTHROPIC_VERSION },
     body: JSON.stringify(payload),
   });
 
@@ -246,40 +239,151 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     usage?: { input_tokens: number; output_tokens: number };
   };
 
-  // Se foi forçado tool-use pra obter saída estruturada, o resultado vem
-  // como o "input" do bloco tool_use — convertemos de volta pra uma
-  // string JSON, que é exatamente o formato que aiJudge.ts/genetics.ts já
-  // esperam (fazem JSON.parse(content) quando content é string).
   let content: string;
   if (forcedToolName) {
-    const toolUseBlock = data.content.find(b => b.type === "tool_use");
+    const toolUseBlock = data.content.find((b) => b.type === "tool_use");
     content = toolUseBlock ? JSON.stringify(toolUseBlock.input) : "{}";
   } else {
-    content = data.content
-      .filter(b => b.type === "text")
-      .map(b => b.text ?? "")
-      .join("\n");
+    content = data.content.filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n");
   }
 
   return {
     id: data.id,
     created: Math.floor(Date.now() / 1000),
     model: data.model,
-    choices: [
-      {
-        index: 0,
-        message: { role: "assistant", content },
-        finish_reason: data.stop_reason,
-      },
-    ],
+    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: data.stop_reason }],
     usage: data.usage
+      ? { prompt_tokens: data.usage.input_tokens, completion_tokens: data.usage.output_tokens, total_tokens: data.usage.input_tokens + data.usage.output_tokens }
+      : undefined,
+  };
+}
+
+// ============================================================================
+// Gemini
+// ============================================================================
+type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+
+async function normalizeContentGemini(content: MessageContent | MessageContent[]): Promise<GeminiPart[]> {
+  const parts = Array.isArray(content) ? content : [content];
+  const blocks: GeminiPart[] = [];
+
+  for (const part of parts) {
+    if (typeof part === "string") {
+      blocks.push({ text: part });
+    } else if (part.type === "text") {
+      blocks.push({ text: part.text });
+    } else if (part.type === "image_url") {
+      const { mediaType, base64 } = await resolveImageBytes(part.image_url.url);
+      blocks.push({ inlineData: { mimeType: mediaType, data: base64 } });
+    } else if (part.type === "file_url") {
+      blocks.push({ text: `[arquivo anexado: ${part.file_url.url}]` });
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Remove campos que o JSON Schema padrão aceita mas a Gemini não suporta
+ * em responseSchema (ex.: "additionalProperties"), recursivamente — sem
+ * isso a API retorna erro 400 em schemas vindos de outros provedores.
+ */
+function sanitizeSchemaForGemini(schema: Record<string, unknown>): Record<string, unknown> {
+  const { additionalProperties, ...rest } = schema as Record<string, unknown> & { additionalProperties?: unknown };
+  const cleaned: Record<string, unknown> = { ...rest };
+  if (cleaned.properties && typeof cleaned.properties === "object") {
+    const props = cleaned.properties as Record<string, unknown>;
+    cleaned.properties = Object.fromEntries(
+      Object.entries(props).map(([k, v]) => [k, typeof v === "object" && v !== null ? sanitizeSchemaForGemini(v as Record<string, unknown>) : v])
+    );
+  }
+  if (cleaned.items && typeof cleaned.items === "object") {
+    cleaned.items = sanitizeSchemaForGemini(cleaned.items as Record<string, unknown>);
+  }
+  return cleaned;
+}
+
+function resolveGeminiModel(model: string | undefined): string {
+  if (model && model.startsWith("gemini")) return model;
+  return ENV.geminiModelVision || ENV.geminiModelPro || DEFAULT_GEMINI_MODEL;
+}
+
+async function invokeGemini(params: InvokeParams): Promise<InvokeResult> {
+  const { messages, max_tokens, maxTokens } = params;
+  const model = resolveGeminiModel(params.model);
+
+  const systemMessages = messages.filter((m) => m.role === "system");
+  const conversationMessages = messages.filter((m) => m.role !== "system" && m.role !== "tool" && m.role !== "function");
+
+  const systemParts = (await Promise.all(systemMessages.map((m) => normalizeContentGemini(m.content)))).flat();
+
+  const contents = await Promise.all(
+    conversationMessages.map(async (m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: await normalizeContentGemini(m.content),
+    }))
+  );
+
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: max_tokens ?? maxTokens ?? DEFAULT_MAX_TOKENS,
+  };
+
+  const schema = resolveSchema(params);
+  if (schema) {
+    generationConfig.responseMimeType = "application/json";
+    generationConfig.responseSchema = sanitizeSchemaForGemini(schema.schema);
+  }
+
+  const payload: Record<string, unknown> = { contents, generationConfig };
+  if (systemParts.length > 0) {
+    payload.systemInstruction = { parts: systemParts };
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": ENV.geminiApiKey },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Chamada ao Gemini falhou: ${response.status} ${response.statusText} – ${errorText}`);
+  }
+
+  const data = (await response.json()) as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }>; role?: string };
+      finishReason?: string;
+    }>;
+    usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number };
+    modelVersion?: string;
+  };
+
+  const candidate = data.candidates?.[0];
+  const content = (candidate?.content?.parts ?? []).map((p) => p.text ?? "").join("\n");
+
+  return {
+    id: `gemini-${Date.now()}`,
+    created: Math.floor(Date.now() / 1000),
+    model: data.modelVersion ?? model,
+    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: candidate?.finishReason ?? null }],
+    usage: data.usageMetadata
       ? {
-          prompt_tokens: data.usage.input_tokens,
-          completion_tokens: data.usage.output_tokens,
-          total_tokens: data.usage.input_tokens + data.usage.output_tokens,
+          prompt_tokens: data.usageMetadata.promptTokenCount,
+          completion_tokens: data.usageMetadata.candidatesTokenCount,
+          total_tokens: data.usageMetadata.totalTokenCount,
         }
       : undefined,
   };
+}
+
+// ============================================================================
+// Dispatcher público
+// ============================================================================
+export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  const provider = assertProvider();
+  return provider === "gemini" ? invokeGemini(params) : invokeAnthropic(params);
 }
 
 export type ModelInfo = {
@@ -295,12 +399,21 @@ export type ModelsResponse = {
 };
 
 /**
- * Mantida por compatibilidade de interface. A Anthropic não tem um
- * endpoint de listagem de modelos público equivalente ao da OpenAI —
- * retorna estaticamente os modelos suportados pela aplicação.
+ * Mantida por compatibilidade de interface. Nenhum dos dois provedores
+ * tem um endpoint de listagem equivalente ao da OpenAI — retorna
+ * estaticamente os modelos do provedor ativo no momento.
  */
 export async function listLLMModels(): Promise<ModelsResponse> {
-  assertApiKey();
+  const provider = assertProvider();
+  if (provider === "gemini") {
+    return {
+      object: "list",
+      data: [
+        { id: "gemini-2.5-flash", object: "model", created: 0, owned_by: "google" },
+        { id: "gemini-2.5-pro", object: "model", created: 0, owned_by: "google" },
+      ],
+    };
+  }
   return {
     object: "list",
     data: [

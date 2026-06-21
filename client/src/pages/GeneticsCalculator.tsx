@@ -1054,8 +1054,199 @@ function ModoAvancado() {
 }
 
 // ============================================================================
-// Componente principal
+// Modo Par Ideal
 // ============================================================================
+const OBJECTIVE_OPTIONS: { value: string; label: string }[] = [
+  { value: "PLANEJAMENTO_LIVRE", label: "Planejamento livre (equilibrado)" },
+  { value: "REDUZIR_COI", label: "Reduzir consanguinidade" },
+  { value: "REPRODUCAO_SEGURA", label: "Reprodução segura (evitar riscos)" },
+  { value: "PRODUZIR_PORTADORES", label: "Produzir portadores" },
+  { value: "EXPOSICAO", label: "Preparar para exposição" },
+  { value: "MELHORAR_COR", label: "Melhorar cor" },
+  { value: "MELHORAR_PORTE", label: "Melhorar porte" },
+  { value: "MANTER_LINHAGEM", label: "Manter linhagem" },
+];
+
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  IDEAL: { label: "Ideal", className: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+  APROVADO: { label: "Aprovado", className: "bg-blue-100 text-blue-800 border-blue-300" },
+  ATENCAO: { label: "Atenção", className: "bg-amber-100 text-amber-800 border-amber-300" },
+  NAO_RECOMENDADO: { label: "Não recomendado", className: "bg-red-100 text-red-800 border-red-300" },
+};
+
+function ModoParIdeal() {
+  const [baseBirdId, setBaseBirdId] = useState(NONE_VALUE);
+  const [objective, setObjective] = useState("PLANEJAMENTO_LIVRE");
+  const [searched, setSearched] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const birdsQuery = trpc.birds.list.useQuery({ status: "active" });
+
+  const results = trpc.pairingOptimizer.findIdealPairs.useQuery(
+    { baseBirdId: Number(baseBirdId), objective: objective as any, limit: 10 },
+    { enabled: searched && baseBirdId !== NONE_VALUE, retry: false }
+  );
+
+  return (
+    <div className="space-y-6">
+      <Alert className="border-emerald-200 bg-emerald-50">
+        <Sparkles className="h-4 w-4 text-emerald-600" />
+        <AlertTitle className="text-emerald-800">Encontre o par ideal pro seu pássaro</AlertTitle>
+        <AlertDescription className="text-emerald-700 text-sm">
+          Escolha um pássaro do plantel e o objetivo do cruzamento. O sistema ranqueia os
+          candidatos pelo plantel inteiro usando genética (motor de Punnett), consanguinidade
+          (COI), saúde, histórico reprodutivo e o objetivo escolhido — nunca só por cor ou raça.
+        </AlertDescription>
+      </Alert>
+
+      <Card>
+        <CardContent className="pt-5 space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Pássaro base</label>
+              <Select value={baseBirdId} onValueChange={(v) => { setBaseBirdId(v); setSearched(false); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um pássaro" />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {(birdsQuery.data ?? []).map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      {b.ring} — {b.sex === "macho" ? "Macho" : "Fêmea"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Objetivo do cruzamento</label>
+              <Select value={objective} onValueChange={(v) => { setObjective(v); setSearched(false); }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OBJECTIVE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <Button
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            disabled={baseBirdId === NONE_VALUE || results.isFetching}
+            onClick={() => setSearched(true)}
+          >
+            {results.isFetching ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+            Buscar pares ideais
+          </Button>
+        </CardContent>
+      </Card>
+
+      {searched && results.data && (
+        <div className="space-y-3">
+          {!results.data.baseBird?.hasGenotype && (
+            <Alert className="border-amber-200 bg-amber-50">
+              <Info className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800 text-sm">
+                Este pássaro não tem Genótipo Avançado cadastrado — o ranking abaixo usa só
+                consanguinidade, saúde e histórico (sem o motor de Punnett). Preencha a ficha
+                genética dele pra sugestões mais precisas.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {results.data.recommendations.length === 0 && (
+            <p className="text-sm text-gray-400">Nenhum pássaro do sexo oposto disponível no plantel.</p>
+          )}
+
+          {results.data.recommendations.map((r, i) => {
+            const cfg = STATUS_CONFIG[r.status];
+            const isExpanded = expandedId === r.candidateBirdId;
+            return (
+              <Card key={r.candidateBirdId} className={r.status === "NAO_RECOMENDADO" ? "opacity-70" : ""}>
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {i === 0 && r.status !== "NAO_RECOMENDADO" && <span className="text-lg">🏆</span>}
+                      <div className="min-w-0">
+                        <p className="font-mono font-bold text-gray-900">{r.ring}</p>
+                        <p className="text-xs text-gray-500 truncate">{r.specialtyName} · {r.colorName}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <Badge className={`border ${cfg.className}`}>{cfg.label}</Badge>
+                      <p className="text-lg font-bold text-gray-800">{r.finalScore}<span className="text-xs text-gray-400">/100</span></p>
+                      <Button size="sm" variant="ghost" onClick={() => setExpandedId(isExpanded ? null : r.candidateBirdId)}>
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-gray-600 mt-2">{r.recommendationText}</p>
+
+                  {isExpanded && (
+                    <div className="mt-3 pt-3 border-t space-y-3 text-sm">
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                        {[
+                          ["Genética", r.geneticScore, 35],
+                          ["COI", r.coiScore, 20],
+                          ["Saúde", r.healthScore, 15],
+                          ["Nutrição", r.nutritionScore, 10],
+                          ["Histórico", r.historyScore, 10],
+                          ["Objetivo", r.objectiveScore, 10],
+                        ].map(([label, val, max]) => (
+                          <div key={label as string} className="bg-gray-50 rounded-lg p-2">
+                            <p className="text-xs text-gray-400">{label}</p>
+                            <p className="font-semibold text-gray-700">{val}/{max}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <p className="text-xs text-gray-500">COI calculado: {(r.coi * 100).toFixed(1)}%</p>
+
+                      {r.reasons.length > 0 && (
+                        <div>
+                          <p className="font-medium text-emerald-700 text-xs uppercase mb-1">Pontos positivos</p>
+                          {r.reasons.map((reason, j) => <p key={j} className="text-gray-600">✓ {reason}</p>)}
+                        </div>
+                      )}
+                      {r.warnings.length > 0 && (
+                        <div>
+                          <p className="font-medium text-amber-700 text-xs uppercase mb-1">Alertas</p>
+                          {r.warnings.map((w, j) => <p key={j} className="text-amber-700">⚠ {w}</p>)}
+                        </div>
+                      )}
+                      {r.missingData.length > 0 && (
+                        <div>
+                          <p className="font-medium text-gray-400 text-xs uppercase mb-1">Dados incompletos</p>
+                          {r.missingData.map((m, j) => <p key={j} className="text-gray-400">• {m}</p>)}
+                        </div>
+                      )}
+                      {r.predictedOffspring && r.predictedOffspring.mutations.length > 0 && (
+                        <div>
+                          <p className="font-medium text-gray-700 text-xs uppercase mb-1">Prole prevista (traços em comum)</p>
+                          {r.predictedOffspring.mutations.map((m) => (
+                            <p key={m.mutation} className="text-gray-600 capitalize">
+                              {m.mutation.replace(/_/g, " ")}:{" "}
+                              {m.overall
+                                ? Object.entries(m.overall).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${k === "homozygous_mutant" ? "manifesta" : k === "heterozygous_carrier" ? "portador" : "normal"}`).join(" · ")
+                                : "varia por sexo"}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export default function GeneticsCalculator() {
   return (
@@ -1086,9 +1277,13 @@ export default function GeneticsCalculator() {
           </AlertDescription>
         </Alert>
 
-        {/* Tabs dos 3 modos */}
-        <Tabs defaultValue="simples">
-          <TabsList className="grid grid-cols-3 w-full max-w-lg">
+        {/* Tabs dos 4 modos */}
+        <Tabs defaultValue="parideal">
+          <TabsList className="grid grid-cols-4 w-full max-w-2xl">
+            <TabsTrigger value="parideal" className="flex items-center gap-1.5 text-sm">
+              <Sparkles className="h-4 w-4" />
+              Par Ideal
+            </TabsTrigger>
             <TabsTrigger value="simples" className="flex items-center gap-1.5 text-sm">
               <Calculator className="h-4 w-4" />
               Simples
@@ -1099,15 +1294,20 @@ export default function GeneticsCalculator() {
             </TabsTrigger>
             <TabsTrigger value="avancado" className="flex items-center gap-1.5 text-sm">
               <FlaskConical className="h-4 w-4" />
-              Avançado
+              Casal do Plantel
             </TabsTrigger>
           </TabsList>
 
           <div className="mt-2 mb-4 text-xs text-gray-500">
+            <span className="font-medium text-gray-700">Par Ideal:</span> escolha um pássaro e o objetivo, o sistema ranqueia os melhores pares •{" "}
             <span className="font-medium text-gray-700">Simples:</span> selecione mutações manualmente •{" "}
             <span className="font-medium text-gray-700">Assistido:</span> busque por classe oficial FOB/OBJO •{" "}
-            <span className="font-medium text-gray-700">Avançado:</span> use pássaros do plantel com perfil cadastrado
+            <span className="font-medium text-gray-700">Casal do Plantel:</span> compare dois pássaros específicos
           </div>
+
+          <TabsContent value="parideal">
+            <ModoParIdeal />
+          </TabsContent>
 
           <TabsContent value="simples">
             <ModoSimples />

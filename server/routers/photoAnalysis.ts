@@ -24,6 +24,7 @@ import { getDb } from "../db";
 import { bird_photo_analyses, official_bird_classes, birds } from "../../drizzle/schema";
 import { eq, desc, or, ilike } from "drizzle-orm";
 import { analyzePhotoPhenotype, DISCLAIMER_TEXT } from "../_core/photoPhenotypeAnalyzer";
+import { getActiveProvider } from "../_core/llm";
 import { geneticProfileRouter } from "./geneticProfile";
 
 export const photoAnalysisRouter = router({
@@ -103,8 +104,8 @@ export const photoAnalysisRouter = router({
         .values({
           birdId: input.birdId,
           photos: input.photoUrls,
-          aiProvider: "anthropic",
-          modelUsed: "claude-sonnet-4-6",
+          aiProvider: getActiveProvider() ?? "desconhecido",
+          modelUsed: result.modelUsed,
           rawResponseJson: result.analysis,
           visualTraitsJson: {
             lipochromeBase: result.analysis.lipochromeBase,

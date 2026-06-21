@@ -96,10 +96,9 @@ export const aiJudgeRouter = router({
         .returning();
 
       try {
-        const model = "claude-sonnet-4-6";
-
+        // Modelo escolhido automaticamente por server/_core/llm.ts conforme
+        // o provedor ativo (Gemini ou Anthropic).
         const result = await invokeLLM({
-          model,
           messages: [
             {
               role: "system",
@@ -136,7 +135,7 @@ export const aiJudgeRouter = router({
         const [updated] = await db
           .update(ai_judge_analyses)
           .set({
-            model,
+            model: result.model,
             criteria_scores: parsed.criteria_scores,
             overallScore: parsed.overallScore,
             confidence: parsed.confidence,
@@ -210,8 +209,9 @@ export const aiJudgeRouter = router({
       } as const;
 
       try {
+        // Modelo escolhido automaticamente por server/_core/llm.ts conforme
+        // o provedor ativo (Gemini ou Anthropic).
         const result = await invokeLLM({
-          model: "claude-sonnet-4-6",
           messages: [
             {
               role: "system",

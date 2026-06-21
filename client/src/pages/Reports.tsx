@@ -4,7 +4,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS } from "@shared/constants";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
-import { Egg, Feather, Heart, Trophy, Bird as BirdIcon } from "lucide-react";
+import { Egg, Feather, Heart, Trophy, Bird as BirdIcon, Dna } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 
 function labelFor(list: readonly { id: string; name: string }[], code: string) {
   return list.find((i) => i.id === code)?.name ?? code;
@@ -29,9 +31,17 @@ export default function Reports() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
-          <p className="text-gray-600 mt-2">Visão consolidada do plantel, reprodução e campeonatos</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
+            <p className="text-gray-600 mt-2">Visão consolidada do plantel, reprodução e campeonatos</p>
+          </div>
+          <Link href="/genetic-report">
+            <Button variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
+              <Dna className="w-4 h-4 mr-2" />
+              Relatório Genético do Plantel
+            </Button>
+          </Link>
         </div>
 
         {/* Cards resumo */}

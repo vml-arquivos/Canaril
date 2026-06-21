@@ -24,6 +24,7 @@ import { mendelianRouter } from "./routers/mendelian";
 import { catalogRouter } from "./routers/catalog";
 import { geneticProfileRouter } from "./routers/geneticProfile";
 import { photoAnalysisRouter } from "./routers/photoAnalysis";
+import { pairingOptimizerRouter } from "./routers/pairingOptimizer";
 import { ringsRouter } from "./routers/rings";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
@@ -114,6 +115,7 @@ export const appRouter = router({
   catalog: catalogRouter,
   geneticProfile: geneticProfileRouter,
   photoAnalysis: photoAnalysisRouter,
+  pairingOptimizer: pairingOptimizerRouter,
   ringsV2: ringsRouter,
 });
 

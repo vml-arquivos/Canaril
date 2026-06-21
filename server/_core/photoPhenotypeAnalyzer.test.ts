@@ -59,7 +59,7 @@ describe("photoPhenotypeAnalyzer.analyzePhotoPhenotype", () => {
     expect(textPart.text).toContain("Analise esta foto de canário");
   });
 
-  it("usa modelo Anthropic real (claude-sonnet-4-6), não um nome de modelo Gemini inexistente na integração", async () => {
+  it("não fixa o modelo — deixa server/_core/llm.ts escolher pelo provedor ativo (Gemini ou Anthropic)", async () => {
     vi.mocked(invokeLLM).mockResolvedValue({
       id: "x", created: 0, model: "claude-sonnet-4-6",
       choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(VALID_RESPONSE) }, finish_reason: "stop" }],
@@ -68,7 +68,7 @@ describe("photoPhenotypeAnalyzer.analyzePhotoPhenotype", () => {
     await analyzePhotoPhenotype({ photoUrls: ["/uploads/a.jpg"] });
 
     const call = vi.mocked(invokeLLM).mock.calls[0][0];
-    expect(call.model).toBe("claude-sonnet-4-6");
+    expect(call.model).toBeUndefined();
   });
 
   it("valida e retorna a resposta corretamente quando o JSON é válido", async () => {

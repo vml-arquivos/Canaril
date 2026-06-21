@@ -14,6 +14,7 @@ import CageCardPrint from "@/pages/CageCardPrint";
 import Cages from "@/pages/Cages";
 import Championships from "@/pages/Championships";
 import Reports from "@/pages/Reports";
+import GeneticReport from "@/pages/GeneticReport";
 import Settings from "@/pages/Settings";
 import PedigreeTree from "@/pages/PedigreeTree";
 import GeneticsCalculator from "@/pages/GeneticsCalculator";
@@ -98,6 +99,9 @@ function Router() {
       </Route>
       <Route path={"/reports"}>
         {(params) => <ProtectedRoute component={Reports} {...params} />}
+      </Route>
+      <Route path={"/genetic-report"}>
+        {(params) => <ProtectedRoute component={GeneticReport} {...params} />}
       </Route>
       <Route path={"/settings"}>
         {(params) => <ProtectedRoute component={Settings} {...params} />}

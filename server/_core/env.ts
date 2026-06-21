@@ -15,6 +15,13 @@ export const ENV = {
   // cruzamento. Sem ela, esses recursos de IA ficam indisponíveis (o resto
   // do sistema funciona normalmente).
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  // Chave da API do Gemini (https://aistudio.google.com/apikey). Se
+  // configurada, o sistema usa o Gemini em vez da Anthropic pra todos os
+  // recursos de IA — ver server/_core/llm.ts. As duas podem coexistir;
+  // o Gemini tem prioridade quando ambas estão configuradas.
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  geminiModelVision: process.env.GEMINI_MODEL_VISION ?? "",
+  geminiModelPro: process.env.GEMINI_MODEL_PRO ?? "",
   // Diretório local onde fotos e outros arquivos enviados pelo sistema são
   // gravados em disco. Deve apontar para um volume persistente montado no
   // Coolify (Configuration > Persistent Storage), senão os arquivos somem

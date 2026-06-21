@@ -104,6 +104,7 @@ export interface PhotoAnalysisInput {
 export interface PhotoAnalysisResult {
   analysis: PhotoAnalysisResponse;
   rawResponse: string;
+  modelUsed: string;
   photosAnalyzed: number;
   disclaimer: string;
   processingTimeMs: number;
@@ -139,14 +140,11 @@ Retorne APENAS o JSON válido, sem texto adicional.`,
     })),
   ];
 
-  // IMPORTANTE: a integração real de IA deste sistema (server/_core/llm.ts)
-  // chama a API da Anthropic diretamente — não existe integração com
-  // Gemini neste repositório. Usa o mesmo modelo já usado em
-  // server/routers/aiJudge.ts e genetics.ts, direto, sem depender de uma
-  // variável de ambiente GEMINI_* que, se configurada, quebraria a
-  // chamada (o valor seria passado como "model" pra API da Anthropic).
+  // O modelo é escolhido automaticamente por server/_core/llm.ts conforme
+  // o provedor ativo (Gemini se GEMINI_API_KEY estiver configurada, senão
+  // Anthropic) — não fixamos um modelo aqui pra não acoplar esse serviço
+  // a um provedor específico.
   const result = await invokeLLM({
-    model: "claude-sonnet-4-6",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userContent as any },
@@ -234,6 +232,7 @@ Retorne APENAS o JSON válido, sem texto adicional.`,
     return {
       analysis: fallback,
       rawResponse,
+      modelUsed: result.model,
       photosAnalyzed: photos.length,
       disclaimer: DISCLAIMER_TEXT,
       processingTimeMs: Date.now() - startTime,
@@ -243,6 +242,7 @@ Retorne APENAS o JSON válido, sem texto adicional.`,
   return {
     analysis: validation.data,
     rawResponse,
+    modelUsed: result.model,
     photosAnalyzed: photos.length,
     disclaimer: DISCLAIMER_TEXT,
     processingTimeMs: Date.now() - startTime,
