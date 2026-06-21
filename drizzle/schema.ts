@@ -117,10 +117,27 @@ export const ring_batches = pgTable("ring_batches", {
   quantity_total: integer("quantity_total").notNull(),
   quantity_used: integer("quantity_used").default(0).notNull(),
   status: varchar("status", { length: 20 }).default("available").notNull(),
+  // Campos expandidos para sistema de anilhas profissional
+  breederCode: varchar("breederCode", { length: 50 }),
+  associationName: varchar("associationName", { length: 100 }),
+  speciesName: varchar("speciesName", { length: 50 }),
+  breedName: varchar("breedName", { length: 100 }),
+  modality: varchar("modality", { length: 20 }),
+  ringGaugeMm: real("ringGaugeMm"),
+  month: integer("month"),
+  prefix: varchar("prefix", { length: 20 }),
+  suffix: varchar("suffix", { length: 20 }),
+  startNumber: integer("startNumber").default(1).notNull(),
+  endNumber: integer("endNumber").default(200).notNull(),
+  currentNumber: integer("currentNumber").default(1).notNull(),
+  formatPattern: varchar("formatPattern", { length: 100 }).default("{breederCode}-{year}-{seq}").notNull(),
+  notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   batchIdx: index("ring_batches_batch_idx").on(table.batch_number),
+  batchYearIdx: index("ring_batches_year_idx").on(table.year),
+  batchStatusIdx: index("ring_batches_status_idx").on(table.status),
 }));
 
 /**
@@ -269,15 +286,47 @@ export const rings = pgTable("rings", {
   batchId: integer("batchId").notNull(),
   number: varchar("number", { length: 50 }).notNull().unique(),
   sequence: integer("sequence").notNull(),
-  status: varchar("status", { length: 20 }).default("available").notNull(), // available | in_use
+  status: varchar("status", { length: 20 }).default("available").notNull(),
+  // AVAILABLE | RESERVED | USED | LOST | DAMAGED | CANCELLED
   birdId: integer("birdId"),
   chickId: integer("chickId"),
   usedAt: timestamp("usedAt"),
+  // Campos expandidos
+  fullCode: varchar("fullCode", { length: 100 }),
+  ringSource: varchar("ringSource", { length: 20 }).default("BATCH").notNull(),
+  // BATCH | MANUAL
+  reservedAt: timestamp("reservedAt"),
+  notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   batchIdx: index("rings_batch_idx").on(table.batchId),
   statusIdx: index("rings_status_idx").on(table.status),
+  fullCodeIdx: index("rings_fullcode_idx").on(table.fullCode),
+}));
+
+/**
+ * Tabela de Regras de Bitola por Espécie/Raça
+ *
+ * Catálogo administrativo que define a bitola recomendada para cada
+ * combinação espécie+raça. Usado para sugerir automaticamente a bitola
+ * correta ao cadastrar um lote ou um pássaro.
+ */
+export const ring_gauge_rules = pgTable("ring_gauge_rules", {
+  id: serial("id").primaryKey(),
+  speciesName: varchar("speciesName", { length: 50 }).notNull(),
+  breedName: varchar("breedName", { length: 100 }),
+  modality: varchar("modality", { length: 20 }),
+  recommendedGaugeMm: real("recommendedGaugeMm").notNull(),
+  minGaugeMm: real("minGaugeMm"),
+  maxGaugeMm: real("maxGaugeMm"),
+  notes: text("notes"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  gaugeSpeciesIdx: index("ring_gauge_rules_species_idx").on(table.speciesName),
+  gaugeBreedIdx: index("ring_gauge_rules_breed_idx").on(table.breedName),
 }));
 
 /**
@@ -691,6 +740,10 @@ export type Specialty = typeof specialties.$inferSelect;
 export type Color = typeof colors.$inferSelect;
 export type Breeder = typeof breeders.$inferSelect;
 export type RingBatch = typeof ring_batches.$inferSelect;
+export type InsertRingBatch = typeof ring_batches.$inferInsert;
+export type InsertRing = typeof rings.$inferInsert;
+export type RingGaugeRule = typeof ring_gauge_rules.$inferSelect;
+export type InsertRingGaugeRule = typeof ring_gauge_rules.$inferInsert;
 export type Bird = typeof birds.$inferSelect;
 export type Couple = typeof couples.$inferSelect;
 export type Clutch = typeof clutches.$inferSelect;

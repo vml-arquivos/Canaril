@@ -17,6 +17,7 @@ import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
 import PedigreeTree from "@/pages/PedigreeTree";
 import GeneticsCalculator from "@/pages/GeneticsCalculator";
+import RingBatches from "@/pages/RingBatches";
 import LoginPage from "@/pages/Login";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -103,6 +104,9 @@ function Router() {
       </Route>
       <Route path={"/genetics-calculator"}>
         {(params) => <ProtectedRoute component={GeneticsCalculator} {...params} />}
+      </Route>
+      <Route path={"/ring-batches"}>
+        {(params) => <ProtectedRoute component={RingBatches} {...params} />}
       </Route>
 
       {/* Fallback */}

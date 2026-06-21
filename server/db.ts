@@ -60,6 +60,14 @@ export async function getDb() {
 }
 
 /**
+ * Retorna o pool de conexões PostgreSQL para uso em transações raw.
+ * Retorna null se o banco não estiver conectado.
+ */
+export function getPool(): Pool | null {
+  return _pool;
+}
+
+/**
  * Explicit, named entry point meant to be called once at server startup
  * (see server/_core/index.ts). Ensures the database connection is live and
  * all migrations have been applied *before* the HTTP server starts

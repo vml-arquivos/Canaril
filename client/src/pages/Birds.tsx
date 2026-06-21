@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
-import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon } from "lucide-react";
+import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
@@ -84,6 +84,19 @@ export default function Birds() {
     },
     onError: (error) => toast.error("Erro ao deletar pássaro: " + error.message),
   });
+
+  // Sugestão automática de próxima anilha disponível
+  const { data: nextRing } = trpc.ringsV2.rings.getNext.useQuery(
+    {},
+    { enabled: open && !editingId }
+  );
+
+  // Preenche automaticamente o campo de anilha ao abrir o formulário de criação
+  useEffect(() => {
+    if (open && !editingId && nextRing?.fullCode && !formData.ring) {
+      setFormData(prev => ({ ...prev, ring: nextRing.fullCode }));
+    }
+  }, [open, editingId, nextRing]);
 
   const closeDialog = () => {
     setOpen(false);
@@ -196,13 +209,43 @@ export default function Birds() {
                 )}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="ring">Anilha *</Label>
-                    <Input
-                      id="ring"
-                      value={formData.ring}
-                      onChange={(e) => setFormData({ ...formData, ring: e.target.value })}
-                      placeholder="Ex: 2026-001"
-                    />
+                    <Label htmlFor="ring" className="flex items-center gap-2">
+                      Anilha *
+                      {!editingId && nextRing && (
+                        <span className="text-xs text-green-600 font-normal flex items-center gap-1">
+                          <Tag className="h-3 w-3" />
+                          próxima disponível
+                        </span>
+                      )}
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="ring"
+                        value={formData.ring}
+                        onChange={(e) => setFormData({ ...formData, ring: e.target.value })}
+                        placeholder="Ex: 2026-001"
+                        className="flex-1"
+                      />
+                      {!editingId && nextRing && nextRing.fullCode !== formData.ring && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-green-600 border-green-300 hover:bg-green-50 shrink-0"
+                          onClick={() => setFormData(prev => ({ ...prev, ring: nextRing.fullCode }))}
+                          title={`Usar próxima anilha disponível: ${nextRing.fullCode}`}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                    {!editingId && nextRing?.batch && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Lote: {nextRing.batch.batch_number}
+                        {nextRing.batch.ringGaugeMm ? ` • ${nextRing.batch.ringGaugeMm}mm` : ""}
+                        {nextRing.batch.color ? ` • ${nextRing.batch.color}` : ""}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="specialty">Especialidade *</Label>
