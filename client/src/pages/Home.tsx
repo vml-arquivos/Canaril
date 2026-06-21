@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLoginUrl } from "@/const";
 import { Link } from "wouter";
-import { Bird, Egg, Heart, Trophy, Wheat, Bone, Leaf, Droplets, AlertTriangle, ImageOff, Zap, Calculator, ChevronDown } from "lucide-react";
+import { Bird, Egg, Heart, Trophy, Wheat, Bone, Leaf, Droplets, AlertTriangle, ImageOff, Zap, Calculator, ChevronDown, ChevronUp, Dna, Shield, Star, Users, BarChart2, BookOpen, CheckCircle } from "lucide-react";
 import { SPECIALTIES, COLORS_BY_SPECIALTY } from "@shared/constants";
 import { trpc } from "@/lib/trpc";
 
@@ -34,11 +35,14 @@ export default function Home() {
             <a href="#vitrine" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
               Plantel
             </a>
-            <a href="#especialidades" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
-              Especialidades
+            <a href="#recursos" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
+              Recursos
             </a>
-            <a href="#nutricao" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
-              Nutrição
+            <a href="#genetica" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
+              Genética
+            </a>
+            <a href="#faq" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
+              Dúvidas
             </a>
             {isAuthenticated ? (
               <Link href="/dashboard">
@@ -94,6 +98,11 @@ export default function Home() {
               <a href="#vitrine">
                 <Button size="lg" variant="outline" className="border-white/40 text-white hover:bg-white/10 backdrop-blur-sm px-8">
                   Ver Plantel
+                </Button>
+              </a>
+              <a href="#recursos">
+                <Button size="lg" variant="outline" className="border-white/30 text-white/80 hover:bg-white/10 backdrop-blur-sm px-8">
+                  Conhecer Recursos
                 </Button>
               </a>
             </div>
@@ -313,13 +322,99 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Seção de Recursos */}
+      <section id="recursos" className="container mx-auto px-4 py-16 border-t border-amber-100">
+        <div className="max-w-2xl mb-10">
+          <h3 className="text-2xl font-bold text-amber-950 mb-2">O que o sistema resolve</h3>
+          <p className="text-amber-900/60">Tudo o que um criador srio precisa, em um único lugar.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {SYSTEM_FEATURES.map((feat) => (
+            <div key={feat.title} className="flex gap-4 p-4 rounded-xl bg-white border border-amber-100 hover:shadow-sm transition-shadow">
+              <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                <feat.icon className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-amber-950 text-sm mb-1">{feat.title}</h4>
+                <p className="text-gray-500 text-xs leading-relaxed">{feat.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Seção Genética */}
+      <section id="genetica" className="bg-amber-950 py-16">
+        <div className="container mx-auto px-4">
+          <div className="max-w-3xl mx-auto text-center mb-10">
+            <Dna className="w-10 h-10 text-amber-400 mx-auto mb-4" />
+            <h3 className="text-2xl font-bold text-white mb-3">Genética real para criadores</h3>
+            <p className="text-amber-200/80 leading-relaxed">
+              O sistema interpreta as nomenclaturas oficiais FOB/OBJO e calcula cruzamentos com base
+              nas leis de Mendel — sem invenções, sem certezas falsas.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl mx-auto">
+            {GENETICS_FEATURES.map((feat) => (
+              <div key={feat.title} className="bg-amber-900/40 border border-amber-800 rounded-xl p-5">
+                <h4 className="font-semibold text-amber-300 mb-2 text-sm">{feat.title}</h4>
+                <p className="text-amber-100/70 text-xs leading-relaxed">{feat.description}</p>
+              </div>
+            ))}
+          </div>
+          {isAuthenticated && (
+            <div className="text-center mt-10">
+              <Link href="/genetics-calculator">
+                <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold shadow-lg px-8">
+                  <Zap className="w-4 h-4 mr-2" />
+                  Abrir Calculadora Genética
+                </Button>
+              </Link>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Seção de Confiança */}
+      <section className="bg-white border-y border-amber-100 py-14">
+        <div className="container mx-auto px-4">
+          <div className="max-w-3xl mx-auto text-center mb-10">
+            <h3 className="text-2xl font-bold text-amber-950 mb-2">Feito para criadores sérios</h3>
+            <p className="text-amber-900/60">Organização profissional, genética real, decisões melhores.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            {TRUST_ITEMS.map((item) => (
+              <div key={item.title} className="flex gap-3 items-start">
+                <CheckCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-amber-950 text-sm">{item.title}</h4>
+                  <p className="text-gray-500 text-xs mt-0.5 leading-relaxed">{item.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="container mx-auto px-4 py-16 border-t border-amber-100">
+        <div className="max-w-2xl mb-10">
+          <BookOpen className="w-8 h-8 text-amber-600 mb-3" />
+          <h3 className="text-2xl font-bold text-amber-950 mb-2">Perguntas frequentes</h3>
+          <p className="text-amber-900/60">Dúvidas comuns sobre criação de canários e uso do sistema.</p>
+        </div>
+        <div className="max-w-3xl space-y-2">
+          {FAQ_ITEMS.map((item, i) => (
+            <FaqItem key={i} question={item.question} answer={item.answer} />
+          ))}
+        </div>
+      </section>
+
       {/* Sobre */}
-      <section className="container mx-auto px-4 py-20">
+      <section className="container mx-auto px-4 py-16 border-t border-amber-100">
         <div className="max-w-2xl mx-auto text-center">
           <h3 className="text-2xl font-bold text-amber-950 mb-4">Sobre o Criadouro</h3>
-          <p className="text-gray-700 leading-relaxed mb-4">
-            {breeder.description}
-          </p>
+          <p className="text-gray-700 leading-relaxed mb-4">{breeder.description}</p>
           <p className="text-gray-700 leading-relaxed">
             Um sistema de gestão próprio mantém controle total sobre genealogia, cruzamentos, posturas e
             filhotes — garantindo rastreabilidade completa em cada geração.
@@ -387,6 +482,127 @@ const NUTRIENT_TABLE = [
     caution: "Introduzir aos poucos para evitar desconforto intestinal",
   },
 ];
+
+// ============================================================================
+// Dados estáticos
+// ============================================================================
+
+const SYSTEM_FEATURES = [
+  { icon: Bird,     title: "Controle de aves",           description: "Cadastro completo de cada pássaro: anilha, raça, cor, sexo, fotos, ficha genética e histórico." },
+  { icon: Heart,    title: "Casais e reprodução",        description: "Forme casais, registre posturas, acompanhe chocas e filhotes com datas e alertas automáticos." },
+  { icon: Egg,      title: "Anilhas e rastreabilidade",  description: "Controle de lotes de anilhas, atribuição por filhote e histórico completo de cada ave." },
+  { icon: Dna,      title: "Genética e pedigree",        description: "Ficha genética individual, árvore de linhagem até 5 gerações e cálculo de consanguinidade (COI)." },
+  { icon: Calculator, title: "Calculadora genética",   description: "Simule cruzamentos antes de formar o casal. Probabilidades de filhotes, portadores e alertas de risco." },
+  { icon: Trophy,   title: "Campeonatos",                description: "Inscrições, juízes, pontuações e histórico de participações em exposições e campeonatos." },
+  { icon: Shield,   title: "Saúde e manejo",             description: "Registros de saúde, vacinas, tratamentos e alertas de manejo por ave ou por gaiola." },
+  { icon: BarChart2, title: "Relatórios",               description: "Relatórios genéticos, de plantel, de cruzamento e de linhagem para decisões fundamentadas." },
+  { icon: Users,    title: "Planejamento de reprodução", description: "Identifique os melhores casais, evite cruzamentos proibidos e planeje a próxima temporada." },
+];
+
+const GENETICS_FEATURES = [
+  { title: "Ficha genética completa",     description: "Lipocromo, melanina, categoria de pena, topete, branco dominante/recessivo, marfim, fator vermelho, mutações visíveis e portadas." },
+  { title: "Nomenclatura oficial FOB/OBJO", description: "Interpretação automática das classes oficiais de Canário de Cor e Porte — sem precisar decorar códigos." },
+  { title: "Calculadora de cruzamentos",  description: "Quadrado de Punnett para mutações ligadas ao sexo, autossômicas recessivas e dominantes." },
+  { title: "Alertas de risco genético",   description: "Aviso automático para cruzamentos perigosos: topetado × topetado, branco dominante × branco dominante, nevado × nevado." },
+  { title: "Pedigree e consanguinidade",  description: "Visualize a árvore de linhagem e o Índice de Consanguinidade (COI) antes de fechar um casal." },
+  { title: "Relatório antes de acasalar", description: "Gere um relatório completo com genótipos, fenótipos prováveis, portadores e recomendação final." },
+];
+
+const TRUST_ITEMS = [
+  { title: "Organização profissional do plantel",        description: "Cada ave com sua ficha completa, histórico e linhagem rastreada." },
+  { title: "Relatórios para decisão antes da reprodução", description: "Saiba o que esperar dos filhotes antes de fechar o casal." },
+  { title: "Genética e manejo em uma única plataforma",   description: "Sem planilhas soltas, sem cadernos perdidos." },
+  { title: "Pronto para criadouros pequenos e grandes",   description: "Funciona para 10 aves ou para 500 — a mesma qualidade." },
+  { title: "Sem certezas genéticas inventadas",           description: "O sistema separa o que é confirmado, inferido, possível ou desconhecido." },
+  { title: "Linguagem clara, em português",               description: "Sem termos soltos em inglês. Tudo explicado para o criador brasileiro." },
+];
+
+const FAQ_ITEMS = [
+  {
+    question: "Como escolher um casal de canários?",
+    answer: "Verifique a compatibilidade genética, evite cruzamentos consanguíneos e observe o padrão da raça. O sistema calcula o COI e alerta sobre cruzamentos de risco antes de você fechar o casal.",
+  },
+  {
+    question: "Por que evitar branco dominante com branco dominante?",
+    answer: "Quando dois canários brancos dominantes cruzam, 25% dos filhotes recebem duas cópias do gene (dose dupla), o que é letal — esses ovos não se desenvolvem. O resultado prático é uma ninhada menor. O sistema alerta automaticamente esse risco.",
+  },
+  {
+    question: "Por que evitar topetado com topetado?",
+    answer: "O gene do topete (crista) em dose dupla também é letal. Cruzar dois topetados gera 25% de filhotes não viáveis. O recomendado é sempre cruzar topetado com sem topete.",
+  },
+  {
+    question: "O que é intenso e nevado?",
+    answer: "São categorias de pena. O intenso tem plumagem mais compacta e cor mais concentrada. O nevado tem penas mais largas com bordas claras, dando aparência aveludada. Intenso × nevado é o cruzamento recomendado; nevado × nevado pode gerar filhotes com penas excessivamente largas.",
+  },
+  {
+    question: "Por que vermelho precisa de alimentação pigmentante?",
+    answer: "O canário de fator vermelho tem o gene para expressar pigmento avermelhado, mas não produz o pigmento sozinho — precisa ingerir carotenoides (como cántaxantina ou beta-caroteno) para que a cor aparecer. Sem alimentação adequada, a cor fica laranja fraca ou amarelada.",
+  },
+  {
+    question: "O que é marfim?",
+    answer: "Marfim é uma mutação ligada ao sexo que dilui o amarelo para amarelo-marfim e o vermelho para vermelho-marfim. Machos podem ser portadores silenciosos; fêmeas não são portadoras — se receberam o gene, manifestam visualmente.",
+  },
+  {
+    question: "O que é portador?",
+    answer: "Portador é o pássaro que carrega uma cópia de um gene recessivo sem manifestá-lo visualmente. Ele parece normal, mas pode transmitir o gene para os filhotes. Para mutações ligadas ao sexo, apenas machos podem ser portadores.",
+  },
+  {
+    question: "Como funciona pedigree?",
+    answer: "Pedigree é o registro da linhagem do pássaro: pai, mãe, avós, bisavós e assim por diante. O sistema monta a árvore automaticamente conforme você cadastra os casais e filhotes.",
+  },
+  {
+    question: "O que é consanguinidade?",
+    answer: "Consanguinidade é o grau de parentesco entre dois pássaros. O Índice de Consanguinidade (COI) mede a probabilidade de um filhote herdar genes idênticos por descendência. Alto COI aumenta o risco de doenças genéticas e redução de vitalidade.",
+  },
+  {
+    question: "Como controlar anilhas?",
+    answer: "Cadastre o lote de anilhas com o ano e a entidade. Ao registrar um filhote, atribua a anilha diretamente na ficha. O sistema impede duplicatas e mantém o histórico de cada anilha.",
+  },
+  {
+    question: "Quando fazer ovoscopia?",
+    answer: "A ovoscopia é feita entre o 5º e o 7º dia de incubação para verificar se o ovo está fecundado. O sistema pode registrar o resultado e alertar sobre ovos inferteis ou claros.",
+  },
+  {
+    question: "Quando anilhar filhotes?",
+    answer: "O momento ideal para anilhar varia por raça, mas geralmente é entre o 7º e o 10º dia de vida, quando o pé ainda cabe pela anilha mas já não sai facilmente. O sistema pode registrar a data de nascimento e calcular a janela ideal.",
+  },
+  {
+    question: "Como organizar chocas?",
+    answer: "Registre a data de postura, o número de ovos e a data prevista de eclosão. O sistema calcula automaticamente e pode enviar alertas para ovoscopia e para o momento de anilhar.",
+  },
+  {
+    question: "Como acompanhar saúde e alimentação?",
+    answer: "Cada ave tem uma ficha de saúde onde você registra tratamentos, vacinas e observações. O sistema também oferece orientações de nutrição específicas para cada cor e raça.",
+  },
+  {
+    question: "Como preparar aves para campeonato?",
+    answer: "Registre as inscrições, acompanhe as pontuações e o histórico de participações. O sistema permite filtrar as aves com melhor desempenho e gerar relatórios para planejamento.",
+  },
+];
+
+function FaqItem({ question, answer }: { question: string; answer: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-amber-100 rounded-xl overflow-hidden bg-white">
+      <button
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-amber-50/50 transition-colors"
+        onClick={() => setOpen((v) => !v)}
+        type="button"
+      >
+        <span className="font-medium text-amber-950 text-sm pr-4">{question}</span>
+        {open
+          ? <ChevronUp className="w-4 h-4 text-amber-600 shrink-0" />
+          : <ChevronDown className="w-4 h-4 text-amber-600 shrink-0" />
+        }
+      </button>
+      {open && (
+        <div className="px-5 pb-4 pt-0">
+          <p className="text-gray-600 text-sm leading-relaxed">{answer}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function NutritionCard({
   icon: Icon,

@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
-import { Bird as BirdIcon, GitBranch, Edit2, Calendar, MapPin, Ruler, Scale, Loader2, Sparkles } from "lucide-react";
+import { Bird as BirdIcon, GitBranch, Edit2, Calendar, MapPin, Ruler, Scale, Loader2, Sparkles, Dna, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, HelpCircle, Info } from "lucide-react";
 import { Link } from "wouter";
 
 type BirdRecord = {
@@ -122,6 +124,9 @@ export function BirdFicha({
           </div>
         )}
 
+        {/* Ficha Genética Completa */}
+        <GeneticProfileSection birdId={bird.id} sex={bird.sex} />
+
         {bird.notes && (
           <div className="border-t pt-4">
             <p className="text-xs text-gray-400 uppercase mb-1">Observações</p>
@@ -149,6 +154,225 @@ export function BirdFicha({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ============================================================================
+// Ficha Genética Completa
+// ============================================================================
+
+const CONFIDENCE_CONFIG = {
+  CONFIRMADO:  { label: "Confirmado",   icon: CheckCircle,  className: "text-green-700 bg-green-50 border-green-200" },
+  INFERIDO:    { label: "Inferido",     icon: Info,         className: "text-blue-700 bg-blue-50 border-blue-200" },
+  POSSÍVEL:    { label: "Possível",     icon: HelpCircle,   className: "text-yellow-700 bg-yellow-50 border-yellow-200" },
+  DESCONHECIDO:{ label: "Desconhecido", icon: HelpCircle,   className: "text-gray-600 bg-gray-50 border-gray-200" },
+  DESCARTADO:  { label: "Descartado",   icon: AlertTriangle,className: "text-red-600 bg-red-50 border-red-200" },
+};
+
+function ConfidenceBadge({ level }: { level: string }) {
+  const cfg = CONFIDENCE_CONFIG[level as keyof typeof CONFIDENCE_CONFIG] ?? CONFIDENCE_CONFIG.DESCONHECIDO;
+  const Icon = cfg.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium ${cfg.className}`}>
+      <Icon className="w-3 h-3" />
+      {cfg.label}
+    </span>
+  );
+}
+
+function GeneticTraitRow({ label, value, confidence }: { label: string; value: string; confidence?: string }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-500 w-40 shrink-0">{label}</span>
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        <span className="text-xs font-medium text-gray-800">{value}</span>
+        {confidence && <ConfidenceBadge level={confidence} />}
+      </div>
+    </div>
+  );
+}
+
+function GeneticProfileSection({ birdId, sex }: { birdId: number; sex: string }) {
+  const [open, setOpen] = useState(false);
+  const { data: genotype } = trpc.mendelian.getGenotype.useQuery(birdId);
+  const { data: coiData } = trpc.genetics.coi.useQuery(birdId);
+
+  const hasGenotype = genotype && (
+    genotype.backgroundColor ||
+    genotype.featherType ||
+    genotype.hasCrest ||
+    (Array.isArray(genotype.mutations) && genotype.mutations.length > 0)
+  );
+
+  const mutations = (genotype?.mutations ?? []) as Array<{
+    mutation: string;
+    inheritance: string;
+    zygosity: string;
+  }>;
+
+  const ZYGOSITY_PT: Record<string, string> = {
+    homozygous_mutant:    "Visual (dose dupla)",
+    heterozygous_carrier: "Portador (não manifesta)",
+    homozygous_normal:    "Normal (sem mutação)",
+  };
+
+  const INHERITANCE_PT: Record<string, string> = {
+    sex_linked_recessive: "Ligada ao sexo",
+    autosomal_recessive:  "Autossômica recessiva",
+    autosomal_dominant:   "Autossômica dominante",
+  };
+
+  // Inferir nível de confiança com base na zigosidade
+  function inferConfidence(zygosity: string, inheritance: string, birdSex: string): string {
+    if (zygosity === "homozygous_mutant") return "CONFIRMADO";
+    if (zygosity === "homozygous_normal") return "CONFIRMADO";
+    if (zygosity === "heterozygous_carrier") {
+      if (inheritance === "sex_linked_recessive" && birdSex === "fêmea") return "DESCARTADO";
+      return "INFERIDO";
+    }
+    return "DESCONHECIDO";
+  }
+
+  return (
+    <div className="border-t pt-4">
+      <button
+        type="button"
+        className="flex items-center justify-between w-full text-left mb-2"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div className="flex items-center gap-2">
+          <Dna className="w-4 h-4 text-amber-600" />
+          <p className="text-xs text-gray-500 uppercase font-semibold tracking-wide">Ficha Genética</p>
+          {!hasGenotype && (
+            <Badge variant="outline" className="text-xs text-amber-600 border-amber-200">
+              Incompleta
+            </Badge>
+          )}
+        </div>
+        {open
+          ? <ChevronUp className="w-4 h-4 text-gray-400" />
+          : <ChevronDown className="w-4 h-4 text-gray-400" />
+        }
+      </button>
+
+      {open && (
+        <div className="space-y-4">
+          {!hasGenotype ? (
+            <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/50 p-4 text-center">
+              <Dna className="w-8 h-8 text-amber-300 mx-auto mb-2" />
+              <p className="text-sm text-amber-700 font-medium">Genética não preenchida</p>
+              <p className="text-xs text-amber-600/70 mt-1">
+                Edite o pássaro e preencha a seção Genótipo para ver a ficha genética completa.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Lipocromo e plumagem */}
+              <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Fenótipo Base</p>
+                {genotype.backgroundColor && (
+                  <GeneticTraitRow
+                    label="Lipocromo (cor de fundo)"
+                    value={genotype.backgroundColor}
+                    confidence="CONFIRMADO"
+                  />
+                )}
+                {genotype.featherType && (
+                  <GeneticTraitRow
+                    label="Categoria de pena"
+                    value={genotype.featherType === "intenso" ? "Intenso" : "Nevado"}
+                    confidence="CONFIRMADO"
+                  />
+                )}
+                <GeneticTraitRow
+                  label="Crista / Topete"
+                  value={genotype.hasCrest ? "Sim (gene dominante)" : "Não"}
+                  confidence="CONFIRMADO"
+                />
+              </div>
+
+              {/* Mutações */}
+              {mutations.length > 0 && (
+                <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Mutações Registradas</p>
+                  {mutations.map((m, i) => (
+                    <GeneticTraitRow
+                      key={i}
+                      label={`${m.mutation} (${INHERITANCE_PT[m.inheritance] ?? m.inheritance})`}
+                      value={ZYGOSITY_PT[m.zygosity] ?? m.zygosity}
+                      confidence={inferConfidence(m.zygosity, m.inheritance, sex)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Alertas genéticos */}
+              {genotype.hasCrest && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800">
+                    <strong>Alerta:</strong> Ave com crista — evite cruzar com outro topetado.
+                    Crista × crista gera 25% de filhotes não viáveis (gene letal em dose dupla).
+                  </p>
+                </div>
+              )}
+              {mutations.some((m) => m.mutation === "branco_dominante") && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-800">
+                    <strong>Alerta:</strong> Branco dominante — evite cruzar com outro branco dominante.
+                    25% dos filhotes recebem dose dupla (letal).
+                  </p>
+                </div>
+              )}
+
+              {/* COI */}
+              {coiData && (
+                <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Consanguinidade (COI)</p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          coiData.risk === "low" ? "bg-green-500" :
+                          coiData.risk === "moderate" ? "bg-yellow-500" : "bg-red-500"
+                        }`}
+                        style={{ width: `${Math.min(coiData.coi * 100 * 4, 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700">
+                      {(coiData.coi * 100).toFixed(1)}%
+                    </span>
+                    <ConfidenceBadge level={
+                      coiData.risk === "low" ? "CONFIRMADO" :
+                      coiData.risk === "moderate" ? "POSSÍVEL" : "DESCARTADO"
+                    } />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {coiData.risk === "low" && "Consanguinidade baixa — cruzamento seguro."}
+                    {coiData.risk === "moderate" && "Consanguinidade moderada — use com critério."}
+                    {coiData.risk === "high" && "Consanguinidade alta — evite este cruzamento."}
+                  </p>
+                </div>
+              )}
+
+              {/* Legenda */}
+              <div className="rounded-lg border border-gray-100 p-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase mb-2">Legenda de certeza</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {Object.entries(CONFIDENCE_CONFIG).map(([key, cfg]) => (
+                    <div key={key} className={`flex items-center gap-1.5 px-2 py-1 rounded border text-xs ${cfg.className}`}>
+                      <cfg.icon className="w-3 h-3 shrink-0" />
+                      <span>{cfg.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -10,7 +10,6 @@ import { trpc } from "@/lib/trpc";
 import {
   Calculator,
   AlertTriangle,
-  CheckCircle,
   Info,
   Dna,
   Bird,
@@ -18,43 +17,56 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  CheckCircle,
 } from "lucide-react";
 
-// Tipos de zigosidade para exibição
+// ============================================================================
+// Constantes e tipos
+// ============================================================================
+
+/** Sentinela para "não informado" — o Radix UI proíbe value="" em SelectItem */
+const NONE_VALUE = "__none__";
+
 const ZYGOSITY_LABELS: Record<string, string> = {
-  homozygous_mutant: "Mutante Homozigoto (visual)",
-  heterozygous_carrier: "Portador (heterozigoto)",
-  homozygous_normal: "Normal (sem mutação)",
+  // Sexo-ligadas — machos (ZZ)
+  "Z+Z+": "Z⁺Z⁺ — Visual homozigoto",
+  "Z+Z-": "Z⁺Z⁻ — Portador (heterozigoto)",
+  "Z-Z-": "Z⁻Z⁻ — Normal (sem mutação)",
+  // Sexo-ligadas — fêmeas (ZW)
+  "Z+W": "Z⁺W — Visual (fêmea manifesta)",
+  "Z-W": "Z⁻W — Normal (sem mutação)",
+  // Autossômicas recessivas
+  mm: "mm — Visual (homozigoto mutante)",
+  Nm: "Nm — Portador (heterozigoto)",
+  NN: "NN — Normal (sem mutação)",
+  // Autossômicas dominantes
+  Nn: "Nn — Visual dose simples",
+  // NN e nn reaproveitam as entradas acima quando aplicável
+  nn: "nn — Não visual",
 };
 
 const ZYGOSITY_COLORS: Record<string, string> = {
-  homozygous_mutant: "bg-amber-100 text-amber-800 border-amber-200",
-  heterozygous_carrier: "bg-blue-100 text-blue-800 border-blue-200",
-  homozygous_normal: "bg-gray-100 text-gray-700 border-gray-200",
+  "Z+Z+": "bg-amber-100 text-amber-800 border-amber-200",
+  "Z+Z-": "bg-blue-100 text-blue-800 border-blue-200",
+  "Z-Z-": "bg-gray-100 text-gray-700 border-gray-200",
+  "Z+W": "bg-amber-100 text-amber-800 border-amber-200",
+  "Z-W": "bg-gray-100 text-gray-700 border-gray-200",
+  mm: "bg-amber-100 text-amber-800 border-amber-200",
+  Nm: "bg-blue-100 text-blue-800 border-blue-200",
+  NN: "bg-gray-100 text-gray-700 border-gray-200",
+  Nn: "bg-purple-100 text-purple-800 border-purple-200",
+  nn: "bg-gray-100 text-gray-700 border-gray-200",
 };
 
-// Mutações disponíveis para seleção
 const MUTATIONS = [
-  { id: "agata", label: "Ágata", inheritance: "sex_linked" },
-  { id: "canela", label: "Canela", inheritance: "sex_linked" },
-  { id: "ino", label: "Ino (Lutino/Albino/Rubino)", inheritance: "sex_linked" },
-  { id: "pastel", label: "Pastel", inheritance: "autosomal_recessive" },
-  { id: "opala", label: "Opalino", inheritance: "autosomal_recessive" },
-  { id: "crista", label: "Crista/Topete", inheritance: "autosomal_dominant" },
-  { id: "brancoDominante", label: "Branco Dominante", inheritance: "autosomal_dominant" },
-  { id: "plumagem", label: "Plumagem (Nevado/Intenso)", inheritance: "autosomal_dominant" },
-];
-
-const BACKGROUND_COLORS = [
-  { id: "amarelo", label: "Amarelo" },
-  { id: "vermelho", label: "Vermelho (Fator Vermelho)" },
-  { id: "branco_recessivo", label: "Branco Recessivo" },
-  { id: "branco_dominante", label: "Branco Dominante" },
-];
-
-const FEATHER_TYPES = [
-  { id: "intenso", label: "Intenso" },
-  { id: "nevado", label: "Nevado" },
+  { id: "agata",           label: "Ágata",                      inheritance: "sex_linked"          as const },
+  { id: "canela",          label: "Canela",                     inheritance: "sex_linked"          as const },
+  { id: "ino",             label: "Ino (Lutino / Albino / Rubino)", inheritance: "sex_linked"      as const },
+  { id: "pastel",          label: "Pastel",                     inheritance: "autosomal_recessive" as const },
+  { id: "opala",           label: "Opalino",                    inheritance: "autosomal_recessive" as const },
+  { id: "crista",          label: "Crista / Topete",            inheritance: "autosomal_dominant"  as const },
+  { id: "brancoDominante", label: "Branco Dominante",           inheritance: "autosomal_dominant"  as const },
+  { id: "plumagem",        label: "Plumagem (Nevado / Intenso)", inheritance: "autosomal_dominant" as const },
 ];
 
 type ZygosityAR = "NN" | "Nm" | "mm";
@@ -74,7 +86,10 @@ interface ParentGenotype {
   plumagem?: ZygosityDom;
 }
 
-// Opções de zigosidade por tipo de herança e sexo
+// ============================================================================
+// Helpers
+// ============================================================================
+
 function getZygosityOptions(mutationId: string, sex: "macho" | "fêmea") {
   const mutation = MUTATIONS.find((m) => m.id === mutationId);
   if (!mutation) return [];
@@ -83,7 +98,7 @@ function getZygosityOptions(mutationId: string, sex: "macho" | "fêmea") {
     if (sex === "macho") {
       return [
         { value: "Z+Z+", label: "Z⁺Z⁺ — Visual homozigoto" },
-        { value: "Z+Z-", label: "Z⁺Z⁻ — Portador (visual em ágata/canela)" },
+        { value: "Z+Z-", label: "Z⁺Z⁻ — Portador (heterozigoto)" },
         { value: "Z-Z-", label: "Z⁻Z⁻ — Normal (sem mutação)" },
       ];
     } else {
@@ -99,41 +114,50 @@ function getZygosityOptions(mutationId: string, sex: "macho" | "fêmea") {
       { value: "NN", label: "NN — Normal (sem mutação)" },
     ];
   } else {
-    // dominant
     return [
-      { value: "NN", label: "NN — Visual dose dupla (risco letal)" },
+      { value: "NN", label: "NN — Visual dose dupla (risco letal em crista/branco dom.)" },
       { value: "Nn", label: "Nn — Visual dose simples" },
       { value: "nn", label: "nn — Não visual" },
     ];
   }
 }
 
-function RiskBadge({ risk }: { risk: "low" | "moderate" | "high" | "critical" }) {
-  const map = {
-    low: { label: "Baixo risco", className: "bg-green-100 text-green-800 border-green-200" },
-    moderate: { label: "Risco moderado", className: "bg-yellow-100 text-yellow-800 border-yellow-200" },
-    high: { label: "Alto risco", className: "bg-red-100 text-red-800 border-red-200" },
-    critical: { label: "Risco crítico", className: "bg-red-200 text-red-900 border-red-300" },
-  };
-  const { label, className } = map[risk];
-  return <Badge variant="outline" className={className}>{label}</Badge>;
+/** Converte o valor do Select para o genótipo real (undefined se NONE_VALUE) */
+function selectValueToGenotype(v: string): string | undefined {
+  return v === NONE_VALUE ? undefined : v;
 }
+
+/** Converte o genótipo para o valor do Select (NONE_VALUE se undefined/null) */
+function genotypeToSelectValue(v: string | undefined): string {
+  return v ?? NONE_VALUE;
+}
+
+function inheritanceLabel(inh: string) {
+  if (inh === "sex_linked") return "ligada ao sexo";
+  if (inh === "autosomal_recessive") return "autossômica recessiva";
+  return "autossômica dominante";
+}
+
+// ============================================================================
+// Sub-componentes
+// ============================================================================
 
 function ProbabilityBar({ value, label, color }: { value: number; label: string; color: string }) {
   const pct = Math.round(value * 100);
   return (
     <div className="flex items-center gap-3">
-      <div className="w-32 text-sm text-gray-600 shrink-0">{label}</div>
+      <div className="w-40 text-sm text-gray-600 shrink-0 leading-tight">{label}</div>
       <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${color}`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="w-12 text-sm font-medium text-right text-gray-700">{pct}%</div>
+      <div className="w-12 text-sm font-semibold text-right text-gray-700">{pct}%</div>
     </div>
   );
 }
+
+// ============================================================================
+// Componente principal
+// ============================================================================
 
 export default function GeneticsCalculator() {
   const [male, setMale] = useState<ParentGenotype>({ sex: "macho" });
@@ -141,9 +165,12 @@ export default function GeneticsCalculator() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [calculated, setCalculated] = useState(false);
 
-  const { data: result, isLoading, refetch } = trpc.genetics.calculateColorCross.useQuery(
+  const { data: result, isLoading, refetch, error } = trpc.genetics.calculateColorCross.useQuery(
     { male, female },
-    { enabled: calculated }
+    {
+      enabled: calculated,
+      retry: false,
+    }
   );
 
   function handleCalculate() {
@@ -157,37 +184,55 @@ export default function GeneticsCalculator() {
     setCalculated(false);
   }
 
-  function setMutation(
-    parent: "male" | "female",
-    mutationId: string,
-    value: string | undefined
-  ) {
+  function setMutation(parent: "male" | "female", mutationId: string, rawValue: string) {
+    const value = selectValueToGenotype(rawValue);
     if (parent === "male") {
-      setMale((prev) => ({ ...prev, [mutationId]: value }));
+      setMale((prev) => {
+        const next = { ...prev };
+        if (value === undefined) {
+          delete (next as any)[mutationId];
+        } else {
+          (next as any)[mutationId] = value;
+        }
+        return next;
+      });
     } else {
-      setFemale((prev) => ({ ...prev, [mutationId]: value }));
+      setFemale((prev) => {
+        const next = { ...prev };
+        if (value === undefined) {
+          delete (next as any)[mutationId];
+        } else {
+          (next as any)[mutationId] = value;
+        }
+        return next;
+      });
     }
     setCalculated(false);
   }
 
+  const hasAnyMutation =
+    Object.keys(male).filter((k) => k !== "sex").length > 0 ||
+    Object.keys(female).filter((k) => k !== "sex").length > 0;
+
   return (
     <DashboardLayout>
       <div className="max-w-5xl mx-auto space-y-6">
+
         {/* Cabeçalho */}
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Calculator className="w-6 h-6 text-amber-600" />
               Calculadora Genética
             </h1>
-            <p className="text-gray-500 mt-1 text-sm">
+            <p className="text-gray-500 mt-1 text-sm max-w-xl">
               Simule cruzamentos e calcule probabilidades de filhotes com base nas leis de Mendel.
               Selecione os genótipos do macho e da fêmea para começar.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={handleReset}>
             <RefreshCw className="w-4 h-4 mr-2" />
-            Limpar
+            Limpar tudo
           </Button>
         </div>
 
@@ -197,12 +242,16 @@ export default function GeneticsCalculator() {
           <AlertDescription className="text-amber-800 text-sm">
             Esta calculadora usa as leis de Mendel para calcular probabilidades teóricas.
             Os resultados são estimativas — a natureza sempre tem variação.
-            Para mutações ligadas ao sexo, fêmeas nunca são portadoras silenciosas.
+            <strong className="block mt-1">
+              Regra importante: fêmeas com mutações ligadas ao sexo nunca são portadoras silenciosas —
+              se receberam o gene, manifestam visualmente (sistema ZW dos canários).
+            </strong>
           </AlertDescription>
         </Alert>
 
         {/* Seleção de genótipos */}
         <div className="grid md:grid-cols-2 gap-6">
+
           {/* Macho */}
           <Card className="border-blue-100">
             <CardHeader className="pb-3">
@@ -212,28 +261,24 @@ export default function GeneticsCalculator() {
               </CardTitle>
               <CardDescription>Configure o genótipo do macho</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               {MUTATIONS.map((mutation) => (
                 <div key={mutation.id} className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">
+                  <label className="text-sm font-medium text-gray-700">
                     {mutation.label}
-                    <span className="ml-1 text-gray-400 font-normal">
-                      ({mutation.inheritance === "sex_linked"
-                        ? "ligada ao sexo"
-                        : mutation.inheritance === "autosomal_recessive"
-                        ? "autossômica recessiva"
-                        : "autossômica dominante"})
+                    <span className="ml-1 text-xs text-gray-400 font-normal">
+                      ({inheritanceLabel(mutation.inheritance)})
                     </span>
                   </label>
                   <Select
-                    value={(male as any)[mutation.id] ?? ""}
-                    onValueChange={(v) => setMutation("male", mutation.id, v || undefined)}
+                    value={genotypeToSelectValue((male as any)[mutation.id])}
+                    onValueChange={(v) => setMutation("male", mutation.id, v)}
                   >
-                    <SelectTrigger className="h-8 text-xs">
+                    <SelectTrigger className="h-9 text-sm">
                       <SelectValue placeholder="Não informado" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Não informado</SelectItem>
+                      <SelectItem value={NONE_VALUE}>— Não informado —</SelectItem>
                       {getZygosityOptions(mutation.id, "macho").map((opt) => (
                         <SelectItem key={opt.value} value={opt.value}>
                           {opt.label}
@@ -255,28 +300,24 @@ export default function GeneticsCalculator() {
               </CardTitle>
               <CardDescription>Configure o genótipo da fêmea</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               {MUTATIONS.map((mutation) => (
                 <div key={mutation.id} className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">
+                  <label className="text-sm font-medium text-gray-700">
                     {mutation.label}
-                    <span className="ml-1 text-gray-400 font-normal">
-                      ({mutation.inheritance === "sex_linked"
-                        ? "ligada ao sexo"
-                        : mutation.inheritance === "autosomal_recessive"
-                        ? "autossômica recessiva"
-                        : "autossômica dominante"})
+                    <span className="ml-1 text-xs text-gray-400 font-normal">
+                      ({inheritanceLabel(mutation.inheritance)})
                     </span>
                   </label>
                   <Select
-                    value={(female as any)[mutation.id] ?? ""}
-                    onValueChange={(v) => setMutation("female", mutation.id, v || undefined)}
+                    value={genotypeToSelectValue((female as any)[mutation.id])}
+                    onValueChange={(v) => setMutation("female", mutation.id, v)}
                   >
-                    <SelectTrigger className="h-8 text-xs">
+                    <SelectTrigger className="h-9 text-sm">
                       <SelectValue placeholder="Não informado" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Não informado</SelectItem>
+                      <SelectItem value={NONE_VALUE}>— Não informado —</SelectItem>
                       {getZygosityOptions(mutation.id, "fêmea").map((opt) => (
                         <SelectItem key={opt.value} value={opt.value}>
                           {opt.label}
@@ -291,12 +332,17 @@ export default function GeneticsCalculator() {
         </div>
 
         {/* Botão calcular */}
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-3">
+          {!hasAnyMutation && (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+              Selecione ao menos uma mutação para o macho ou para a fêmea antes de calcular.
+            </p>
+          )}
           <Button
             size="lg"
             onClick={handleCalculate}
-            disabled={isLoading}
-            className="bg-amber-600 hover:bg-amber-700 text-white px-10"
+            disabled={isLoading || !hasAnyMutation}
+            className="bg-amber-600 hover:bg-amber-700 text-white px-10 text-base"
           >
             {isLoading ? (
               <>
@@ -312,18 +358,34 @@ export default function GeneticsCalculator() {
           </Button>
         </div>
 
+        {/* Erro da API */}
+        {error && (
+          <Alert className="border-red-200 bg-red-50">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800 text-sm">
+              Erro ao calcular: {error.message}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Resultados */}
         {result && calculated && (
           <div className="space-y-6">
             <Separator />
 
-            {/* Alertas */}
+            {/* Confirmação de sucesso */}
+            <div className="flex items-center gap-2 text-green-700 text-sm font-medium">
+              <CheckCircle className="w-4 h-4" />
+              Cálculo concluído com base nas leis de Mendel
+            </div>
+
+            {/* Alertas de risco */}
             {result.warnings && result.warnings.length > 0 && (
               <div className="space-y-2">
                 {result.warnings.map((warning: string, i: number) => (
                   <Alert key={i} className="border-red-200 bg-red-50">
                     <AlertTriangle className="h-4 w-4 text-red-600" />
-                    <AlertDescription className="text-red-800 text-sm">{warning}</AlertDescription>
+                    <AlertDescription className="text-red-800 text-sm font-medium">{warning}</AlertDescription>
                   </Alert>
                 ))}
               </div>
@@ -344,13 +406,15 @@ export default function GeneticsCalculator() {
               </Card>
             )}
 
-                        {/* Resumo por mutação — filhotes machos e fêmeas (sex-linked) ou geral */}
+            {/* Distribuição dos filhotes — primeira mutação configurada */}
             {result.byMutation && Object.keys(result.byMutation).length > 0 && (() => {
-              // Agrega sons/daughters/offspring de todas as mutações para exibição rápida
-              const firstMut = Object.values(result.byMutation)[0] as any;
-              const hasSexLinked = firstMut?.sons && firstMut?.daughters;
-              if (hasSexLinked) {
-                // Exibe a primeira mutação sex-linked como resumo visual
+              // Mostra o resumo visual da primeira mutação com dados
+              const firstMut = Object.values(result.byMutation).find(
+                (m: any) => m.sons || m.daughters || m.offspring
+              ) as any;
+              if (!firstMut) return null;
+
+              if (firstMut.sons && firstMut.daughters) {
                 return (
                   <div className="grid md:grid-cols-2 gap-6">
                     <Card className="border-blue-100">
@@ -389,7 +453,7 @@ export default function GeneticsCalculator() {
                     </Card>
                   </div>
                 );
-              } else if (firstMut?.offspring) {
+              } else if (firstMut.offspring) {
                 return (
                   <Card>
                     <CardHeader className="pb-3">
@@ -411,20 +475,20 @@ export default function GeneticsCalculator() {
               return null;
             })()}
 
-            {/* Detalhes por mutação */}
+            {/* Detalhes por mutação (expansível) */}
             {result.byMutation && Object.keys(result.byMutation).length > 0 && (
               <Card>
                 <CardHeader className="pb-2">
                   <button
                     className="flex items-center justify-between w-full text-left"
                     onClick={() => setShowAdvanced(!showAdvanced)}
+                    type="button"
                   >
                     <CardTitle className="text-base">Detalhes por Mutação</CardTitle>
-                    {showAdvanced ? (
-                      <ChevronUp className="w-4 h-4 text-gray-500" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-gray-500" />
-                    )}
+                    {showAdvanced
+                      ? <ChevronUp className="w-4 h-4 text-gray-500" />
+                      : <ChevronDown className="w-4 h-4 text-gray-500" />
+                    }
                   </button>
                 </CardHeader>
                 {showAdvanced && (
@@ -434,29 +498,20 @@ export default function GeneticsCalculator() {
                         const mutation = MUTATIONS.find((m) => m.id === mutId);
                         return (
                           <div key={mutId}>
-                            <h4 className="font-medium text-gray-800 mb-2 flex items-center gap-2">
+                            <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
                               <Dna className="w-3.5 h-3.5 text-amber-600" />
                               {mutation?.label ?? mutId}
                               <Badge variant="outline" className="text-xs">
-                                {mutation?.inheritance === "sex_linked"
-                                  ? "ligada ao sexo"
-                                  : mutation?.inheritance === "autosomal_recessive"
-                                  ? "autossômica recessiva"
-                                  : "autossômica dominante"}
+                                {mutation ? inheritanceLabel(mutation.inheritance) : mutId}
                               </Badge>
                             </h4>
 
                             {mutResult.sons && (
                               <div className="mb-3">
-                                <p className="text-xs text-gray-500 mb-1">Filhos machos:</p>
-                                <div className="space-y-1.5">
+                                <p className="text-xs text-gray-500 mb-1.5 font-medium">Filhos machos:</p>
+                                <div className="space-y-2">
                                   {Object.entries(mutResult.sons as Record<string, number>).map(([g, p]) => (
-                                    <ProbabilityBar
-                                      key={g}
-                                      label={ZYGOSITY_LABELS[g] ?? g}
-                                      value={p}
-                                      color="bg-blue-300"
-                                    />
+                                    <ProbabilityBar key={g} label={ZYGOSITY_LABELS[g] ?? g} value={p} color="bg-blue-300" />
                                   ))}
                                 </div>
                               </div>
@@ -464,29 +519,19 @@ export default function GeneticsCalculator() {
 
                             {mutResult.daughters && (
                               <div className="mb-3">
-                                <p className="text-xs text-gray-500 mb-1">Filhas fêmeas:</p>
-                                <div className="space-y-1.5">
+                                <p className="text-xs text-gray-500 mb-1.5 font-medium">Filhas fêmeas:</p>
+                                <div className="space-y-2">
                                   {Object.entries(mutResult.daughters as Record<string, number>).map(([g, p]) => (
-                                    <ProbabilityBar
-                                      key={g}
-                                      label={ZYGOSITY_LABELS[g] ?? g}
-                                      value={p}
-                                      color="bg-pink-300"
-                                    />
+                                    <ProbabilityBar key={g} label={ZYGOSITY_LABELS[g] ?? g} value={p} color="bg-pink-300" />
                                   ))}
                                 </div>
                               </div>
                             )}
 
                             {mutResult.offspring && !mutResult.sons && (
-                              <div className="space-y-1.5">
+                              <div className="space-y-2">
                                 {Object.entries(mutResult.offspring as Record<string, number>).map(([g, p]) => (
-                                  <ProbabilityBar
-                                    key={g}
-                                    label={ZYGOSITY_LABELS[g] ?? g}
-                                    value={p}
-                                    color="bg-amber-300"
-                                  />
+                                  <ProbabilityBar key={g} label={ZYGOSITY_LABELS[g] ?? g} value={p} color="bg-amber-300" />
                                 ))}
                               </div>
                             )}
@@ -516,31 +561,58 @@ export default function GeneticsCalculator() {
                 <CardTitle className="text-sm text-gray-600">Legenda Genética</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid sm:grid-cols-3 gap-3">
-                  {Object.entries(ZYGOSITY_LABELS).map(([key, label]) => (
-                    <div key={key} className={`rounded-lg border px-3 py-2 text-xs ${ZYGOSITY_COLORS[key]}`}>
-                      <strong className="block">{label}</strong>
+                <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {[
+                    { key: "Z+Z+", label: "Visual homozigoto (macho)" },
+                    { key: "Z+Z-", label: "Portador (macho heterozigoto)" },
+                    { key: "Z-Z-", label: "Normal sem mutação (macho)" },
+                    { key: "Z+W",  label: "Visual (fêmea manifesta)" },
+                    { key: "Z-W",  label: "Normal sem mutação (fêmea)" },
+                    { key: "mm",   label: "Visual homozigoto (autossômico)" },
+                    { key: "Nm",   label: "Portador (autossômico recessivo)" },
+                    { key: "NN",   label: "Normal (autossômico)" },
+                    { key: "Nn",   label: "Visual dose simples (dominante)" },
+                    { key: "nn",   label: "Não visual (dominante)" },
+                  ].map(({ key, label }) => (
+                    <div key={key} className={`rounded-lg border px-3 py-2 text-xs ${ZYGOSITY_COLORS[key] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                      <strong className="block font-mono">{key}</strong>
+                      <span>{label}</span>
                     </div>
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-3">
-                  <strong>Nota:</strong> Fêmeas com mutações ligadas ao sexo nunca são portadoras silenciosas —
-                  se receberam o gene, manifestam visualmente (sistema ZW dos canários).
+                  <strong>Regra fundamental:</strong> Fêmeas com mutações ligadas ao sexo nunca são portadoras
+                  silenciosas — se receberam o gene, manifestam visualmente (sistema ZW dos canários).
                 </p>
               </CardContent>
             </Card>
           </div>
         )}
 
-        {/* Estado vazio */}
+        {/* Estado vazio — antes de calcular */}
         {!calculated && (
           <Card className="border-dashed border-amber-200 bg-amber-50/30">
             <CardContent className="py-12 text-center">
               <Calculator className="w-12 h-12 text-amber-300 mx-auto mb-4" />
-              <p className="text-amber-700 font-medium">Configure os genótipos e clique em Calcular</p>
-              <p className="text-amber-600/70 text-sm mt-1">
+              <p className="text-amber-700 font-semibold text-lg">Configure os genótipos e clique em Calcular</p>
+              <p className="text-amber-600/70 text-sm mt-2 max-w-md mx-auto">
+                Selecione ao menos uma mutação para o macho ou para a fêmea.
                 Os resultados mostrarão as probabilidades de cada genótipo nos filhotes.
               </p>
+              <div className="mt-6 grid sm:grid-cols-3 gap-3 text-left max-w-lg mx-auto">
+                <div className="bg-white rounded-lg border border-amber-100 p-3">
+                  <p className="text-xs font-semibold text-amber-700 mb-1">Ligadas ao sexo</p>
+                  <p className="text-xs text-gray-500">Ágata, Canela, Ino — machos portam, fêmeas manifestam</p>
+                </div>
+                <div className="bg-white rounded-lg border border-amber-100 p-3">
+                  <p className="text-xs font-semibold text-amber-700 mb-1">Autossômicas recessivas</p>
+                  <p className="text-xs text-gray-500">Pastel, Opalino — dois portadores para manifestar</p>
+                </div>
+                <div className="bg-white rounded-lg border border-amber-100 p-3">
+                  <p className="text-xs font-semibold text-amber-700 mb-1">Autossômicas dominantes</p>
+                  <p className="text-xs text-gray-500">Crista, Branco Dom. — uma cópia já manifesta</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}
