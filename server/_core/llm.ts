@@ -339,7 +339,10 @@ async function invokeGemini(params: InvokeParams): Promise<InvokeResult> {
     payload.systemInstruction = { parts: systemParts };
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  // Manda a chave nos dois formatos aceitos pela API (header E query
+  // param) — documentação do Google às vezes diverge entre versões, e
+  // isso elimina essa variável sem nenhum efeito colateral.
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(ENV.geminiApiKey)}`;
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": ENV.geminiApiKey },
@@ -348,7 +351,27 @@ async function invokeGemini(params: InvokeParams): Promise<InvokeResult> {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Chamada ao Gemini falhou: ${response.status} ${response.statusText} – ${errorText}`);
+    // O Google retorna {"error": {"code", "message", "status"}} — extrai
+    // a mensagem de verdade em vez de devolver o JSON cru, que costuma
+    // vir com texto técnico repetitivo difícil de ler no toast da tela.
+    let detail = errorText;
+    try {
+      const parsed = JSON.parse(errorText) as { error?: { message?: string; status?: string } };
+      if (parsed.error?.message) {
+        detail = `${parsed.error.status ?? ""} ${parsed.error.message}`.trim();
+      }
+    } catch {
+      // não era JSON — usa o texto cru mesmo
+    }
+    const hint =
+      response.status === 404
+        ? ` (modelo "${model}" pode não existir ou não estar disponível pra essa chave — tente configurar GEMINI_MODEL_VISION com outro nome de modelo)`
+        : response.status === 400 && /API key/i.test(detail)
+        ? " (a chave parece inválida — confira se copiou certo em https://aistudio.google.com/apikey)"
+        : response.status === 403
+        ? " (a chave pode não ter a API \"Generative Language\" habilitada, ou ter restrição de domínio/IP)"
+        : "";
+    throw new Error(`Chamada ao Gemini falhou: ${response.status} ${detail}${hint}`);
   }
 
   const data = (await response.json()) as {
@@ -358,10 +381,18 @@ async function invokeGemini(params: InvokeParams): Promise<InvokeResult> {
     }>;
     usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number };
     modelVersion?: string;
+    promptFeedback?: { blockReason?: string };
   };
 
+  if (data.promptFeedback?.blockReason) {
+    throw new Error(`Gemini bloqueou a resposta por segurança de conteúdo: ${data.promptFeedback.blockReason}`);
+  }
+
   const candidate = data.candidates?.[0];
-  const content = (candidate?.content?.parts ?? []).map((p) => p.text ?? "").join("\n");
+  if (!candidate) {
+    throw new Error("Gemini não retornou nenhuma resposta (candidates vazio) — tente novamente ou com outra foto.");
+  }
+  const content = (candidate.content?.parts ?? []).map((p) => p.text ?? "").join("\n");
 
   return {
     id: `gemini-${Date.now()}`,

@@ -300,6 +300,69 @@ describe("llm.invokeLLM (Gemini)", () => {
     const { invokeLLM } = await import("./llm");
     await expect(invokeLLM({ messages: [{ role: "user", content: "oi" }] })).rejects.toThrow(/Gemini.*400/);
   });
+
+  it("manda a chave tanto no header quanto no query param da URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { invokeLLM } = await import("./llm");
+    await invokeLLM({ messages: [{ role: "user", content: "oi" }] });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("key=test-gemini-key");
+    expect(init.headers["x-goog-api-key"]).toBe("test-gemini-key");
+  });
+
+  it("extrai a mensagem real do formato de erro do Google (não devolve o JSON cru)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      text: async () => JSON.stringify({ error: { code: 404, message: "models/gemini-9.9-fake is not found", status: "NOT_FOUND" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { invokeLLM } = await import("./llm");
+    await expect(invokeLLM({ messages: [{ role: "user", content: "oi" }] })).rejects.toThrow(/gemini-9\.9-fake is not found/);
+  });
+
+  it("404 sugere configurar GEMINI_MODEL_VISION na mensagem de erro", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      text: async () => JSON.stringify({ error: { code: 404, message: "model not found", status: "NOT_FOUND" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { invokeLLM } = await import("./llm");
+    await expect(invokeLLM({ messages: [{ role: "user", content: "oi" }] })).rejects.toThrow(/GEMINI_MODEL_VISION/);
+  });
+
+  it("avisa quando o Gemini bloqueia a resposta por segurança de conteúdo", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ candidates: [], promptFeedback: { blockReason: "SAFETY" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { invokeLLM } = await import("./llm");
+    await expect(invokeLLM({ messages: [{ role: "user", content: "oi" }] })).rejects.toThrow(/bloqueou.*SAFETY/);
+  });
+
+  it("avisa quando a resposta não tem nenhum candidate", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ candidates: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { invokeLLM } = await import("./llm");
+    await expect(invokeLLM({ messages: [{ role: "user", content: "oi" }] })).rejects.toThrow(/não retornou nenhuma resposta/);
+  });
 });
 
 describe("llm.getActiveProvider", () => {

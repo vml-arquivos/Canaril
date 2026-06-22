@@ -245,11 +245,14 @@ export const aiJudgeRouter = router({
         };
       } catch (error) {
         console.error("[AI Identify] Falha na identificação:", error);
-        throw new Error(
-          error instanceof Error && error.message.includes("ANTHROPIC_API_KEY")
-            ? "Identificação automática não está disponível: configure a ANTHROPIC_API_KEY nas variáveis de ambiente."
-            : "Não foi possível identificar a foto automaticamente. Preencha manualmente."
-        );
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("Nenhuma chave de IA configurada")) {
+          throw new Error("Identificação automática não está disponível: configure GEMINI_API_KEY ou ANTHROPIC_API_KEY nas variáveis de ambiente.");
+        }
+        // Mostra o erro real (truncado) em vez de uma mensagem genérica —
+        // sem isso, fica impossível diagnosticar se é chave inválida,
+        // modelo não encontrado, schema rejeitado, rede bloqueada, etc.
+        throw new Error(`Falha ao identificar a foto: ${message.slice(0, 300)}`);
       }
     }),
 });
