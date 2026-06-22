@@ -41,6 +41,9 @@ export default function Home() {
             <a href="#genetica" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
               Genética
             </a>
+            <Link href="/guias" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
+              Guias
+            </Link>
             <a href="#faq" className="text-amber-800/80 hover:text-amber-900 font-medium hidden sm:inline">
               Dúvidas
             </a>
@@ -394,6 +397,36 @@ export default function Home() {
             ))}
           </div>
         </div>
+      </section>
+
+      {/* Portal Educativo */}
+      <section className="container mx-auto px-4 py-16 border-t border-amber-100">
+        <div className="max-w-2xl mb-10">
+          <BookOpen className="w-8 h-8 text-amber-600 mb-3" />
+          <h3 className="text-2xl font-bold text-amber-950 mb-2">Aprenda sobre canaricultura</h3>
+          <p className="text-amber-900/60">Guias práticos sobre criação, genética, alimentação e manejo. Para iniciantes e avançados.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          {[
+            { slug: "como-criar-canarios", title: "Como começar a criar canários", tag: "Iniciantes" },
+            { slug: "alimentacao-de-canarios", title: "Alimentação por fase", tag: "Manejo" },
+            { slug: "reproducao-de-canarios", title: "Reprodução e ninhadas", tag: "Reprodução" },
+            { slug: "anilhas-para-canarios", title: "Anilhas: como funcionam", tag: "Rastreabilidade" },
+            { slug: "genetica-basica-de-canarios", title: "Genética básica: intenso, nevado e lipocromos", tag: "Genética" },
+          ].map((g) => (
+            <Link key={g.slug} href={`/guias/${g.slug}`}>
+              <div className="bg-white/80 rounded-xl border border-amber-100 p-5 hover:border-amber-300 hover:shadow-sm transition-all cursor-pointer">
+                <span className="text-xs text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded-full">{g.tag}</span>
+                <p className="text-sm font-semibold text-gray-900 mt-2 leading-snug">{g.title}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+        <Link href="/guias">
+          <Button variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
+            Ver todos os guias →
+          </Button>
+        </Link>
       </section>
 
       {/* FAQ */}

@@ -26,7 +26,17 @@ export function BirdPhotoRecognition({ birdId }: { birdId: number }) {
       setAnalysisId(data.analysisId);
       toast.success("Análise concluída — confira as sugestões abaixo.");
     },
-    onError: (error) => toast.error("Erro na análise: " + error.message),
+    onError: (error) => {
+      const msg = error.message ?? "";
+      // Mensagem amigável para erros comuns de API de IA
+      if (msg.includes("403") || msg.includes("PERMISSION_DENIED") || msg.includes("chave")) {
+        toast.error("IA indisponível no momento. Continue o cadastro manualmente — a foto foi salva.");
+      } else if (msg.includes("Nenhuma chave")) {
+        toast.error("IA não configurada. Salve o pássaro manualmente e tente a análise depois.");
+      } else {
+        toast.error("Análise por foto falhou. Você pode continuar o cadastro normalmente — a foto já está salva.");
+      }
+    },
   });
 
   const confirm = trpc.photoAnalysis.confirm.useMutation({
@@ -57,6 +67,20 @@ export function BirdPhotoRecognition({ birdId }: { birdId: number }) {
           {analyze.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
           {analyze.isPending ? "Analisando foto(s)..." : `Reconhecer pássaro por foto (${Math.min(photos!.length, 6)} foto${photos!.length > 1 ? "s" : ""})`}
         </Button>
+      )}
+
+      {/* Fallback visual quando a IA falha */}
+      {analyze.isError && (
+        <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 rounded-lg p-3 border border-amber-200">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+          <div>
+            <p className="font-medium">Análise por IA indisponível no momento.</p>
+            <p className="text-xs mt-0.5 text-amber-600">
+              Não foi possível analisar a foto agora. Você pode continuar o cadastro manualmente
+              e tentar novamente depois. A foto já foi salva.
+            </p>
+          </div>
+        </div>
       )}
 
       {currentResult && (

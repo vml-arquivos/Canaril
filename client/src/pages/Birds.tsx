@@ -106,6 +106,14 @@ export default function Birds() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState(emptyForm);
   const [officialClassSearch, setOfficialClassSearch] = useState("");
+  // isDirty: previne fechamento acidental quando o criador já alterou algo no formulário
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Helper: atualiza formData e marca isDirty
+  const patchForm = (patch: Partial<typeof emptyForm>) => {
+    setFormData((prev) => ({ ...prev, ...patch }));
+    setIsDirty(true);
+  };
 
   // Genótipo draft — usado apenas no modal de CRIAÇÃO (sem birdId ainda)
   const [genotypeDraft, setGenotypeDraft] = useState<GenotypeDraft>(EMPTY_GENOTYPE_DRAFT);
@@ -234,6 +242,20 @@ export default function Birds() {
     setPendingPhoto(null);
     setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
     setOfficialClassSearch("");
+    setIsDirty(false);
+  };
+
+  // Guarda o fechamento acidental via clique fora do modal
+  const handleDialogOpenChange = (v: boolean) => {
+    if (!v && isDirty) {
+      const confirm = window.confirm("Você tem alterações não salvas. Deseja sair sem salvar?");
+      if (!confirm) return;
+    }
+    if (v) {
+      setOpen(true);
+    } else {
+      closeDialog();
+    }
   };
 
   const openCreate = () => {
@@ -241,6 +263,7 @@ export default function Birds() {
     setFormData(emptyForm);
     setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
     setOfficialClassSearch("");
+    setIsDirty(false);
     setOpen(true);
   };
 
@@ -264,6 +287,7 @@ export default function Birds() {
       isPublic: bird.isPublic ?? false,
     });
     setOfficialClassSearch(bird.breedName ?? "");
+    setIsDirty(false);
     setOpen(true);
   };
 
@@ -333,7 +357,7 @@ export default function Birds() {
                 <List className="w-4 h-4" />
               </button>
             </div>
-            <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
+            <Dialog open={open} onOpenChange={handleDialogOpenChange}>
             <DialogTrigger asChild>
               <Button className="bg-blue-600 hover:bg-blue-700" onClick={openCreate}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -351,7 +375,7 @@ export default function Birds() {
                 {!editingId && (
                   <BirdPhotoIdentifier
                     onIdentified={(result) => {
-                      setFormData((prev) => ({ ...prev, specialty: result.specialty_code, color: result.color_code }));
+                      setFormData((prev) => ({ ...prev, specialty: result.specialty_code, color: result.color_code })); setIsDirty(true);
                       setPendingPhoto(result.dataUrl);
                     }}
                   />
@@ -368,13 +392,13 @@ export default function Birds() {
                       <Input
                         id="nickname"
                         value={formData.nickname}
-                        onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
+                        onChange={(e) => patchForm({ nickname: e.target.value })}
                         placeholder="Ex: Matriz 01, Campeão, Fêmea Topete"
                       />
                     </div>
                     <div>
                       <Label htmlFor="speciesName">Espécie *</Label>
-                      <Select value={formData.speciesName} onValueChange={(value) => setFormData({ ...formData, speciesName: value })}>
+                      <Select value={formData.speciesName} onValueChange={(value) => patchForm({ speciesName: value })}>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione..." />
                         </SelectTrigger>
@@ -389,7 +413,7 @@ export default function Birds() {
                       <Label htmlFor="modality">Modalidade</Label>
                       <Select
                         value={formData.modality}
-                        onValueChange={(value) => setFormData({ ...formData, modality: value, officialClassId: "" })}
+                        onValueChange={(value) => patchForm({ modality: value, officialClassId: "" })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione..." />
@@ -406,7 +430,7 @@ export default function Birds() {
                       <Input
                         id="breedName"
                         value={formData.breedName}
-                        onChange={(e) => setFormData({ ...formData, breedName: e.target.value })}
+                        onChange={(e) => patchForm({ breedName: e.target.value })}
                         placeholder="Preenchido pela classe oficial quando houver"
                       />
                     </div>
@@ -423,7 +447,7 @@ export default function Birds() {
                     />
                     <Select
                       value={formData.officialClassId}
-                      onValueChange={(value) => setFormData({ ...formData, officialClassId: value })}
+                      onValueChange={(value) => patchForm({ officialClassId: value })}
                       disabled={formData.modality !== "COR" && formData.modality !== "PORTE"}
                     >
                       <SelectTrigger>
@@ -449,7 +473,7 @@ export default function Birds() {
                   <div className="grid md:grid-cols-2 gap-3">
                     <div>
                       <Label htmlFor="fatherId">Pai conhecido</Label>
-                      <Select value={formData.fatherId} onValueChange={(value) => setFormData({ ...formData, fatherId: value })}>
+                      <Select value={formData.fatherId} onValueChange={(value) => patchForm({ fatherId: value })}>
                         <SelectTrigger>
                           <SelectValue placeholder="Não informado" />
                         </SelectTrigger>
@@ -465,7 +489,7 @@ export default function Birds() {
                     </div>
                     <div>
                       <Label htmlFor="motherId">Mãe conhecida</Label>
-                      <Select value={formData.motherId} onValueChange={(value) => setFormData({ ...formData, motherId: value })}>
+                      <Select value={formData.motherId} onValueChange={(value) => patchForm({ motherId: value })}>
                         <SelectTrigger>
                           <SelectValue placeholder="Não informado" />
                         </SelectTrigger>
@@ -502,7 +526,7 @@ export default function Birds() {
                       <Input
                         id="ring"
                         value={formData.ring}
-                        onChange={(e) => setFormData({ ...formData, ring: e.target.value })}
+                        onChange={(e) => patchForm({ ring: e.target.value })}
                         placeholder="Ex: 2026-001"
                         className="flex-1"
                       />
@@ -512,7 +536,7 @@ export default function Birds() {
                           variant="outline"
                           size="sm"
                           className="text-green-600 border-green-300 hover:bg-green-50 shrink-0"
-                          onClick={() => setFormData(prev => ({ ...prev, ring: nextRing.fullCode }))}
+                          onClick={() => { setFormData(prev => ({ ...prev, ring: nextRing.fullCode })); setIsDirty(true); }}
                           title={`Usar próxima anilha disponível: ${nextRing.fullCode}`}
                         >
                           <Sparkles className="h-3.5 w-3.5" />
@@ -529,7 +553,7 @@ export default function Birds() {
                   </div>
                   <div>
                     <Label htmlFor="specialty">Especialidade / resumo</Label>
-                    <Select value={formData.specialty} onValueChange={(value) => setFormData({ ...formData, specialty: value })}>
+                    <Select value={formData.specialty} onValueChange={(value) => patchForm({ specialty: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
@@ -544,7 +568,7 @@ export default function Birds() {
                   </div>
                   <div>
                     <Label htmlFor="sex">Sexo *</Label>
-                    <Select value={formData.sex} onValueChange={(value) => setFormData({ ...formData, sex: value })}>
+                    <Select value={formData.sex} onValueChange={(value) => patchForm({ sex: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
@@ -559,7 +583,7 @@ export default function Birds() {
                   </div>
                   <div>
                     <Label htmlFor="color">Cor/Mutação / resumo</Label>
-                    <Select value={formData.color} onValueChange={(value) => setFormData({ ...formData, color: value })}>
+                    <Select value={formData.color} onValueChange={(value) => patchForm({ color: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
@@ -578,7 +602,7 @@ export default function Birds() {
                       id="birthDate"
                       type="date"
                       value={formData.birthDate}
-                      onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                      onChange={(e) => patchForm({ birthDate: e.target.value })}
                     />
                   </div>
                   <div>
@@ -586,7 +610,7 @@ export default function Birds() {
                     <Input
                       id="procedence"
                       value={formData.procedence}
-                      onChange={(e) => setFormData({ ...formData, procedence: e.target.value })}
+                      onChange={(e) => patchForm({ procedence: e.target.value })}
                       placeholder="Ex: Criadouro XYZ (se vier de outro plantel)"
                     />
                   </div>
@@ -596,7 +620,7 @@ export default function Birds() {
                   <Input
                     id="notes"
                     value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    onChange={(e) => patchForm({ notes: e.target.value })}
                     placeholder="Notas adicionais..."
                   />
                 </div>
@@ -646,7 +670,7 @@ export default function Birds() {
                     <Switch
                       checked={formData.isPublic}
                       onCheckedChange={(checked) => {
-                        setFormData({ ...formData, isPublic: checked });
+                        patchForm({ isPublic: checked });
                         updateBird.mutate({ id: editingId, isPublic: checked });
                       }}
                     />

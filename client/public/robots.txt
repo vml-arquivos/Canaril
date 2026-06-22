@@ -1,0 +1,25 @@
+User-agent: *
+Allow: /
+Allow: /guias/
+Allow: /faq
+Allow: /glossario
+
+# Área privada — não indexar
+Disallow: /dashboard
+Disallow: /birds
+Disallow: /couples
+Disallow: /rings
+Disallow: /clutches
+Disallow: /cages
+Disallow: /championships
+Disallow: /reports
+Disallow: /genetic-report
+Disallow: /settings
+Disallow: /pedigree/
+Disallow: /genetics-calculator
+Disallow: /ring-batches
+Disallow: /control-sheet/
+Disallow: /ficha-gaiola/
+Disallow: /login
+
+Sitemap: https://canarillima.casadf.com.br/sitemap.xml

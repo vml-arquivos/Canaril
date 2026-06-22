@@ -20,6 +20,7 @@ import PedigreeTree from "@/pages/PedigreeTree";
 import GeneticsCalculator from "@/pages/GeneticsCalculator";
 import RingBatches from "@/pages/RingBatches";
 import LoginPage from "@/pages/Login";
+import { GuiasIndex, GuiaIndividual, FAQPublico, GlossarioPublico } from "@/pages/GuiasPublico";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -48,8 +49,8 @@ function Router() {
   const { user, loading } = useAuth();
 
   // Páginas públicas
-  const publicPages = ["/", "/login"];
-  const isPublicPage = publicPages.includes(location);
+  const publicPages = ["/", "/login", "/guias", "/faq", "/glossario"];
+  const isPublicPage = publicPages.includes(location) || location.startsWith("/guias/");
 
   // Se estiver carregando, mostrar spinner
   if (loading && !isPublicPage) {
@@ -65,6 +66,12 @@ function Router() {
       {/* Páginas Públicas */}
       <Route path={"/"} component={Home} />
       <Route path={"/login"} component={LoginPage} />
+
+      {/* Portal Educativo Público (SEO) */}
+      <Route path={"/guias"} component={GuiasIndex} />
+      <Route path={"/guias/:slug"} component={GuiaIndividual} />
+      <Route path={"/faq"} component={FAQPublico} />
+      <Route path={"/glossario"} component={GlossarioPublico} />
 
       {/* Páginas Protegidas */}
       <Route path={"/dashboard"}>
