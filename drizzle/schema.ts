@@ -170,6 +170,8 @@ export const birds = pgTable("birds", {
   cageId: integer("cageId"),
   // Controla se o pássaro aparece na vitrine pública (Home/Showroom).
   isPublic: boolean("isPublic").default(false).notNull(),
+  // Código público único para QR Code — gerado pelo backend, nullable até ser ativado.
+  publicCode: varchar("publicCode", { length: 20 }).unique(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -376,6 +378,8 @@ export const cages = pgTable("cages", {
   section: varchar("section", { length: 100 }), // ex: "Galpão 1 - Fileira 3"
   capacity: integer("capacity").default(1).notNull(),
   status: varchar("status", { length: 20 }).default("free").notNull(), // free | occupied | maintenance
+  // Código público único para QR Code — nullable até ser ativado.
+  publicCode: varchar("publicCode", { length: 20 }).unique(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),

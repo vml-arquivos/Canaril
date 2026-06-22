@@ -167,6 +167,30 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vendor: bibliotecas pesadas que mudam pouco
+          "vendor-react": ["react", "react-dom"],
+          "vendor-trpc": ["@trpc/client", "@trpc/react-query", "@tanstack/react-query"],
+          "vendor-ui": ["@radix-ui/react-dialog", "@radix-ui/react-select", "@radix-ui/react-tabs", "@radix-ui/react-accordion"],
+          "vendor-charts": ["recharts"],
+          "vendor-framer": ["framer-motion"],
+          // Páginas pesadas separadas
+          "page-genetics": [
+            "./client/src/pages/GeneticsCalculator.tsx",
+            "./client/src/pages/GeneticReport.tsx",
+          ],
+          "page-reports": [
+            "./client/src/pages/Reports.tsx",
+          ],
+          "page-public": [
+            "./client/src/pages/Home.tsx",
+            "./client/src/pages/GuiasPublico.tsx",
+          ],
+        },
+      },
+    },
   },
   server: {
     host: true,

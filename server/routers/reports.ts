@@ -432,4 +432,167 @@ export const reportsRouter = router({
         generatedAt: new Date(),
       };
     }),
+
+  // ─── NOVO: Relatório de Casais e Reprodução ──────────────────────────────
+  casaisReproducao: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { rows: [], generatedAt: new Date() };
+
+    const [allCouples, allBirds, allClutches] = await Promise.all([
+      db.select().from(couples),
+      db.select().from(birds),
+      db.select().from(clutches),
+    ]);
+
+    const birdMap = new Map(allBirds.map((b) => [b.id, b]));
+    const birdMapPedigree = new Map<number, PedigreeBird>(
+      allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+    );
+    const clutchesByCouple = new Map<number, typeof allClutches>();
+    for (const cl of allClutches) {
+      const list = clutchesByCouple.get(cl.coupleId) ?? [];
+      list.push(cl);
+      clutchesByCouple.set(cl.coupleId, list);
+    }
+
+    const rows = allCouples.map((couple) => {
+      const male = birdMap.get(couple.maleId);
+      const female = birdMap.get(couple.femaleId);
+      const coupleClutches = clutchesByCouple.get(couple.id) ?? [];
+
+      const totalEggs = coupleClutches.reduce((s, c) => s + c.totalEggs, 0);
+      const totalFertilized = coupleClutches.reduce((s, c) => s + c.fertilizedEggs, 0);
+      const totalHatched = coupleClutches.reduce((s, c) => s + c.hatchedChicks, 0);
+      const totalLost = coupleClutches.reduce((s, c) => s + c.lostEggs, 0);
+
+      const coi = calculateCOIForPair(couple.maleId, couple.femaleId, birdMapPedigree, 5);
+      const coiRisk = classifyCOIRisk(coi);
+
+      const alerts: string[] = [];
+      if (coiRisk === "high") alerts.push(`COI alto (${(coi * 100).toFixed(1)}%)`);
+      if (coupleClutches.length >= 3 && couple.status === "active") alerts.push("Muitas posturas — avaliar descanso");
+      if (totalEggs > 0 && totalFertilized / totalEggs < 0.5) alerts.push("Taxa de fertilização baixa");
+
+      return {
+        coupleId: couple.id,
+        status: couple.status,
+        formationDate: couple.formationDate,
+        cageNumber: couple.cageNumber,
+        male: male ? { id: male.id, ring: male.ring, displayTitle: male.displayTitle } : null,
+        female: female ? { id: female.id, ring: female.ring, displayTitle: female.displayTitle } : null,
+        coi,
+        coiRisk,
+        clutchesCount: coupleClutches.length,
+        totalEggs,
+        totalFertilized,
+        totalHatched,
+        totalLost,
+        fertilizationRate: totalEggs > 0 ? Math.round((totalFertilized / totalEggs) * 100) : null,
+        hatchRate: totalFertilized > 0 ? Math.round((totalHatched / totalFertilized) * 100) : null,
+        alerts,
+      };
+    });
+
+    rows.sort((a, b) => (b.status === "active" ? 1 : 0) - (a.status === "active" ? 1 : 0));
+
+    return { rows, generatedAt: new Date() };
+  }),
+
+  // ─── NOVO: Painel de Temporada ────────────────────────────────────────────
+  temporada: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+
+    const now = new Date();
+    const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // Incubação do canário: ~14 dias após a postura
+    const INCUBATION_DAYS = 14;
+    // Anilhamento: 7-9 dias após eclosão
+    const RINGING_DAYS_AFTER_HATCH = 8;
+
+    const [allCouples, allClutches, allChicks, allRings, allBirds] = await Promise.all([
+      db.select().from(couples),
+      db.select().from(clutches),
+      db.select().from(chicks),
+      db.select().from(rings),
+      db.select().from(birds).where(eq(birds.status, "active")),
+    ]);
+
+    const activeCouples = allCouples.filter((c) => c.status === "active");
+    const ringsAvailable = allRings.filter((r) => r.status === "available").length;
+
+    // Posturas ativas (dos casais ativos)
+    const activeCoupleIds = new Set(activeCouples.map((c) => c.id));
+    const activeClutches = allClutches.filter((cl) => activeCoupleIds.has(cl.coupleId));
+
+    // Posturas próximas de eclosão (nos próximos 7 dias)
+    const nearHatch = activeClutches.filter((cl) => {
+      const hatchDate = new Date(cl.clutchDate.getTime() + INCUBATION_DAYS * 24 * 60 * 60 * 1000);
+      return hatchDate >= now && hatchDate <= nextWeek;
+    });
+
+    // Filhotes que precisam ser anilhados (nascidos há 7-10 dias sem anilha)
+    const chicksDueRing = allChicks.filter((ch) => {
+      if (ch.ring && ch.ring !== "") return false; // já anilhado
+      const ageDays = (now.getTime() - new Date(ch.birthDate).getTime()) / (24 * 60 * 60 * 1000);
+      return ageDays >= RINGING_DAYS_AFTER_HATCH - 1 && ageDays <= RINGING_DAYS_AFTER_HATCH + 3;
+    });
+
+    // Alertas
+    const alerts: Array<{ type: string; message: string; severity: "high" | "medium" | "low" }> = [];
+
+    if (nearHatch.length > 0) {
+      alerts.push({ type: "hatch", message: `${nearHatch.length} postura(s) próximas de eclosão nos próximos 7 dias`, severity: "medium" });
+    }
+    if (chicksDueRing.length > 0) {
+      alerts.push({ type: "ring", message: `${chicksDueRing.length} filhote(s) no prazo ideal para anilhamento`, severity: "high" });
+    }
+    if (ringsAvailable < 10) {
+      alerts.push({ type: "rings_low", message: `Apenas ${ringsAvailable} anilha(s) disponível(s) — repor estoque`, severity: ringsAvailable === 0 ? "high" : "medium" });
+    }
+
+    // Resumo por casal ativo
+    const birdMap = new Map(allBirds.map((b) => [b.id, b]));
+    const clutchesByCouple = new Map<number, typeof allClutches>();
+    for (const cl of allClutches) {
+      const list = clutchesByCouple.get(cl.coupleId) ?? [];
+      list.push(cl);
+      clutchesByCouple.set(cl.coupleId, list);
+    }
+
+    const casaisResumo = activeCouples.map((c) => {
+      const male = birdMap.get(c.maleId);
+      const female = birdMap.get(c.femaleId);
+      const coupleClutches = clutchesByCouple.get(c.id) ?? [];
+      const latestClutch = coupleClutches.sort((a, b) => new Date(b.clutchDate).getTime() - new Date(a.clutchDate).getTime())[0];
+      const expectedHatch = latestClutch
+        ? new Date(new Date(latestClutch.clutchDate).getTime() + INCUBATION_DAYS * 24 * 60 * 60 * 1000)
+        : null;
+      const nearHatchSoon = expectedHatch ? expectedHatch >= now && expectedHatch <= nextWeek : false;
+
+      return {
+        coupleId: c.id,
+        cageNumber: c.cageNumber,
+        maleRing: male?.ring ?? `#${c.maleId}`,
+        femaleRing: female?.ring ?? `#${c.femaleId}`,
+        clutchesCount: coupleClutches.length,
+        latestClutchDate: latestClutch?.clutchDate ?? null,
+        expectedHatchDate: expectedHatch,
+        nearHatchSoon,
+        totalHatched: coupleClutches.reduce((s, cl) => s + cl.hatchedChicks, 0),
+      };
+    });
+
+    return {
+      generatedAt: now,
+      activeCouplesCount: activeCouples.length,
+      activeClutchesCount: activeClutches.length,
+      nearHatchCount: nearHatch.length,
+      chicksDueRingCount: chicksDueRing.length,
+      ringsAvailable,
+      totalActiveBirds: allBirds.length,
+      alerts,
+      casaisResumo,
+    };
+  }),
 });

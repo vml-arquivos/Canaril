@@ -618,6 +618,139 @@ function TabConfronto() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Tab 6: Casais e Reprodução
+// ────────────────────────────────────────────────────────────
+function TabCasais() {
+  const { data, isLoading } = trpc.reports.casaisReproducao.useQuery();
+
+  const exportCSV = () => {
+    if (!data?.rows.length) return;
+    const header = ["Casal", "Macho", "Fêmea", "Gaiola", "Status", "COI", "Posturas", "Ovos", "Fertilizados", "Eclosões", "Taxa Fert.", "Taxa Ecl.", "Alertas"];
+    const rows = data.rows.map((r) => [
+      r.coupleId,
+      r.male?.ring ?? "",
+      r.female?.ring ?? "",
+      r.cageNumber,
+      r.status,
+      r.coi !== null ? `${(r.coi * 100).toFixed(1)}%` : "",
+      r.clutchesCount,
+      r.totalEggs,
+      r.totalFertilized,
+      r.totalHatched,
+      r.fertilizationRate !== null ? `${r.fertilizationRate}%` : "",
+      r.hatchRate !== null ? `${r.hatchRate}%` : "",
+      r.alerts.join("; "),
+    ]);
+    const csv = [header, ...rows].map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "casais-canaril.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const activePct = data ? Math.round((data.rows.filter(r => r.status === "active").length / Math.max(data.rows.length, 1)) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      {isLoading && <p className="text-gray-400 text-sm">Carregando...</p>}
+
+      {data && (
+        <>
+          {/* Resumo */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              ["Total de casais", data.rows.length, "text-gray-700"],
+              ["Ativos", data.rows.filter(r => r.status === "active").length, "text-green-700"],
+              ["Total de posturas", data.rows.reduce((s, r) => s + r.clutchesCount, 0), "text-amber-700"],
+              ["Total de eclosões", data.rows.reduce((s, r) => s + r.totalHatched, 0), "text-blue-700"],
+            ].map(([label, value, color]) => (
+              <Card key={String(label)}>
+                <CardContent className="p-4">
+                  <p className="text-xs text-gray-500 mb-1">{label}</p>
+                  <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Tabela */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-rose-500" />
+                  Todos os casais — {data.rows.length} registros
+                </CardTitle>
+                <Button variant="outline" size="sm" onClick={exportCSV}>
+                  <Feather className="w-4 h-4 mr-1.5" />CSV
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Macho</TableHead>
+                      <TableHead>Fêmea</TableHead>
+                      <TableHead>Gaiola</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>COI</TableHead>
+                      <TableHead>Posturas</TableHead>
+                      <TableHead>Ovos</TableHead>
+                      <TableHead>Eclosões</TableHead>
+                      <TableHead>Taxa Fert.</TableHead>
+                      <TableHead>Alertas</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.rows.length === 0 && (
+                      <TableRow><TableCell colSpan={10} className="text-center text-gray-400 py-8">Nenhum casal cadastrado.</TableCell></TableRow>
+                    )}
+                    {data.rows.map((r) => (
+                      <TableRow key={r.coupleId}>
+                        <TableCell className="font-mono text-sm font-semibold">{r.male?.ring ?? "—"}</TableCell>
+                        <TableCell className="font-mono text-sm font-semibold">{r.female?.ring ?? "—"}</TableCell>
+                        <TableCell className="text-sm">{r.cageNumber}</TableCell>
+                        <TableCell>
+                          <Badge className={r.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}>
+                            {r.status === "active" ? "Ativo" : r.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {r.coi !== null
+                            ? <div className="space-y-0.5"><CoiRiskBadge risk={r.coiRisk} /><p className="text-xs text-gray-400">{(r.coi * 100).toFixed(1)}%</p></div>
+                            : <span className="text-gray-300 text-xs">—</span>}
+                        </TableCell>
+                        <TableCell className="text-sm font-semibold">{r.clutchesCount}</TableCell>
+                        <TableCell className="text-sm">{r.totalEggs}</TableCell>
+                        <TableCell>
+                          <span className={`text-sm font-semibold ${r.totalHatched > 0 ? "text-green-700" : "text-gray-400"}`}>{r.totalHatched}</span>
+                        </TableCell>
+                        <TableCell>
+                          {r.fertilizationRate !== null
+                            ? <div className="flex items-center gap-1.5"><div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-amber-400 rounded-full" style={{ width: `${r.fertilizationRate}%` }} /></div><span className="text-xs text-gray-600">{r.fertilizationRate}%</span></div>
+                            : <span className="text-gray-300 text-xs">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {r.alerts.length === 0
+                            ? <span className="text-gray-300 text-xs">—</span>
+                            : <div className="flex flex-wrap gap-1">{r.alerts.map((a, i) => <Badge key={i} variant="outline" className="text-xs text-amber-700 border-amber-200">{a}</Badge>)}</div>}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Componente principal
 // ────────────────────────────────────────────────────────────
 export default function Reports() {
@@ -638,11 +771,12 @@ export default function Reports() {
         </div>
 
         <Tabs defaultValue="dashboard">
-          <TabsList className="print:hidden">
+          <TabsList className="print:hidden flex-wrap">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="plantel">Plantel</TabsTrigger>
             <TabsTrigger value="lacunas">Lacunas</TabsTrigger>
             <TabsTrigger value="anilhas">Anilhas</TabsTrigger>
+            <TabsTrigger value="casais">Casais</TabsTrigger>
             <TabsTrigger value="confronto">Confronto Genético</TabsTrigger>
           </TabsList>
 
@@ -650,6 +784,7 @@ export default function Reports() {
           <TabsContent value="plantel" className="mt-6"><TabPlantel /></TabsContent>
           <TabsContent value="lacunas" className="mt-6"><TabLacunas /></TabsContent>
           <TabsContent value="anilhas" className="mt-6"><TabAnilhas /></TabsContent>
+          <TabsContent value="casais" className="mt-6"><TabCasais /></TabsContent>
           <TabsContent value="confronto" className="mt-6"><TabConfronto /></TabsContent>
         </Tabs>
       </div>

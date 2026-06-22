@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
-import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag } from "lucide-react";
+import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag, Dna } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
@@ -801,9 +801,14 @@ export default function Birds() {
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => setFichaBird(bird)} title="Ver ficha completa">
+                            <Button size="sm" variant="ghost" onClick={() => setFichaBird(bird)} title="Ver ficha rápida">
                               <Eye className="w-4 h-4" />
                             </Button>
+                            <Link href={`/birds/${bird.id}/ficha`}>
+                              <Button size="sm" variant="ghost" title="Ficha premium completa (nova página)">
+                                <Dna className="w-4 h-4" />
+                              </Button>
+                            </Link>
                             <Link href={`/pedigree/${bird.id}`}>
                               <Button size="sm" variant="ghost" title="Ver pedigree e consanguinidade">
                                 <GitBranch className="w-4 h-4" />

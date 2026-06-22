@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -31,6 +31,8 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Bird, label: "Pássaros", path: "/birds" },
   { icon: Heart, label: "Casais", path: "/couples" },
+  { icon: Calendar, label: "Temporada", path: "/temporada" },
+  { icon: Map, label: "Mapa do Criadouro", path: "/criadouro-mapa" },
   { icon: Calculator, label: "Calculadora Genética", path: "/genetics-calculator" },
   { icon: Egg, label: "Posturas", path: "/clutches" },
   { icon: Feather, label: "Anilhas", path: "/rings" },
