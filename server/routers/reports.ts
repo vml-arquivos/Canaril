@@ -16,6 +16,8 @@ import {
 } from "../../drizzle/schema";
 import { desc, eq, and } from "drizzle-orm";
 import { calculateCOI, calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
+import { analyzeCoiForPair } from "../_core/coiAnalyzer";
+
 
 function countBy<T extends Record<string, any>>(rows: T[], key: keyof T): Record<string, number> {
   return rows.reduce((acc, row) => {
@@ -595,4 +597,147 @@ export const reportsRouter = router({
       casaisResumo,
     };
   }),
+
+  // ─── M3: COI Avançado com ancestrais comuns ──────────────────────────────
+  coiAvancado: protectedProcedure
+    .input(z.object({ maleId: z.number().int().positive(), femaleId: z.number().int().positive(), maxGen: z.number().int().min(2).max(8).default(6) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const fullBirds = await db.select().from(birds);
+      const fullBirdMap = new Map(fullBirds.map((b) => [b.id, b]));
+      const birdMap = new Map<number, PedigreeBird>(
+        fullBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+      );
+      const analysis = analyzeCoiForPair(input.maleId, input.femaleId, birdMap, input.maxGen);
+      const enriched = analysis.commonAncestors.map((a) => {
+        const bird = fullBirdMap.get(a.ancestorId);
+        return { ...a, displayTitle: bird?.displayTitle ?? null };
+      });
+      return { ...analysis, commonAncestors: enriched, generatedAt: new Date() };
+    }),
+
+indice: protectedProcedure.query(async () => {
+  const db = await getDb();
+  if (!db) return { rows: [], generatedAt: new Date() };
+  const [allBirds, allCouples, allClutches, allEntries, allScores] = await Promise.all([
+    db.select().from(birds),
+    db.select().from(couples),
+    db.select().from(clutches),
+    db.select().from(championship_entries),
+    db.select().from(scores),
+  ]);
+  const birdMap = new Map<number, PedigreeBird>(
+    allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+  );
+  const entryById = new Map(allEntries.map((e) => [e.id, e]));
+  const scoresByBird = new Map<number, number[]>();
+  for (const s of allScores) {
+    const entry = entryById.get(s.entryId);
+    if (!entry) continue;
+    const list = scoresByBird.get(entry.birdId) ?? [];
+    list.push(s.totalScore);
+    scoresByBird.set(entry.birdId, list);
+  }
+  const coiCache = new Map<number, number>();
+  const rows = allBirds.map((bird) => {
+    const asCouples = allCouples.filter((c) => c.maleId === bird.id || c.femaleId === bird.id);
+    const birdClutches = allClutches.filter((cl) => asCouples.some((c) => c.id === cl.coupleId));
+    const totalEggs = birdClutches.reduce((s, c) => s + c.totalEggs, 0);
+    const totalHatched = birdClutches.reduce((s, c) => s + c.hatchedChicks, 0);
+    const fertilized = birdClutches.reduce((s, c) => s + c.fertilizedEggs, 0);
+    const birdScores = scoresByBird.get(bird.id) ?? [];
+    const bestScore = birdScores.length > 0 ? Math.max(...birdScores) : null;
+    const avgScore = birdScores.length > 0 ? birdScores.reduce((a, b) => a + b, 0) / birdScores.length : null;
+    const champs = birdScores.length;
+    const coi = bird.fatherId && bird.motherId ? calculateCOI(bird.id, birdMap, 5, coiCache) : null;
+    const reproScore = totalEggs > 0 ? Math.round(((totalHatched / totalEggs) * 60) + Math.min(birdClutches.length * 5, 40)) : 0;
+    const champScore = bestScore !== null ? Math.round((bestScore / 100) * 70 + Math.min(champs * 5, 30)) : 0;
+    const lineageScore = Math.round((reproScore * 0.5) + (champScore * 0.5));
+    return { birdId: bird.id, ring: bird.ring, displayTitle: bird.displayTitle, sex: bird.sex, modality: bird.modality, breedName: bird.breedName, status: bird.status, coi, coiRisk: coi !== null ? classifyCOIRisk(coi) : null, clutchesCount: birdClutches.length, totalEggs, totalHatched, hatchRate: fertilized > 0 ? Math.round((totalHatched / fertilized) * 100) : null, championships: champs, bestScore, avgScore: avgScore !== null ? Math.round(avgScore * 10) / 10 : null, reproScore, champScore, lineageScore };
+  });
+  rows.sort((a, b) => b.lineageScore - a.lineageScore);
+  return { rows, generatedAt: new Date() };
+}),
+
+mapaGenetico: protectedProcedure.query(async () => {
+  const db = await getDb();
+  if (!db) return null;
+  const [allBirds, allGenotypes, allProfiles] = await Promise.all([
+    db.select().from(birds).where(eq(birds.status, "active")),
+    db.select().from(bird_genotype),
+    db.select().from(bird_genetic_profiles),
+  ]);
+  const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
+  const profileByBird = new Map(allProfiles.map((p) => [p.birdId, p]));
+  const birdMap = new Map<number, PedigreeBird>(
+    allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+  );
+  const geneCounts: Record<string, number> = {};
+  const carrierCounts: Record<string, number> = {};
+  let withGenotype = 0, withoutGenotype = 0, withParents = 0, withoutParents = 0, highCoiBirds = 0;
+  const coiCache = new Map<number, number>();
+  for (const bird of allBirds) {
+    const genotype = genotypeByBird.get(bird.id);
+    const profile = profileByBird.get(bird.id);
+    if (!!genotype || !!profile) withGenotype++; else withoutGenotype++;
+    if (bird.fatherId && bird.motherId) withParents++; else withoutParents++;
+    const coi = bird.fatherId && bird.motherId ? calculateCOI(bird.id, birdMap, 5, coiCache) : 0;
+    if (coi >= 0.125) highCoiBirds++;
+    const mutations = (genotype?.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [];
+    for (const m of mutations) {
+      if (m.zygosity === "homozygous_mutant") geneCounts[m.mutation] = (geneCounts[m.mutation] ?? 0) + 1;
+      else if (m.zygosity === "heterozygous_carrier") carrierCounts[m.mutation] = (carrierCounts[m.mutation] ?? 0) + 1;
+    }
+  }
+  const alerts: string[] = [];
+  if (withoutGenotype > allBirds.length * 0.5) alerts.push(`Mais de 50% sem genótipo (${withoutGenotype}/${allBirds.length})`);
+  if (withoutParents > allBirds.length * 0.4) alerts.push(`${withoutParents} pássaros sem pai/mãe cadastrados`);
+  if (highCoiBirds > 0) alerts.push(`${highCoiBirds} pássaro(s) com COI alto (≥ 12,5%)`);
+  return { total: allBirds.length, withGenotype, withoutGenotype, withParents, withoutParents, highCoiBirds, byModality: countBy(allBirds, "modality"), bySpecialty: countBy(allBirds, "specialty_code"), bySex: countBy(allBirds, "sex"), topGenes: Object.entries(geneCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([gene, count]) => ({ gene, count })), topCarriers: Object.entries(carrierCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([gene, count]) => ({ gene, count })), alerts, generatedAt: new Date() };
+}),
+
+assistenteCruzamento: protectedProcedure
+  .input(z.object({ birdId: z.number().int().positive(), objetivo: z.enum(["seguranca","cor","porte","reduzir_coi","linhagem","portadores","exposicao","livre"]), maxResults: z.number().int().min(3).max(20).default(8) }))
+  .query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const [bird] = await db.select().from(birds).where(eq(birds.id, input.birdId)).limit(1);
+    if (!bird) return null;
+    const oppositeSex = bird.sex === "macho" ? "fêmea" : "macho";
+    const allBirdsActive = await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.sex, oppositeSex)));
+    const allBirdsAll = await db.select().from(birds);
+    const birdMapFull = new Map<number, PedigreeBird>(allBirdsAll.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }]));
+    const allGenotypes = await db.select().from(bird_genotype);
+    const genotypeMap = new Map(allGenotypes.map((g) => [g.birdId, g]));
+    const baseGenotype = genotypeMap.get(input.birdId);
+    const order: Record<string, number> = { ideal: 0, aprovado: 1, atencao: 2, nao_recomendado: 3 };
+    const candidates = allBirdsActive.filter((c) => c.id !== input.birdId).map((candidate) => {
+      const malId = bird.sex === "macho" ? input.birdId : candidate.id;
+      const femId = bird.sex === "fêmea" ? input.birdId : candidate.id;
+      const coi = analyzeCoiForPair(malId, femId, birdMapFull, 5);
+      const candidateGenotype = genotypeMap.get(candidate.id);
+      const alerts: string[] = [];
+      if (baseGenotype?.hasCrest && candidateGenotype?.hasCrest) alerts.push("RISCO LETAL: crista × crista");
+      const baseMuts = (baseGenotype?.mutations as Array<{mutation:string;zygosity:string}>|null) ?? [];
+      const candMuts = (candidateGenotype?.mutations as Array<{mutation:string;zygosity:string}>|null) ?? [];
+      const baseBD = baseMuts.find((m) => m.mutation === "branco_dominante" && m.zygosity !== "homozygous_normal");
+      const candBD = candMuts.find((m) => m.mutation === "branco_dominante" && m.zygosity !== "homozygous_normal");
+      if (baseBD && candBD) alerts.push("RISCO LETAL: branco dominante × branco dominante");
+      let score = 60;
+      const coiPctNum = coi.coi * 100;
+      if (["reduzir_coi","seguranca"].includes(input.objetivo)) score += coiPctNum < 3 ? 40 : coiPctNum < 6.25 ? 25 : coiPctNum < 12.5 ? 10 : 0;
+      else if (input.objetivo === "cor") { score += candidate.modality === bird.modality ? 30 : 10; score += coiPctNum < 6.25 ? 10 : 0; }
+      else if (input.objetivo === "exposicao") { score += candidate.breedName === bird.breedName ? 25 : 5; score += coiPctNum < 6.25 ? 15 : 0; }
+      else score += coiPctNum < 6.25 ? 20 : coiPctNum < 12.5 ? 10 : 0;
+      if (alerts.some((a) => a.includes("RISCO LETAL"))) score = Math.max(score - 60, 0);
+      const status = alerts.some((a) => a.includes("RISCO LETAL")) ? "nao_recomendado" : coi.risk === "very_high" || coi.risk === "high" ? "atencao" : score >= 80 ? "ideal" : score >= 60 ? "aprovado" : "atencao";
+      const motivo = status === "nao_recomendado" ? alerts.join(". ") : status === "ideal" ? `Excelente para "${input.objetivo}". COI ${coi.coiPct}, sem riscos letais.` : status === "aprovado" ? `Combinação segura. ${coi.hasCommonAncestors ? `COI ${coi.coiPct}.` : "Sem ancestrais em comum."}` : `Possível com atenção ao COI ${coi.coiPct}.`;
+      return { candidate, coi: coi.coi, coiPct: coi.coiPct, coiRisk: coi.risk, alerts, score, status, motivo };
+    });
+    candidates.sort((a, b) => (order[a.status] - order[b.status]) || (b.score - a.score));
+    return { baseBird: { id: bird.id, ring: bird.ring, displayTitle: bird.displayTitle, sex: bird.sex }, objetivo: input.objetivo, candidates: candidates.slice(0, input.maxResults).map((c) => ({ birdId: c.candidate.id, ring: c.candidate.ring, displayTitle: c.candidate.displayTitle, breedName: c.candidate.breedName, modality: c.candidate.modality, coi: c.coi, coiPct: c.coiPct, coiRisk: c.coiRisk, score: c.score, status: c.status, motivo: c.motivo, alerts: c.alerts })), generatedAt: new Date() };
+  }),
+
+
 });

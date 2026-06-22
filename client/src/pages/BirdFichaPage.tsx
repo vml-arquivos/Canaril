@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import {
   Bird, Dna, GitBranch, Egg, Printer, ArrowLeft,
-  AlertTriangle, CheckCircle2, Calendar, Feather, Info, QrCode,
+  AlertTriangle, CheckCircle2, Calendar, Feather, Info, QrCode, Clock,
 } from "lucide-react";
 import { BACKGROUND_COLORS, FEATHER_TYPES } from "@shared/constants";
 import { toast } from "sonner";
@@ -381,6 +381,63 @@ function AbaReproducao({ birdId }: { birdId: number }) {
   );
 }
 
+// ─── Aba Linha do Tempo ──────────────────────────────────────────────────────
+
+function AbaTimeline({ birdId }: { birdId: number }) {
+  const { data: report } = trpc.reports.birdIndividual.useQuery({ birdId });
+  const { data: health } = trpc.health.listByBird.useQuery(birdId);
+
+  if (!report) return <p className="text-gray-400 py-8 text-center">Carregando...</p>;
+
+  type TimelineEvent = { date: Date; type: string; icon: React.ReactNode; title: string; description: string; color: string };
+  const events: TimelineEvent[] = [];
+
+  const { bird, couples, clutches } = report;
+
+  if (bird.birthDate) events.push({ date: new Date(bird.birthDate), type: "birth", icon: <Bird className="w-4 h-4" />, title: "Nascimento", description: `Nasceu em ${new Date(bird.birthDate).toLocaleDateString("pt-BR")}`, color: "bg-green-100 text-green-700 border-green-200" });
+  if (bird.createdAt) events.push({ date: new Date(bird.createdAt), type: "register", icon: <Feather className="w-4 h-4" />, title: "Cadastrado no sistema", description: `Anilha ${bird.ring}`, color: "bg-blue-100 text-blue-700 border-blue-200" });
+
+  for (const couple of couples) {
+    events.push({ date: new Date(couple.formationDate), type: "couple", icon: <Egg className="w-4 h-4" />, title: "Formou casal", description: `Gaiola ${couple.cageNumber} · Status: ${couple.status}`, color: "bg-rose-100 text-rose-700 border-rose-200" });
+  }
+
+  for (const clutch of clutches) {
+    events.push({ date: new Date(clutch.clutchDate), type: "clutch", icon: <Egg className="w-4 h-4" />, title: "Postura", description: `${clutch.totalEggs} ovos · ${clutch.fertilizedEggs} galados · ${clutch.hatchedChicks} eclodidos`, color: "bg-amber-100 text-amber-700 border-amber-200" });
+  }
+
+  for (const h of health ?? []) {
+    events.push({ date: new Date(h.date), type: "health", icon: <AlertTriangle className="w-4 h-4" />, title: h.type === "weight" ? "Peso registrado" : h.type === "diet" ? "Plano alimentar" : h.type === "treatment" ? "Tratamento" : h.type === "vaccine" ? "Vacina" : h.type, description: h.description, color: "bg-purple-100 text-purple-700 border-purple-200" });
+  }
+
+  events.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  return (
+    <div className="space-y-1">
+      {events.length === 0 ? (
+        <div className="text-center py-8 text-gray-400"><Clock className="w-8 h-8 mx-auto mb-2 opacity-30" /><p className="text-sm">Nenhum evento registrado.</p></div>
+      ) : (
+        <div className="relative pl-5">
+          <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gray-100" />
+          {events.map((ev, i) => (
+            <div key={i} className="relative mb-4 pl-5">
+              <div className={`absolute -left-1 top-1 w-6 h-6 rounded-full border flex items-center justify-center ${ev.color}`}>
+                {ev.icon}
+              </div>
+              <div className="bg-white rounded-lg border border-gray-100 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-gray-900">{ev.title}</p>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{ev.date.toLocaleDateString("pt-BR")}</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">{ev.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Página principal ───────────────────────────────────────────────────────
 
 export default function BirdFichaPage() {
@@ -420,12 +477,14 @@ export default function BirdFichaPage() {
             <TabsTrigger value="genetica"><Dna className="w-4 h-4 mr-1.5" />Genética</TabsTrigger>
             <TabsTrigger value="pedigree"><GitBranch className="w-4 h-4 mr-1.5" />Pedigree</TabsTrigger>
             <TabsTrigger value="reproducao"><Egg className="w-4 h-4 mr-1.5" />Reprodução</TabsTrigger>
+            <TabsTrigger value="timeline"><Clock className="w-4 h-4 mr-1.5" />Linha do Tempo</TabsTrigger>
           </TabsList>
 
           <TabsContent value="resumo" className="mt-5"><AbaResumo birdId={birdId} /></TabsContent>
           <TabsContent value="genetica" className="mt-5"><AbaGenetica birdId={birdId} sex={bird?.sex ?? ""} /></TabsContent>
           <TabsContent value="pedigree" className="mt-5"><AbaPedigree birdId={birdId} /></TabsContent>
           <TabsContent value="reproducao" className="mt-5"><AbaReproducao birdId={birdId} /></TabsContent>
+          <TabsContent value="timeline" className="mt-5"><AbaTimeline birdId={birdId} /></TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>

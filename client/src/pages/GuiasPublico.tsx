@@ -249,6 +249,146 @@ A regra é simples: **crista × liso** (sem crista). Nunca crista × crista.
 Ao preencher o Genótipo Avançado de cada pássaro (lipocromo, plumagem, mutações e zigosidade), a calculadora genética usa esses dados para prever os filhotes esperados e emitir alertas de risco. Quanto mais completos forem os dados, mais precisa será a previsão.
     `,
   },
+  {
+    slug: "o-que-e-coi-na-criacao",
+    title: "O que é COI e por que importa na criação",
+    description: "Entenda o Coeficiente de Consanguinidade, como ele é calculado e como evitar problemas genéticos no plantel.",
+    category: "Genética",
+    readTime: "7 min",
+    content: `
+## O que significa COI
+
+COI é a sigla para Coeficiente de Consanguinidade (em inglês, *Coefficient of Inbreeding*). É um número entre 0% e 100% que indica a probabilidade de um filhote herdar genes idênticos dos dois lados da família.
+
+Quanto maior o COI, maior a chance de os filhotes expressarem genes recessivos que normalmente ficam ocultos. Isso pode incluir características indesejadas ou redução da vitalidade.
+
+## Como o COI é calculado
+
+O cálculo usa a **Fórmula de Wright**, que percorre o pedigree dos dois pais e identifica ancestrais em comum. A cada vez que um ancestral aparece tanto na linhagem paterna quanto na materna, ele contribui para elevar o COI.
+
+A fórmula considera a distância de cada ancestral em gerações: um avô em comum contribui mais do que um bisavô, que contribui mais do que um tataravô.
+
+## Faixas de risco para canários
+
+Como referência geral usada em avicultura:
+
+- **0 a 3%** — Baixo. Boa diversidade genética.
+- **3 a 6,25%** — Atenção. Aceitável com monitoramento.
+- **6,25 a 12,5%** — Moderado. Equivalente a cruzamento de primos. Avaliar com cuidado.
+- **12,5 a 25%** — Alto. Equivalente a meio-irmãos. Evitar sempre que possível.
+- **Acima de 25%** — Muito alto. Não recomendado.
+
+## Quando o COI é inevitável
+
+Em linhagens muito selecionadas, algum grau de consanguinidade é difícil de evitar. O segredo está em:
+
+- Controlar a taxa ao longo das gerações
+- Introduzir sangue novo de tempos em tempos
+- Monitorar a saúde e fertilidade dos filhotes
+- Usar um sistema de gestão para calcular o COI antes de formar cada casal
+
+## O que o Canaril faz
+
+O sistema calcula automaticamente o COI ao cadastrar um casal, analisa o pedigree de até 6 gerações e identifica quais ancestrais são comuns entre os dois pássaros. O criador recebe uma explicação simples e uma classificação de risco antes de confirmar o cruzamento.
+    `,
+  },
+  {
+    slug: "como-escolher-casal-de-canarios",
+    title: "Como escolher o casal certo de canários",
+    description: "Critérios práticos para selecionar pares: genética, COI, saúde, objetivo e riscos a evitar.",
+    category: "Reprodução",
+    readTime: "6 min",
+    content: `
+## Por que a escolha do casal é tão importante
+
+Na criação de canários, o casal é a decisão mais importante do criador. Um bom par pode produzir filhotes com características desejadas, saúde robusta e boas chances em campeonatos. Um par mal escolhido pode desperdiçar uma temporada inteira.
+
+## Critérios essenciais
+
+**1. Saúde e condição física**
+
+Nunca forme um casal com pássaro doente, com muda incompleta fora de época ou abaixo do peso ideal. A saúde de ambos afeta diretamente a fertilidade e a qualidade dos ovos.
+
+**2. Genética e objetivos**
+
+Defina o que você quer produzir. Para canários de cor, pense nas mutações desejadas e evite combinações letais (crista × crista, branco dominante × branco dominante). Para canários de porte, escolha pássaros dentro do padrão da raça.
+
+**3. COI (Coeficiente de Consanguinidade)**
+
+Verifique o grau de parentesco antes de confirmar o casal. Casais com COI acima de 12,5% devem ser evitados, especialmente se os pássaros já têm histórico de problemas reprodutivos.
+
+**4. Intenso e nevado**
+
+Na linha de lipocromo, o cruzamento recomendado é sempre intenso × nevado. Nunca intenso × intenso.
+
+**5. Histórico reprodutivo**
+
+Pássaros com bom histórico de fertilidade e criação de filhotes são preferíveis. Fêmeas que abandonam ovos ou filhotes com frequência devem ser afastadas da reprodução.
+
+## O que nunca cruzar
+
+Estes cruzamentos têm risco letal confirmado:
+
+- **Crista × crista** — 25% dos embriões são inviáveis (gene NN homozigoto letal)
+- **Branco dominante × branco dominante** — filhotes homozigotos não sobrevivem
+- **Consanguinidade muito alta** — filhotes com COI acima de 25%
+
+## Usando o Assistente de Cruzamento do Canaril
+
+O sistema oferece um assistente que analisa o plantel e sugere os melhores pares para cada objetivo. Ele considera genética, COI, histórico reprodutivo e alerta automaticamente para riscos letais antes de você criar o casal.
+    `,
+  },
+  {
+    slug: "cuidados-com-filhotes",
+    title: "Cuidados com filhotes de canário",
+    description: "Como acompanhar filhotes do nascimento ao desmame: desenvolvimento, anilhamento, alimentação e primeiros problemas.",
+    category: "Reprodução",
+    readTime: "6 min",
+    content: `
+## Os primeiros dias são críticos
+
+Filhotes de canário nascem completamente dependentes. Nos primeiros 5 dias, os pais alimentam os filhotes com uma papa semidigerida chamada **canto do papo** ou **farinha de papo**. O criador deve garantir que o casal tenha alimento fresco disponível o tempo todo.
+
+Evite ao máximo interferir no ninho nesse período. Qualquer perturbação pode fazer os pais abandons os filhotes.
+
+## Sinais de problema
+
+Observe diariamente sem tocar. Sinais de alerta:
+
+- Filhotes com papo vazio por muitas horas
+- Filhotes frios ou inertes
+- Odor forte no ninho
+- Pais alimentando um filhote mas ignorando os outros
+
+Se o papo estiver vazio por mais de 6 horas, intervenha com papa manual aquecida.
+
+## Anilhamento — a janela de 3 dias
+
+Anilhar no momento certo é essencial. A janela ideal é entre o **7º e o 9º dia** de vida.
+
+Antes desse período, a pata é pequena demais e a anilha pode cair. Depois, a articulação já fechou e não é mais possível passar a anilha sem machucar o filhote.
+
+Use o tamanho correto para a raça e registre imediatamente no sistema com data, casal de origem e número da anilha.
+
+## Desenvolvimento semana a semana
+
+- **Dias 1-7**: penas começam a brotar, olhos fechados, totalmente dependentes
+- **Dias 8-14**: olhos abrem, cobertos de plumagem primária
+- **Dias 15-21**: tentam se equilibrar no poleiro, começam a observar os pais comendo
+- **Dias 22-28**: começam a bicar sementes, movimentos mais independentes
+- **Dias 30-35**: desmame completo — podem ser separados do casal
+
+## Desmame
+
+O desmame não precisa ser abrupto. Separe os filhotes mas mantenha o pai por mais alguns dias para continuar alimentando enquanto a fêmea já está em nova postura, se for o caso.
+
+Ofereça painço e alpiste miúdo, pasta de criação úmida e água fresca. Evite grãos grandes até os 45 dias.
+
+## Registre tudo
+
+Anote data de nascimento, data do anilhamento, peso se possível, e qualquer intercorrência. No Canaril, você pode registrar todos esses dados diretamente na ficha do filhote, vinculado ao casal e à postura de origem.
+    `,
+  },
 ];
 
 const FAQ_PUBLICA = [

@@ -98,7 +98,7 @@ export function buildPedigreeTree(
  * detectar cruzamento pai×filha, irmão×irmã etc., onde um dos pais É o
  * ancestral comum).
  */
-function fullAncestrySet(
+export function fullAncestrySet(
   personId: number,
   birdMap: Map<number, PedigreeBird>,
   maxDepth: number,

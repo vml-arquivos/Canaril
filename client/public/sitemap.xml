@@ -36,6 +36,21 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://canarillima.casadf.com.br/guias/o-que-e-coi-na-criacao</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://canarillima.casadf.com.br/guias/como-escolher-casal-de-canarios</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://canarillima.casadf.com.br/guias/cuidados-com-filhotes</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://canarillima.casadf.com.br/faq</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>

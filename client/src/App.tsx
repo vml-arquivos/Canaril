@@ -36,6 +36,7 @@ const GuiaIndividual = lazy(() => import("@/pages/GuiasPublico").then(m => ({ de
 const FAQPublico = lazy(() => import("@/pages/GuiasPublico").then(m => ({ default: m.FAQPublico })));
 const GlossarioPublico = lazy(() => import("@/pages/GuiasPublico").then(m => ({ default: m.GlossarioPublico })));
 const PublicBirdPage = lazy(() => import("@/pages/PublicBirdPage"));
+const Linhagem = lazy(() => import("@/pages/Linhagem"));
 
 // Fallback de loading para lazy pages
 function PageLoader() {
@@ -159,6 +160,9 @@ function Router() {
       </Route>
       <Route path={"/criadouro-mapa"}>
         {(params) => <ProtectedRoute component={CriadouroMapa} {...params} />}
+      </Route>
+      <Route path={"/linhagem"}>
+        {(params) => <ProtectedRoute component={Linhagem} {...params} />}
       </Route>
 
       {/* Fallback */}
