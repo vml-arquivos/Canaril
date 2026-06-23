@@ -10,7 +10,7 @@ import {
   classifyCOIRisk,
   PedigreeBird,
 } from "../_core/genetics";
-import { calculateColorCross } from "../_core/colorGenetics";
+import { calculateColorCross, calculateLipochromeCross, MUTATION_CONFIG } from "../_core/colorGenetics";
 import { invokeLLM } from "../_core/llm";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
 
@@ -26,14 +26,27 @@ const sexLinkedSchema = z.union([sexLinkedMaleSchema, sexLinkedFemaleSchema]);
 
 const parentGenotypesSchema = z.object({
   sex: z.enum(["macho", "fêmea"]),
-  agata: sexLinkedSchema.optional(),
-  canela: sexLinkedSchema.optional(),
-  ino: sexLinkedSchema.optional(),
-  pastel: autosomalRecessiveSchema.optional(),
-  opala: autosomalRecessiveSchema.optional(),
-  crista: dominantRiskSchema.optional(),
+  // Ligadas ao sexo
+  agata:     sexLinkedSchema.optional(),
+  canela:    sexLinkedSchema.optional(),
+  ino:       sexLinkedSchema.optional(),
+  marfim:    sexLinkedSchema.optional(),
+  acetinado: sexLinkedSchema.optional(),
+  asasCinza: sexLinkedSchema.optional(),
+  opalino:   sexLinkedSchema.optional(),
+  // Autossômicas recessivas
+  pastel:         autosomalRecessiveSchema.optional(),
+  opala:          autosomalRecessiveSchema.optional(),
+  brancorecessivo: autosomalRecessiveSchema.optional(),
+  onix:           autosomalRecessiveSchema.optional(),
+  cobalto:        autosomalRecessiveSchema.optional(),
+  jaspe:          autosomalRecessiveSchema.optional(),
+  feo:            autosomalRecessiveSchema.optional(),
+  asasBrancas:    autosomalRecessiveSchema.optional(),
+  // Autossômicas dominantes
+  crista:          dominantRiskSchema.optional(),
   brancoDominante: dominantRiskSchema.optional(),
-  plumagem: dominantRiskSchema.optional(),
+  plumagem:        dominantRiskSchema.optional(),
 });
 
 async function loadBirdMap(db: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<Map<number, PedigreeBird>> {
@@ -222,10 +235,43 @@ export const geneticsRouter = router({
       return { summary, candidates };
     }),
 
-  // ============================================================================
-  // Calculadora Genética de Cores — cálculo determinístico (Punnett square),
-  // sem IA. Ver server/_core/colorGenetics.ts para as regras de herança.
-  // ============================================================================
+  // =========================================================================
+  // Lista de mutações disponíveis para a calculadora
+  // =========================================================================
+  listMutations: protectedProcedure.query(() => {
+    return Object.entries(MUTATION_CONFIG).map(([id, cfg]) => ({
+      id,
+      label: cfg.label,
+      labelEn: cfg.labelEn,
+      inheritance: cfg.inheritance,
+      inheritanceLabel: cfg.inheritanceLabel,
+      description: cfg.description,
+      phenotypeEffect: cfg.phenotypeEffect,
+      isLethalHomozygous: cfg.isLethalHomozygous ?? false,
+    }));
+  }),
+
+  // =========================================================================
+  // Cálculo de lipocromo (cor de fundo) entre dois pais
+  // =========================================================================
+  calculateLipochromeCross: protectedProcedure
+    .input(z.object({
+      father: z.object({
+        base: z.enum(["amarelo", "vermelho", "branco_dominante", "branco_recessivo", "desconhecido"]),
+        ivoryStatus: z.enum(["nenhum", "portador", "visual"]).optional(),
+        featherType: z.enum(["intenso", "nevado"]).optional(),
+      }),
+      mother: z.object({
+        base: z.enum(["amarelo", "vermelho", "branco_dominante", "branco_recessivo", "desconhecido"]),
+        ivoryStatus: z.enum(["nenhum", "portador", "visual"]).optional(),
+        featherType: z.enum(["intenso", "nevado"]).optional(),
+      }),
+    }))
+    .query(({ input }) => calculateLipochromeCross(input.father, input.mother)),
+
+  // =========================================================================
+  // Calculadora Genética de Cores (Punnett square completo)
+  // =========================================================================
   calculateColorCross: protectedProcedure
     .input(
       z.object({

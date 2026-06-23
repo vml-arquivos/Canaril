@@ -1,1049 +1,532 @@
-import { useState } from "react";
+/**
+ * GeneticsCalculator.tsx — Calculadora Genética Completa de Canários
+ *
+ * Modo Simples:
+ *   Selecione mutações + genótipos → resultado Punnett automático
+ *
+ * Modo Casal do Plantel:
+ *   Selecione pássaros cadastrados → puxa genótipos automaticamente
+ *
+ * Modo Avançado (Lipocromo):
+ *   Calcula cruzamento de cor de base (amarelo, vermelho, branco, marfim)
+ *
+ * Relatório gerado dinamicamente com:
+ *   - Distribuição por mutação (Punnett quadrado)
+ *   - Fenótipos esperados por sexo
+ *   - Alertas de risco letal
+ *   - Explicação para leigo
+ *   - Recomendações de manejo
+ */
+import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import {
-  Calculator,
-  AlertTriangle,
-  Info,
-  Dna,
-  Bird,
-  Zap,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  CheckCircle,
-  BookOpen,
-  FlaskConical,
-  Users,
-  Sparkles,
+  Calculator, AlertTriangle, Info, Dna, Bird, Zap,
+  RefreshCw, ChevronDown, ChevronUp, CheckCircle,
+  FlaskConical, Users, Sparkles, BookOpen, Heart,
+  XCircle, ClipboardList, ArrowRight,
 } from "lucide-react";
+import { InlineAlert, HelpTooltip, SexBadge } from "@/components/ui-premium";
 
-// ============================================================================
-// Constantes e tipos
-// ============================================================================
+// ─── Constants ─────────────────────────────────────────────────────────────
 
-/** Sentinela para "não informado" — o Radix UI proíbe value="" em SelectItem */
 const NONE_VALUE = "__none__";
 
-const ZYGOSITY_LABELS: Record<string, string> = {
-  "Z+Z+": "Z⁺Z⁺ — Visual homozigoto",
-  "Z+Z-": "Z⁺Z⁻ — Portador (heterozigoto)",
-  "Z-Z-": "Z⁻Z⁻ — Normal (sem mutação)",
-  "Z+W": "Z⁺W — Visual (fêmea manifesta)",
-  "Z-W": "Z⁻W — Normal (sem mutação)",
-  mm: "mm — Visual (homozigoto mutante)",
-  Nm: "Nm — Portador (heterozigoto)",
-  NN: "NN — Normal (sem mutação)",
-  Nn: "Nn — Visual dose simples",
-  nn: "nn — Não visual",
+const ZYGOSITY_LABELS_SL_MALE: Record<string, string> = {
+  "Z+Z+": "Z⁺Z⁺ — Visual homozigoto (macho)",
+  "Z+Z-": "Z⁺Z⁻ — Portador heterozigoto (macho)",
+  "Z-Z-": "Z⁻Z⁻ — Normal sem mutação (macho)",
+};
+const ZYGOSITY_LABELS_SL_FEMALE: Record<string, string> = {
+  "Z+W": "Z⁺W — Visual (fêmea sempre manifesta)",
+  "Z-W": "Z⁻W — Normal sem mutação (fêmea)",
+};
+const ZYGOSITY_LABELS_AR: Record<string, string> = {
+  "mm": "mm — Visual (homozigoto mutante)",
+  "Nm": "Nm — Portador heterozigoto",
+  "NN": "NN — Normal (sem mutação)",
+};
+const ZYGOSITY_LABELS_DOM: Record<string, string> = {
+  "nn": "nn — Não visual",
+  "Nn": "Nn — Visual dose simples",
+  "NN": "NN — Visual dose dupla (risco letal em crista/BD)",
 };
 
 const ZYGOSITY_COLORS: Record<string, string> = {
   "Z+Z+": "bg-amber-100 text-amber-800 border-amber-200",
   "Z+Z-": "bg-blue-100 text-blue-800 border-blue-200",
-  "Z-Z-": "bg-gray-100 text-gray-700 border-gray-200",
-  "Z+W": "bg-amber-100 text-amber-800 border-amber-200",
-  "Z-W": "bg-gray-100 text-gray-700 border-gray-200",
-  mm: "bg-amber-100 text-amber-800 border-amber-200",
-  Nm: "bg-blue-100 text-blue-800 border-blue-200",
-  NN: "bg-gray-100 text-gray-700 border-gray-200",
-  Nn: "bg-purple-100 text-purple-800 border-purple-200",
-  nn: "bg-gray-100 text-gray-700 border-gray-200",
+  "Z-Z-": "bg-gray-100 text-gray-600 border-gray-200",
+  "Z+W":  "bg-amber-100 text-amber-800 border-amber-200",
+  "Z-W":  "bg-gray-100 text-gray-600 border-gray-200",
+  "mm":   "bg-amber-100 text-amber-800 border-amber-200",
+  "Nm":   "bg-blue-100 text-blue-800 border-blue-200",
+  "NN":   "bg-gray-100 text-gray-600 border-gray-200",
+  "Nn":   "bg-purple-100 text-purple-800 border-purple-200",
+  "nn":   "bg-gray-100 text-gray-600 border-gray-200",
 };
 
-const MUTATIONS = [
-  { id: "agata",           label: "Ágata",                          inheritance: "sex_linked"          as const },
-  { id: "canela",          label: "Canela",                         inheritance: "sex_linked"          as const },
-  { id: "ino",             label: "Ino (Lutino / Albino / Rubino)", inheritance: "sex_linked"          as const },
-  { id: "pastel",          label: "Pastel",                         inheritance: "autosomal_recessive" as const },
-  { id: "opala",           label: "Opalino",                        inheritance: "autosomal_recessive" as const },
-  { id: "crista",          label: "Crista / Topete",                inheritance: "autosomal_dominant"  as const },
-  { id: "brancoDominante", label: "Branco Dominante",               inheritance: "autosomal_dominant"  as const },
-  { id: "plumagem",        label: "Plumagem (Nevado / Intenso)",    inheritance: "autosomal_dominant"  as const },
-];
+// ─── Sub-componentes ─────────────────────────────────────────────────────────
 
-type ZygosityAR = "NN" | "Nm" | "mm";
-type ZygosityMaleSL = "Z+Z+" | "Z+Z-" | "Z-Z-";
-type ZygosityFemaleSL = "Z+W" | "Z-W";
-type ZygosityDom = "nn" | "Nn" | "NN";
-
-interface ParentGenotype {
-  sex: "macho" | "fêmea";
-  agata?: ZygosityMaleSL | ZygosityFemaleSL;
-  canela?: ZygosityMaleSL | ZygosityFemaleSL;
-  ino?: ZygosityMaleSL | ZygosityFemaleSL;
-  pastel?: ZygosityAR;
-  opala?: ZygosityAR;
-  crista?: ZygosityDom;
-  brancoDominante?: ZygosityDom;
-  plumagem?: ZygosityDom;
-  [key: string]: string | undefined;
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function getZygosityOptions(mutationId: string, sex: "macho" | "fêmea") {
-  const mutation = MUTATIONS.find((m) => m.id === mutationId);
-  if (!mutation) return [];
-
-  if (mutation.inheritance === "sex_linked") {
-    if (sex === "macho") {
-      return [
-        { value: "Z+Z+", label: "Z⁺Z⁺ — Visual homozigoto" },
-        { value: "Z+Z-", label: "Z⁺Z⁻ — Portador (heterozigoto)" },
-        { value: "Z-Z-", label: "Z⁻Z⁻ — Normal (sem mutação)" },
-      ];
-    } else {
-      return [
-        { value: "Z+W", label: "Z⁺W — Visual (fêmea sempre manifesta)" },
-        { value: "Z-W", label: "Z⁻W — Normal (sem mutação)" },
-      ];
-    }
-  } else if (mutation.inheritance === "autosomal_recessive") {
-    return [
-      { value: "mm", label: "mm — Visual (homozigoto mutante)" },
-      { value: "Nm", label: "Nm — Portador (heterozigoto)" },
-      { value: "NN", label: "NN — Normal (sem mutação)" },
-    ];
-  } else {
-    return [
-      { value: "NN", label: "NN — Visual dose dupla (risco letal em crista/branco dom.)" },
-      { value: "Nn", label: "Nn — Visual dose simples" },
-      { value: "nn", label: "nn — Não visual" },
-    ];
-  }
-}
-
-function selectValueToGenotype(v: string): string | undefined {
-  return v === NONE_VALUE ? undefined : v;
-}
-
-function genotypeToSelectValue(v: string | undefined): string {
-  return v ?? NONE_VALUE;
-}
-
-function inheritanceLabel(inh: string) {
-  if (inh === "sex_linked") return "ligada ao sexo";
-  if (inh === "autosomal_recessive") return "autossômica recessiva";
-  return "autossômica dominante";
-}
-
-// ============================================================================
-// Sub-componentes
-// ============================================================================
-
-function ProbabilityBar({ value, label, color }: { value: number; label: string; color: string }) {
+function ProbabilityBar({
+  value, label, color, sublabel,
+}: {
+  value: number; label: string; color: string; sublabel?: string;
+}) {
   const pct = Math.round(value * 100);
   return (
-    <div className="flex items-center gap-3">
-      <div className="w-40 text-sm text-gray-600 shrink-0 leading-tight">{label}</div>
-      <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-3">
+        <div className="w-48 text-sm text-gray-700 shrink-0 leading-tight">{label}</div>
+        <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden min-w-[80px]">
+          <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+        </div>
+        <div className="w-14 text-sm font-bold text-right text-gray-800 font-mono">{pct}%</div>
       </div>
-      <div className="w-12 text-sm font-semibold text-right text-gray-700">{pct}%</div>
+      {sublabel && <p className="text-xs text-gray-400 ml-48 pl-3">{sublabel}</p>}
     </div>
   );
 }
 
-// ============================================================================
-// Modo Simples — Calculadora Punnett (motor existente via tRPC)
-// ============================================================================
+function ZygosityBadge({ genotype }: { genotype: string }) {
+  const color = ZYGOSITY_COLORS[genotype] ?? "bg-gray-50 text-gray-500";
+  return <Badge className={`text-xs border ${color} font-mono`}>{genotype}</Badge>;
+}
+
+function InheritanceBadge({ type }: { type: string }) {
+  const cfg: Record<string, { label: string; color: string }> = {
+    "sex_linked":            { label: "Ligada ao sexo", color: "bg-rose-100 text-rose-800 border-rose-200" },
+    "autosomal_recessive":   { label: "Aut. recessiva", color: "bg-blue-100 text-blue-800 border-blue-200" },
+    "autosomal_dominant":    { label: "Aut. dominante", color: "bg-purple-100 text-purple-800 border-purple-200" },
+  };
+  const { label, color } = cfg[type] ?? { label: type, color: "bg-gray-100 text-gray-600" };
+  return <Badge className={`text-xs border ${color}`}>{label}</Badge>;
+}
+
+// ─── MutationResultCard ──────────────────────────────────────────────────────
+
+function MutationResultCard({ result }: { result: any }) {
+  const [showExplanation, setShowExplanation] = useState(false);
+
+  const warningColor = result.warnings?.length > 0
+    ? result.warnings.some((w: string) => w.includes("LETAL") || w.includes("⚠️"))
+      ? "border-red-300 bg-red-50"
+      : "border-amber-200 bg-amber-50"
+    : "border-gray-100 bg-white";
+
+  return (
+    <Card className={`border-2 ${warningColor}`}>
+      <CardHeader className="pb-2 pt-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <CardTitle className="text-sm">{result.label}</CardTitle>
+          <InheritanceBadge type={result.inheritance} />
+          {result.warnings?.length > 0 && (
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Warnings */}
+        {result.warnings?.map((w: string, i: number) => (
+          <div key={i} className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600" />
+            <span>{w}</span>
+          </div>
+        ))}
+
+        {/* Sex-linked: sons and daughters */}
+        {result.sons && result.daughters && (
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs text-blue-600 font-semibold mb-2 flex items-center gap-1"><Bird className="w-3.5 h-3.5" />♂ Filhos machos</p>
+              <div className="space-y-2">
+                {Object.entries(result.sons as Record<string, number>)
+                  .filter(([, p]) => p > 0)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([geno, prob]) => (
+                    <ProbabilityBar
+                      key={geno}
+                      value={prob}
+                      label={
+                        geno === "Z+Z+" ? "Visual homozigoto"
+                        : geno === "Z+Z-" ? "Portador"
+                        : "Normal"
+                      }
+                      sublabel={geno}
+                      color={
+                        geno === "Z+Z+" ? "bg-amber-500"
+                        : geno === "Z+Z-" ? "bg-blue-400"
+                        : "bg-gray-300"
+                      }
+                    />
+                  ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-rose-600 font-semibold mb-2 flex items-center gap-1"><Bird className="w-3.5 h-3.5" />♀ Filhas fêmeas</p>
+              <div className="space-y-2">
+                {Object.entries(result.daughters as Record<string, number>)
+                  .filter(([, p]) => p > 0)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([geno, prob]) => (
+                    <ProbabilityBar
+                      key={geno}
+                      value={prob}
+                      label={geno === "Z+W" ? "Visual" : "Normal"}
+                      sublabel={geno}
+                      color={geno === "Z+W" ? "bg-amber-500" : "bg-gray-300"}
+                    />
+                  ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Autosomal */}
+        {result.offspring && (
+          <div className="space-y-2">
+            {Object.entries(result.offspring as Record<string, number>)
+              .filter(([, p]) => p > 0)
+              .sort(([, a], [, b]) => b - a)
+              .map(([geno, prob]) => {
+                const isVisual = result.inheritance === "autosomal_recessive"
+                  ? geno === "mm" : geno === "Nn" || geno === "NN";
+                const isCarrier = result.inheritance === "autosomal_recessive" && geno === "Nm";
+                const isLethal = geno === "NN" && result.inheritance === "autosomal_dominant";
+                const label = result.inheritance === "autosomal_recessive"
+                  ? geno === "mm" ? "Visual (homozigoto)" : geno === "Nm" ? "Portador" : "Normal"
+                  : geno === "NN" ? "Visual dose dupla (⚠️ letal)" : geno === "Nn" ? "Visual dose simples" : "Não visual";
+                const color = isLethal ? "bg-red-400"
+                  : isVisual && !isCarrier ? "bg-amber-500"
+                  : isCarrier ? "bg-blue-400"
+                  : "bg-gray-300";
+                return (
+                  <ProbabilityBar key={geno} value={prob} label={label} sublabel={geno} color={color} />
+                );
+              })}
+          </div>
+        )}
+
+        {/* Explanation toggle */}
+        {result.explanation && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowExplanation(!showExplanation)}
+              className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+            >
+              {showExplanation ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {showExplanation ? "Ocultar explicação" : "Ver explicação detalhada"}
+            </button>
+            {showExplanation && (
+              <pre className="mt-2 text-xs text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap font-sans border border-gray-100">
+                {result.explanation}
+              </pre>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── MutationSelector ────────────────────────────────────────────────────────
+
+function MutationSelector({
+  mutations,
+  parentSex,
+  selectedMutations,
+  genotypes,
+  onToggle,
+  onGenotypeChange,
+}: {
+  mutations: any[];
+  parentSex: "macho" | "fêmea";
+  selectedMutations: Set<string>;
+  genotypes: Record<string, string>;
+  onToggle: (id: string) => void;
+  onGenotypeChange: (id: string, value: string) => void;
+}) {
+  const groups = [
+    { key: "sex_linked",          label: "Ligadas ao sexo (cromossomo Z)", color: "text-rose-700" },
+    { key: "autosomal_recessive", label: "Autossômicas recessivas",          color: "text-blue-700" },
+    { key: "autosomal_dominant",  label: "Autossômicas dominantes",          color: "text-purple-700" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => {
+        const groupMuts = mutations.filter((m) => m.inheritance === group.key);
+        if (groupMuts.length === 0) return null;
+        return (
+          <div key={group.key}>
+            <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${group.color}`}>
+              {group.label}
+            </p>
+            <div className="space-y-2">
+              {groupMuts.map((mut) => {
+                const isSelected = selectedMutations.has(mut.id);
+                let options: { value: string; label: string }[] = [];
+
+                if (mut.inheritance === "sex_linked") {
+                  options = parentSex === "macho"
+                    ? Object.entries(ZYGOSITY_LABELS_SL_MALE).map(([v, l]) => ({ value: v, label: l }))
+                    : Object.entries(ZYGOSITY_LABELS_SL_FEMALE).map(([v, l]) => ({ value: v, label: l }));
+                } else if (mut.inheritance === "autosomal_recessive") {
+                  options = Object.entries(ZYGOSITY_LABELS_AR).map(([v, l]) => ({ value: v, label: l }));
+                } else {
+                  options = Object.entries(ZYGOSITY_LABELS_DOM).map(([v, l]) => ({ value: v, label: l }));
+                }
+
+                return (
+                  <div key={mut.id} className={`rounded-lg border transition-all ${isSelected ? "border-amber-300 bg-amber-50" : "border-gray-100 hover:border-gray-200"}`}>
+                    <div className="flex items-center gap-2 p-2">
+                      <input
+                        type="checkbox"
+                        id={`${parentSex}-${mut.id}`}
+                        checked={isSelected}
+                        onChange={() => onToggle(mut.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <label htmlFor={`${parentSex}-${mut.id}`} className="text-sm font-medium text-gray-800 cursor-pointer flex-1">
+                        {mut.label}
+                      </label>
+                      <HelpTooltip text={mut.description} technical={`Efeito: ${mut.phenotypeEffect}`} />
+                      {mut.isLethalHomozygous && (
+                        <span className="text-xs text-red-600 border border-red-200 rounded px-1.5 py-0.5 bg-red-50">⚠️ Letal</span>
+                      )}
+                    </div>
+                    {isSelected && (
+                      <div className="px-2 pb-2">
+                        <Select
+                          value={genotypes[mut.id] ?? NONE_VALUE}
+                          onValueChange={(v) => onGenotypeChange(mut.id, v === NONE_VALUE ? "" : v)}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione o genótipo" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_VALUE}>— Selecione o genótipo —</SelectItem>
+                            {options.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                <span className="font-mono font-semibold mr-2">{o.value}</span>
+                                <span className="text-gray-500">{o.label.split(" — ")[1]}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Modo Simples ─────────────────────────────────────────────────────────────
 
 function ModoSimples() {
-  const [male, setMale] = useState<ParentGenotype>({ sex: "macho" });
-  const [female, setFemale] = useState<ParentGenotype>({ sex: "fêmea" });
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const { data: mutations = [], isLoading: mutLoading } = trpc.genetics.listMutations.useQuery();
+  const [maleSelected, setMaleSelected] = useState<Set<string>>(new Set());
+  const [femaleSelected, setFemaleSelected] = useState<Set<string>>(new Set());
+  const [maleGenos, setMaleGenos] = useState<Record<string, string>>({});
+  const [femaleGenos, setFemaleGenos] = useState<Record<string, string>>({});
   const [calculated, setCalculated] = useState(false);
 
-  const { data: result, isLoading, refetch, error } = trpc.genetics.calculateColorCross.useQuery(
-    { male, female },
+  const maleInput = useMemo(() => ({
+    sex: "macho" as const,
+    ...Object.fromEntries(Array.from(maleSelected).map((id) => [id, maleGenos[id]]).filter(([, v]) => v)),
+  }), [maleSelected, maleGenos]);
+
+  const femaleInput = useMemo(() => ({
+    sex: "fêmea" as const,
+    ...Object.fromEntries(Array.from(femaleSelected).map((id) => [id, femaleGenos[id]]).filter(([, v]) => v)),
+  }), [femaleSelected, femaleGenos]);
+
+  const { data: result, isLoading: calcLoading, refetch } = trpc.genetics.calculateColorCross.useQuery(
+    { male: maleInput as any, female: femaleInput as any },
     { enabled: calculated, retry: false }
   );
 
-  function handleCalculate() {
-    setCalculated(true);
-    refetch();
+  const hasAnyMutation = maleSelected.size > 0 || femaleSelected.size > 0;
+  const hasGenotypes = Array.from(maleSelected).some((id) => maleGenos[id]) || Array.from(femaleSelected).some((id) => femaleGenos[id]);
+
+  function toggleMale(id: string) {
+    setMaleSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setCalculated(false);
+  }
+  function toggleFemale(id: string) {
+    setFemaleSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setCalculated(false);
   }
 
   function handleReset() {
-    setMale({ sex: "macho" });
-    setFemale({ sex: "fêmea" });
+    setMaleSelected(new Set()); setFemaleSelected(new Set());
+    setMaleGenos({}); setFemaleGenos({});
     setCalculated(false);
   }
-
-  function setMutation(parent: "male" | "female", mutationId: string, rawValue: string) {
-    const value = selectValueToGenotype(rawValue);
-    if (parent === "male") {
-      setMale((prev) => {
-        const next = { ...prev };
-        if (value === undefined) delete (next as Record<string, unknown>)[mutationId];
-        else (next as Record<string, unknown>)[mutationId] = value;
-        return next;
-      });
-    } else {
-      setFemale((prev) => {
-        const next = { ...prev };
-        if (value === undefined) delete (next as Record<string, unknown>)[mutationId];
-        else (next as Record<string, unknown>)[mutationId] = value;
-        return next;
-      });
-    }
-    setCalculated(false);
-  }
-
-  const hasAnyMutation =
-    Object.keys(male).filter((k) => k !== "sex").length > 0 ||
-    Object.keys(female).filter((k) => k !== "sex").length > 0;
 
   return (
-    <div className="space-y-6">
-      <Alert className="border-amber-200 bg-amber-50">
-        <Info className="h-4 w-4 text-amber-600" />
-        <AlertDescription className="text-amber-800 text-sm">
-          Esta calculadora usa as leis de Mendel para calcular probabilidades teóricas.
-          Os resultados são estimativas — a natureza sempre tem variação.
-          <strong className="block mt-1">
-            Regra importante: fêmeas com mutações ligadas ao sexo nunca são portadoras silenciosas —
-            se receberam o gene, manifestam visualmente (sistema ZW dos canários).
-          </strong>
-        </AlertDescription>
-      </Alert>
+    <div className="space-y-5">
+      <InlineAlert variant="info">
+        Selecione as mutações conhecidas de cada pássaro e informe o genótipo. A calculadora usa Punnett quadrado para cada gene separadamente.
+      </InlineAlert>
 
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={handleReset}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Limpar tudo
-        </Button>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-5">
         {/* Macho */}
-        <Card className="border-blue-100">
+        <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Bird className="w-4 h-4 text-blue-600" />
-              Macho (ZZ)
+            <CardTitle className="text-sm flex items-center gap-2">
+              <span className="bg-blue-100 text-blue-800 rounded-full px-2 py-0.5 text-xs font-bold">♂ Macho</span>
+              Genótipo do pai
             </CardTitle>
-            <CardDescription>Configure o genótipo do macho</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {MUTATIONS.map((mutation) => (
-              <div key={mutation.id} className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">
-                  {mutation.label}
-                  <span className="ml-1 text-xs text-gray-400 font-normal">
-                    ({inheritanceLabel(mutation.inheritance)})
-                  </span>
-                </label>
-                <Select
-                  value={genotypeToSelectValue((male as unknown as Record<string, string | undefined>)[mutation.id])}
-                  onValueChange={(v) => setMutation("male", mutation.id, v)}
-                >
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="Não informado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE_VALUE}>— Não informado —</SelectItem>
-                    {getZygosityOptions(mutation.id, "macho").map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
+          <CardContent>
+            {mutLoading ? <p className="text-gray-400 text-sm">Carregando mutações...</p> : (
+              <MutationSelector
+                mutations={mutations}
+                parentSex="macho"
+                selectedMutations={maleSelected}
+                genotypes={maleGenos}
+                onToggle={toggleMale}
+                onGenotypeChange={(id, v) => { setMaleGenos((p) => ({ ...p, [id]: v })); setCalculated(false); }}
+              />
+            )}
           </CardContent>
         </Card>
 
         {/* Fêmea */}
-        <Card className="border-pink-100">
+        <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Bird className="w-4 h-4 text-pink-600" />
-              Fêmea (ZW)
+            <CardTitle className="text-sm flex items-center gap-2">
+              <span className="bg-rose-100 text-rose-800 rounded-full px-2 py-0.5 text-xs font-bold">♀ Fêmea</span>
+              Genótipo da mãe
             </CardTitle>
-            <CardDescription>Configure o genótipo da fêmea</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {MUTATIONS.map((mutation) => (
-              <div key={mutation.id} className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">
-                  {mutation.label}
-                  <span className="ml-1 text-xs text-gray-400 font-normal">
-                    ({inheritanceLabel(mutation.inheritance)})
-                  </span>
-                </label>
-                <Select
-                  value={genotypeToSelectValue((female as unknown as Record<string, string | undefined>)[mutation.id])}
-                  onValueChange={(v) => setMutation("female", mutation.id, v)}
-                >
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="Não informado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE_VALUE}>— Não informado —</SelectItem>
-                    {getZygosityOptions(mutation.id, "fêmea").map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
+          <CardContent>
+            {mutLoading ? <p className="text-gray-400 text-sm">Carregando mutações...</p> : (
+              <MutationSelector
+                mutations={mutations}
+                parentSex="fêmea"
+                selectedMutations={femaleSelected}
+                genotypes={femaleGenos}
+                onToggle={toggleFemale}
+                onGenotypeChange={(id, v) => { setFemaleGenos((p) => ({ ...p, [id]: v })); setCalculated(false); }}
+              />
+            )}
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex flex-col items-center gap-3">
-        {!hasAnyMutation && (
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
-            Selecione ao menos uma mutação para o macho ou para a fêmea antes de calcular.
-          </p>
-        )}
+      {/* Action bar */}
+      <div className="flex gap-3 flex-wrap">
         <Button
-          size="lg"
-          onClick={handleCalculate}
-          disabled={isLoading || !hasAnyMutation}
-          className="bg-amber-600 hover:bg-amber-700 text-white px-10 text-base"
+          className="bg-amber-600 hover:bg-amber-700 gap-2"
+          disabled={!hasAnyMutation || calcLoading}
+          onClick={() => { setCalculated(true); refetch(); }}
         >
-          {isLoading ? (
-            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Calculando...</>
-          ) : (
-            <><Zap className="w-4 h-4 mr-2" />Calcular Cruzamento</>
-          )}
+          <Calculator className="w-4 h-4" />
+          {calcLoading ? "Calculando..." : "Calcular cruzamento"}
+        </Button>
+        <Button variant="outline" onClick={handleReset} className="gap-2">
+          <RefreshCw className="w-4 h-4" />Limpar
         </Button>
       </div>
 
-      {error && (
-        <Alert className="border-red-200 bg-red-50">
-          <AlertTriangle className="h-4 w-4 text-red-600" />
-          <AlertDescription className="text-red-800 text-sm">
-            Erro ao calcular: {error.message}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {result && calculated && (
-        <div className="space-y-6">
-          <Separator />
-          <div className="flex items-center gap-2 text-green-700 text-sm font-medium">
-            <CheckCircle className="w-4 h-4" />
-            Cálculo concluído com base nas leis de Mendel
-          </div>
-
-          {result.warnings && result.warnings.length > 0 && (
+      {/* Results */}
+      {result && (
+        <div className="space-y-4">
+          {/* Global warnings */}
+          {result.warnings?.length > 0 && (
             <div className="space-y-2">
-              {result.warnings.map((warning: string, i: number) => (
-                <Alert key={i} className="border-red-200 bg-red-50">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800 text-sm font-medium">{warning}</AlertDescription>
-                </Alert>
+              {result.warnings.map((w: string, i: number) => (
+                <InlineAlert key={i} variant={w.includes("⚠️") || w.includes("LETAL") ? "error" : "warning"}>
+                  {w}
+                </InlineAlert>
               ))}
             </div>
           )}
 
+          {/* Summary */}
           {result.summary && (
-            <Card className="border-amber-100 bg-amber-50/30">
+            <Card className="border-green-100 bg-green-50">
+              <CardContent className="pt-4">
+                <p className="text-sm font-medium text-green-800">{result.summary}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Per-mutation results */}
+          {Object.keys(result.byMutation ?? {}).length > 0 ? (
+            <div className="space-y-4">
+              <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                <FlaskConical className="w-4 h-4 text-amber-600" />
+                Resultados por mutação
+              </h3>
+              {Object.values(result.byMutation as Record<string, any>).map((mutResult: any) => (
+                <MutationResultCard key={mutResult.mutationId} result={mutResult} />
+              ))}
+            </div>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="py-8 text-center text-gray-400">
+                <Dna className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">Nenhuma mutação configurada. Selecione mutações acima e informe os genótipos.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Phenotype summary */}
+          {result.phenotypeSummary && result.phenotypeSummary.expectedPhenotypes?.length > 0 && (
+            <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Dna className="w-4 h-4 text-amber-600" />
-                  Resumo do Cruzamento
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  Fenótipos esperados nos filhotes
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-700 leading-relaxed">{result.summary}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {result.byMutation && Object.keys(result.byMutation).length > 0 && (() => {
-            const firstMut = Object.values(result.byMutation).find(
-              (m: unknown) => (m as Record<string, unknown>).sons || (m as Record<string, unknown>).daughters || (m as Record<string, unknown>).offspring
-            ) as Record<string, unknown> | undefined;
-            if (!firstMut) return null;
-
-            if (firstMut.sons && firstMut.daughters) {
-              return (
-                <div className="grid md:grid-cols-2 gap-6">
-                  <Card className="border-blue-100">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base text-blue-800">Filhos Machos — Probabilidades</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {Object.entries(firstMut.sons as Record<string, number>).map(([genotype, prob]) => (
-                        <ProbabilityBar key={genotype} label={ZYGOSITY_LABELS[genotype] ?? genotype} value={prob} color="bg-blue-400" />
-                      ))}
-                    </CardContent>
-                  </Card>
-                  <Card className="border-pink-100">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base text-pink-800">Filhas Fêmeas — Probabilidades</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {Object.entries(firstMut.daughters as Record<string, number>).map(([genotype, prob]) => (
-                        <ProbabilityBar key={genotype} label={ZYGOSITY_LABELS[genotype] ?? genotype} value={prob} color="bg-pink-400" />
-                      ))}
-                    </CardContent>
-                  </Card>
-                </div>
-              );
-            } else if (firstMut.offspring) {
-              return (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Distribuição dos Filhotes</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {Object.entries(firstMut.offspring as Record<string, number>).map(([genotype, prob]) => (
-                      <ProbabilityBar key={genotype} label={ZYGOSITY_LABELS[genotype] ?? genotype} value={prob} color="bg-amber-400" />
-                    ))}
-                  </CardContent>
-                </Card>
-              );
-            }
-            return null;
-          })()}
-
-          {result.byMutation && Object.keys(result.byMutation).length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <button
-                  className="flex items-center justify-between w-full text-left"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  type="button"
-                >
-                  <CardTitle className="text-base">Detalhes por Mutação</CardTitle>
-                  {showAdvanced ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                </button>
-              </CardHeader>
-              {showAdvanced && (
-                <CardContent>
-                  <div className="space-y-6">
-                    {Object.entries(result.byMutation as Record<string, {sons?: Record<string, number>; daughters?: Record<string, number>; offspring?: Record<string, number>; warnings?: string[]}>).map(([mutId, mutResult]) => {
-                      const mutation = MUTATIONS.find((m) => m.id === mutId);
-                      return (
-                        <div key={mutId}>
-                          <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                            <Dna className="w-3.5 h-3.5 text-amber-600" />
-                            {mutation?.label ?? mutId}
-                            <Badge variant="outline" className="text-xs">
-                              {mutation ? inheritanceLabel(mutation.inheritance) : mutId}
-                            </Badge>
-                          </h4>
-                          {mutResult.sons && (
-                            <div className="mb-3">
-                              <p className="text-xs text-gray-500 mb-1.5 font-medium">Filhos machos:</p>
-                              <div className="space-y-2">
-                                {Object.entries(mutResult.sons as Record<string, number>).map(([g, p]) => (
-                                  <ProbabilityBar key={g} label={ZYGOSITY_LABELS[g] ?? g} value={p} color="bg-blue-300" />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {mutResult.daughters && (
-                            <div className="mb-3">
-                              <p className="text-xs text-gray-500 mb-1.5 font-medium">Filhas fêmeas:</p>
-                              <div className="space-y-2">
-                                {Object.entries(mutResult.daughters as Record<string, number>).map(([g, p]) => (
-                                  <ProbabilityBar key={g} label={ZYGOSITY_LABELS[g] ?? g} value={p} color="bg-pink-300" />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {mutResult.offspring && !mutResult.sons && (
-                            <div className="space-y-2">
-                              {Object.entries(mutResult.offspring as Record<string, number>).map(([g, p]) => (
-                                <ProbabilityBar key={g} label={ZYGOSITY_LABELS[g] ?? g} value={p} color="bg-amber-300" />
-                              ))}
-                            </div>
-                          )}
-                          {Array.isArray(mutResult.warnings) && mutResult.warnings.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {(mutResult.warnings as string[]).map((w, i) => (
-                                <p key={i} className="text-xs text-red-600 flex items-start gap-1">
-                                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                                  {w}
-                                </p>
-                              ))}
-                            </div>
+                <div className="space-y-1.5">
+                  {result.phenotypeSummary.expectedPhenotypes
+                    .sort((a: any, b: any) => b.probability - a.probability)
+                    .map((ph: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between text-sm py-1 border-b border-gray-50 last:border-0">
+                        <div className="flex items-center gap-2">
+                          {ph.isVisual && !ph.isCarrier && <CheckCircle className="w-3.5 h-3.5 text-green-600" />}
+                          {ph.isCarrier && <Info className="w-3.5 h-3.5 text-blue-500" />}
+                          {!ph.isVisual && !ph.isCarrier && <XCircle className="w-3.5 h-3.5 text-gray-300" />}
+                          <span className="text-gray-700">{ph.description}</span>
+                          {ph.sex && ph.sex !== "ambos" && (
+                            <span className={`text-xs ${ph.sex === "macho" ? "text-blue-600" : "text-rose-600"}`}>
+                              {ph.sex === "macho" ? "♂" : "♀"}
+                            </span>
                           )}
                         </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              )}
+                        <span className="font-semibold font-mono text-gray-800">{Math.round(ph.probability * 100)}%</span>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
             </Card>
           )}
 
-          <Card className="border-gray-100 bg-gray-50/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-gray-600">Legenda Genética</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {[
-                  { key: "Z+Z+", label: "Visual homozigoto (macho)" },
-                  { key: "Z+Z-", label: "Portador (macho heterozigoto)" },
-                  { key: "Z-Z-", label: "Normal sem mutação (macho)" },
-                  { key: "Z+W",  label: "Visual (fêmea manifesta)" },
-                  { key: "Z-W",  label: "Normal sem mutação (fêmea)" },
-                  { key: "mm",   label: "Visual homozigoto (autossômico)" },
-                  { key: "Nm",   label: "Portador (autossômico recessivo)" },
-                  { key: "NN",   label: "Normal (autossômico)" },
-                  { key: "Nn",   label: "Visual dose simples (dominante)" },
-                  { key: "nn",   label: "Não visual (dominante)" },
-                ].map(({ key, label }) => (
-                  <div key={key} className={`rounded-lg border px-3 py-2 text-xs ${ZYGOSITY_COLORS[key] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
-                    <strong className="block font-mono">{key}</strong>
-                    <span>{label}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-gray-500 mt-3">
-                <strong>Regra fundamental:</strong> Fêmeas com mutações ligadas ao sexo nunca são portadoras
-                silenciosas — se receberam o gene, manifestam visualmente (sistema ZW dos canários).
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {!calculated && (
-        <Card className="border-dashed border-amber-200 bg-amber-50/30">
-          <CardContent className="py-12 text-center">
-            <Calculator className="w-12 h-12 text-amber-300 mx-auto mb-4" />
-            <p className="text-amber-700 font-semibold text-lg">Configure os genótipos e clique em Calcular</p>
-            <p className="text-amber-600/70 text-sm mt-2 max-w-md mx-auto">
-              Selecione ao menos uma mutação para o macho ou para a fêmea.
-              Os resultados mostrarão as probabilidades de cada genótipo nos filhotes.
-            </p>
-            <div className="mt-6 grid sm:grid-cols-3 gap-3 text-left max-w-lg mx-auto">
-              <div className="bg-white rounded-lg border border-amber-100 p-3">
-                <p className="text-xs font-semibold text-amber-700 mb-1">Ligadas ao sexo</p>
-                <p className="text-xs text-gray-500">Ágata, Canela, Ino — machos portam, fêmeas manifestam</p>
-              </div>
-              <div className="bg-white rounded-lg border border-amber-100 p-3">
-                <p className="text-xs font-semibold text-amber-700 mb-1">Autossômicas recessivas</p>
-                <p className="text-xs text-gray-500">Pastel, Opalino — dois portadores para manifestar</p>
-              </div>
-              <div className="bg-white rounded-lg border border-amber-100 p-3">
-                <p className="text-xs font-semibold text-amber-700 mb-1">Autossômicas dominantes</p>
-                <p className="text-xs text-gray-500">Crista, Branco Dom. — uma cópia já manifesta</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// Modo Assistido — Seleção por classe oficial FOB/OBJO
-// ============================================================================
-
-function ModoAssistido() {
-  const [maleClass, setMaleClass] = useState(NONE_VALUE);
-  const [femaleClass, setFemaleClass] = useState(NONE_VALUE);
-  const [maleModality, setMaleModality] = useState<"COR" | "PORTE">("COR");
-  const [femaleModality, setFemaleModality] = useState<"COR" | "PORTE">("COR");
-  const [maleSearch, setMaleSearch] = useState("");
-  const [femaleSearch, setFemaleSearch] = useState("");
-
-  const maleClasses = trpc.catalog.searchOfficialClasses.useQuery(
-    { query: maleSearch, modality: maleModality, limit: 80 },
-    { enabled: true }
-  );
-  const femaleClasses = trpc.catalog.searchOfficialClasses.useQuery(
-    { query: femaleSearch, modality: femaleModality, limit: 80 },
-    { enabled: true }
-  );
-
-  const maleClassData = (maleClasses.data && 'items' in maleClasses.data ? maleClasses.data.items : (maleClasses.data as unknown as typeof maleClasses.data extends {items: infer I} ? I : never[]) ?? [])?.find((c: {officialCode: string}) => c.officialCode === maleClass);
-  const femaleClassData = (femaleClasses.data && 'items' in femaleClasses.data ? femaleClasses.data.items : (femaleClasses.data as unknown as typeof femaleClasses.data extends {items: infer I} ? I : never[]) ?? [])?.find((c: {officialCode: string}) => c.officialCode === femaleClass);
-
-  const maleInterp = trpc.geneticProfile.interpretClass.useQuery(
-    {
-      officialCode: maleClassData?.officialCode ?? "",
-      officialName: maleClassData?.officialName ?? "",
-      modality: maleModality,
-    },
-    { enabled: !!maleClassData }
-  );
-
-  const femaleInterp = trpc.geneticProfile.interpretClass.useQuery(
-    {
-      officialCode: femaleClassData?.officialCode ?? "",
-      officialName: femaleClassData?.officialName ?? "",
-      modality: femaleModality,
-    },
-    { enabled: !!femaleClassData }
-  );
-
-  return (
-    <div className="space-y-6">
-      <Alert className="border-blue-200 bg-blue-50">
-        <BookOpen className="h-4 w-4 text-blue-600" />
-        <AlertTitle className="text-blue-800">Nomenclatura Oficial FOB/OBJO</AlertTitle>
-        <AlertDescription className="text-blue-700 text-sm">
-          Selecione a classe oficial de cada progenitor. O sistema interpreta automaticamente os
-          traços genéticos com base na nomenclatura FOB/OBJO e sugere as mutações presentes.
-        </AlertDescription>
-      </Alert>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Macho */}
-        <Card className="border-blue-100">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Bird className="w-4 h-4 text-blue-600" />
-              Progenitor Macho
-              <Badge variant="outline">♂</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex gap-2">
-              <Select value={maleModality} onValueChange={(v) => { setMaleModality(v as "COR" | "PORTE"); setMaleClass(NONE_VALUE); }}>
-                <SelectTrigger className="w-24">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="COR">Cor</SelectItem>
-                  <SelectItem value="PORTE">Porte</SelectItem>
-                </SelectContent>
-              </Select>
-              <input
-                className="flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                placeholder="Buscar (ex: ágata, gloster...)"
-                value={maleSearch}
-                onChange={(e) => setMaleSearch(e.target.value)}
-              />
-            </div>
-            <Select value={maleClass} onValueChange={setMaleClass}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione a classe oficial" />
-              </SelectTrigger>
-              <SelectContent className="max-h-64">
-                <SelectItem value={NONE_VALUE}>— Selecione a classe —</SelectItem>
-                {((maleClasses.data && 'items' in maleClasses.data ? maleClasses.data.items : []) as Array<{officialCode: string; officialName: string}>).map((c) => (
-                  <SelectItem key={c.officialCode} value={c.officialCode}>
-                    <span className="font-mono text-xs text-gray-400 mr-2">{c.officialCode}</span>
-                    {c.officialName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {maleInterp.data && !("error" in maleInterp.data) && (
-              <div className="bg-blue-50 rounded-lg p-3 space-y-1 text-xs border border-blue-100">
-                <p className="font-semibold text-blue-800 mb-1">Traços interpretados:</p>
-                <p><strong>Lipocromo:</strong> {maleInterp.data.lipochromeBase ?? "—"}</p>
-                <p><strong>Melanina:</strong> {maleInterp.data.melaninSeries ?? "—"}</p>
-                <p><strong>Categoria:</strong> {maleInterp.data.featherCategory ?? "—"}</p>
-                {(maleInterp.data.visibleMutations?.length ?? 0) > 0 && (
-                  <p><strong>Mutações:</strong> {maleInterp.data.visibleMutations?.join(", ")}</p>
-                )}
-                {(maleInterp.data.geneticWarnings?.length ?? 0) > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {maleInterp.data.geneticWarnings?.map((w, i) => (
-                      <p key={i} className="text-red-600 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3 flex-shrink-0" /> {w}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Fêmea */}
-        <Card className="border-pink-100">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Bird className="w-4 h-4 text-pink-600" />
-              Progenitor Fêmea
-              <Badge variant="outline">♀</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex gap-2">
-              <Select value={femaleModality} onValueChange={(v) => { setFemaleModality(v as "COR" | "PORTE"); setFemaleClass(NONE_VALUE); }}>
-                <SelectTrigger className="w-24">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="COR">Cor</SelectItem>
-                  <SelectItem value="PORTE">Porte</SelectItem>
-                </SelectContent>
-              </Select>
-              <input
-                className="flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                placeholder="Buscar (ex: canela, yorkshire...)"
-                value={femaleSearch}
-                onChange={(e) => setFemaleSearch(e.target.value)}
-              />
-            </div>
-            <Select value={femaleClass} onValueChange={setFemaleClass}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione a classe oficial" />
-              </SelectTrigger>
-              <SelectContent className="max-h-64">
-                <SelectItem value={NONE_VALUE}>— Selecione a classe —</SelectItem>
-                {((femaleClasses.data && 'items' in femaleClasses.data ? femaleClasses.data.items : []) as Array<{officialCode: string; officialName: string}>).map((c) => (
-                  <SelectItem key={c.officialCode} value={c.officialCode}>
-                    <span className="font-mono text-xs text-gray-400 mr-2">{c.officialCode}</span>
-                    {c.officialName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {femaleInterp.data && !("error" in femaleInterp.data) && (
-              <div className="bg-pink-50 rounded-lg p-3 space-y-1 text-xs border border-pink-100">
-                <p className="font-semibold text-pink-800 mb-1">Traços interpretados:</p>
-                <p><strong>Lipocromo:</strong> {femaleInterp.data.lipochromeBase ?? "—"}</p>
-                <p><strong>Melanina:</strong> {femaleInterp.data.melaninSeries ?? "—"}</p>
-                <p><strong>Categoria:</strong> {femaleInterp.data.featherCategory ?? "—"}</p>
-                {(femaleInterp.data.visibleMutations?.length ?? 0) > 0 && (
-                  <p><strong>Mutações:</strong> {femaleInterp.data.visibleMutations?.join(", ")}</p>
-                )}
-                {(femaleInterp.data.geneticWarnings?.length ?? 0) > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {femaleInterp.data.geneticWarnings?.map((w, i) => (
-                      <p key={i} className="text-red-600 flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3 flex-shrink-0" /> {w}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {maleClass !== NONE_VALUE && femaleClass !== NONE_VALUE && (
-        <Alert className="border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertTitle className="text-green-800">Classes selecionadas</AlertTitle>
-          <AlertDescription className="text-green-700 text-sm">
-            Para calcular os filhotes com base nas mutações interpretadas, use o{" "}
-            <strong>Modo Simples</strong> com os genótipos sugeridos acima, ou o{" "}
-            <strong>Modo Avançado</strong> para selecionar pássaros do plantel com perfil genético cadastrado.
-          </AlertDescription>
-        </Alert>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// Modo Avançado — Seleção de pássaros do plantel
-// ============================================================================
-
-function ModoAvancado() {
-  const [maleId, setMaleId] = useState(NONE_VALUE);
-  const [femaleId, setFemaleId] = useState(NONE_VALUE);
-  const [calculated, setCalculated] = useState(false);
-
-  const birdsQuery = trpc.birds.list.useQuery({ status: "active" });
-  const males = (birdsQuery.data ?? []).filter((b) => b.sex === "macho" || b.sex === "M");
-  const females = (birdsQuery.data ?? []).filter((b) => b.sex === "fêmea" || b.sex === "F");
-
-  // CORREÇÃO: lê de bird_genotype (via router mendelian), que é onde o
-  // GenotypeEditor (cadastro/edição do pássaro) realmente grava os dados.
-  // Antes, esse modo lia de bird_genetic_profiles.genotypeJson, uma tabela
-  // diferente que nada preenche no fluxo normal — por isso sempre aparecia
-  // "este pássaro não tem perfil genético cadastrado" mesmo com o genótipo
-  // preenchido na ficha.
-  const maleGenotype = trpc.mendelian.getGenotype.useQuery(
-    Number(maleId),
-    { enabled: maleId !== NONE_VALUE }
-  );
-  const femaleGenotype = trpc.mendelian.getGenotype.useQuery(
-    Number(femaleId),
-    { enabled: femaleId !== NONE_VALUE }
-  );
-
-  const crossResult = trpc.mendelian.predictCross.useQuery(
-    { fatherId: Number(maleId), motherId: Number(femaleId) },
-    { enabled: calculated && maleId !== NONE_VALUE && femaleId !== NONE_VALUE, retry: false }
-  );
-
-  const hasBothProfiles: boolean =
-    maleId !== NONE_VALUE &&
-    femaleId !== NONE_VALUE &&
-    !!maleGenotype.data &&
-    !!femaleGenotype.data;
-
-  // Sugestão de melhores combinações: assim que UM dos dois é
-  // selecionado (e o outro ainda não), mostra quais pássaros do plantel
-  // combinariam melhor com ele — considerando COI e genes letais.
-  const suggestFor = maleId !== NONE_VALUE && femaleId === NONE_VALUE ? maleId : femaleId !== NONE_VALUE && maleId === NONE_VALUE ? femaleId : null;
-  const suggestions = trpc.mendelian.suggestMatches.useQuery(
-    { birdId: Number(suggestFor), limit: 5 },
-    { enabled: suggestFor !== null }
-  );
-
-  const ZYGOSITY_LABEL: Record<string, string> = {
-    homozygous_mutant: "manifesta",
-    heterozygous_carrier: "portador",
-    homozygous_normal: "normal",
-  };
-
-  function describeGenotype(g: typeof maleGenotype.data) {
-    if (!g) return null;
-    const parts: string[] = [];
-    if (g.backgroundColor) parts.push(g.backgroundColor);
-    if (g.featherType) parts.push(g.featherType);
-    if (g.hasCrest) parts.push("com crista");
-    const mutationsList = (g.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [];
-    return { summary: parts.join(" · ") || "sem traços de fundo definidos", mutations: mutationsList };
-  }
-
-  const maleDesc = describeGenotype(maleGenotype.data);
-  const femaleDesc = describeGenotype(femaleGenotype.data);
-
-  return (
-    <div className="space-y-6">
-      <Alert className="border-purple-200 bg-purple-50">
-        <FlaskConical className="h-4 w-4 text-purple-600" />
-        <AlertTitle className="text-purple-800">Plantel Real — Genótipo Avançado Cadastrado</AlertTitle>
-        <AlertDescription className="text-purple-700 text-sm">
-          Selecione dois pássaros do seu plantel. O sistema usa o Genótipo Avançado preenchido na
-          ficha de cada pássaro (Pássaros → editar → seção "Genótipo Avançado") para calcular os
-          filhotes esperados via Punnett.
-        </AlertDescription>
-      </Alert>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Macho do plantel */}
-        <Card className="border-purple-100">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Users className="w-4 h-4 text-purple-600" />
-              Macho do Plantel
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Select value={maleId} onValueChange={(v) => { setMaleId(v); setCalculated(false); }}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o macho" />
-              </SelectTrigger>
-              <SelectContent className="max-h-64">
-                <SelectItem value={NONE_VALUE}>— Selecione o macho —</SelectItem>
-                {males.map((b) => (
-                  <SelectItem key={b.id} value={String(b.id)}>
-                    {b.ring} — {b.color_code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {maleDesc && (
-              <div className="bg-purple-50 rounded-lg p-3 text-xs space-y-1 border border-purple-100">
-                <p className="font-semibold text-purple-800">Genótipo avançado:</p>
-                <p>{maleDesc.summary}</p>
-                {maleDesc.mutations.length > 0 && (
-                  <p className="text-purple-700">
-                    {maleDesc.mutations.map((m) => `${m.mutation} (${ZYGOSITY_LABEL[m.zygosity] ?? m.zygosity})`).join(", ")}
+          {/* Recommendations */}
+          {result.recommendations?.length > 0 && (
+            <Card className="border-blue-100">
+              <CardContent className="pt-4 space-y-1">
+                {result.recommendations.map((r: string, i: number) => (
+                  <p key={i} className="text-sm text-blue-800 flex items-start gap-1.5">
+                    <ArrowRight className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-500" />
+                    {r}
                   </p>
-                )}
-              </div>
-            )}
-            {maleId !== NONE_VALUE && !maleGenotype.data && !maleGenotype.isLoading && (
-              <p className="text-xs text-amber-600 bg-amber-50 rounded p-2 border border-amber-100">
-                Este pássaro não tem Genótipo Avançado cadastrado. Edite o pássaro e preencha a seção "Genótipo Avançado".
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Fêmea do plantel */}
-        <Card className="border-rose-100">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Users className="w-4 h-4 text-rose-600" />
-              Fêmea do Plantel
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Select value={femaleId} onValueChange={(v) => { setFemaleId(v); setCalculated(false); }}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione a fêmea" />
-              </SelectTrigger>
-              <SelectContent className="max-h-64">
-                <SelectItem value={NONE_VALUE}>— Selecione a fêmea —</SelectItem>
-                {females.map((b) => (
-                  <SelectItem key={b.id} value={String(b.id)}>
-                    {b.ring} — {b.color_code}
-                  </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
-            {femaleDesc && (
-              <div className="bg-rose-50 rounded-lg p-3 text-xs space-y-1 border border-rose-100">
-                <p className="font-semibold text-rose-800">Genótipo avançado:</p>
-                <p>{femaleDesc.summary}</p>
-                {femaleDesc.mutations.length > 0 && (
-                  <p className="text-rose-700">
-                    {femaleDesc.mutations.map((m) => `${m.mutation} (${ZYGOSITY_LABEL[m.zygosity] ?? m.zygosity})`).join(", ")}
-                  </p>
-                )}
-              </div>
-            )}
-            {femaleId !== NONE_VALUE && !femaleGenotype.data && !femaleGenotype.isLoading && (
-              <p className="text-xs text-amber-600 bg-amber-50 rounded p-2 border border-amber-100">
-                Esta pássara não tem Genótipo Avançado cadastrado. Edite o pássaro e preencha a seção "Genótipo Avançado".
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {suggestFor !== null && (
-        <Card className="border-emerald-100">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-600" />
-              Melhores Combinações pra {suggestions.data?.target?.ring ?? "este pássaro"}
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Ranqueado por consanguinidade (COI) e compatibilidade genética — clique pra usar como par
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {suggestions.isLoading ? (
-              <p className="text-sm text-gray-400 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />Calculando combinações...</p>
-            ) : !suggestions.data?.target?.hasGenotype ? (
-              <p className="text-sm text-amber-600 bg-amber-50 rounded p-2 border border-amber-100">
-                Preencha o Genótipo Avançado deste pássaro pra sugestões mais precisas — por enquanto, o ranking usa só consanguinidade (COI).
-              </p>
-            ) : null}
-            {suggestions.data && suggestions.data.candidates.length === 0 && (
-              <p className="text-sm text-gray-400">Nenhum pássaro do sexo oposto disponível no plantel pra sugerir.</p>
-            )}
-            <div className="space-y-2">
-              {suggestions.data?.candidates.map((c, i) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => {
-                    if (maleId === NONE_VALUE) setMaleId(String(c.id));
-                    else setFemaleId(String(c.id));
-                    setCalculated(false);
-                  }}
-                  className="w-full text-left flex items-center justify-between gap-3 bg-white border rounded-lg p-2.5 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors"
-                >
-                  <div className="min-w-0 flex items-center gap-2">
-                    {i === 0 && <span className="text-base">🏆</span>}
-                    <div className="min-w-0">
-                      <p className="font-mono font-semibold text-sm text-gray-800">{c.ring}</p>
-                      <p className="text-xs text-gray-500 truncate">{c.specialtyName} · {c.colorName}</p>
-                      {c.highlights.map((h, j) => (
-                        <p key={j} className="text-xs text-emerald-700">✓ {h}</p>
-                      ))}
-                      {c.warnings.map((w, j) => (
-                        <p key={j} className="text-xs text-red-600">⚠ {w}</p>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className={`text-sm font-bold ${c.compatibilityScore >= 70 ? "text-emerald-600" : c.compatibilityScore >= 40 ? "text-amber-600" : "text-red-600"}`}>
-                      {c.compatibilityScore}/100
-                    </p>
-                    <p className="text-xs text-gray-400">COI {(c.coi * 100).toFixed(1)}%</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!hasBothProfiles && maleId !== NONE_VALUE && femaleId !== NONE_VALUE && (
-        <Alert className="border-amber-200 bg-amber-50">
-          <Info className="h-4 w-4 text-amber-600" />
-          <AlertDescription className="text-amber-800 text-sm">
-            Um ou ambos os pássaros não têm Genótipo Avançado cadastrado.
-            Preencha-o na ficha de cada um para usar o Modo Avançado, ou use o{" "}
-            <strong>Modo Simples</strong> para calcular manualmente.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {hasBothProfiles && (
-        <div className="flex justify-center">
-          <Button
-            size="lg"
-            className="bg-purple-600 hover:bg-purple-700 text-white px-10"
-            onClick={() => setCalculated(true)}
-            disabled={crossResult.isLoading}
-          >
-            {crossResult.isLoading ? (
-              <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Calculando...</>
-            ) : (
-              <><Zap className="w-4 h-4 mr-2" />Calcular com Genótipo do Plantel</>
-            )}
-          </Button>
-        </div>
-      )}
-
-      {crossResult.data && calculated && (
-        <div className="space-y-4">
-          <Separator />
-          <div className="flex items-center gap-2 text-green-700 text-sm font-medium">
-            <CheckCircle className="w-4 h-4" />
-            Cálculo concluído com base no genótipo avançado cadastrado
-          </div>
-          {crossResult.data.warnings.length > 0 && (
-            <div className="space-y-2">
-              {crossResult.data.warnings.map((w, i) => (
-                <Alert key={i} className="border-red-200 bg-red-50">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800 text-sm font-medium">{w.message}</AlertDescription>
-                </Alert>
-              ))}
-            </div>
-          )}
-          {crossResult.data.mutations.length > 0 ? (
-            <div className="grid sm:grid-cols-2 gap-3">
-              {crossResult.data.mutations.map((m) => (
-                <Card key={m.mutation} className="border-purple-100">
-                  <CardContent className="pt-4 text-sm space-y-1">
-                    <p className="font-semibold text-gray-800 capitalize">{m.mutation.replace(/_/g, " ")}</p>
-                    {m.overall && (
-                      <p className="text-xs text-gray-500">
-                        {Object.entries(m.overall).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_LABEL[k] ?? k}`).join(" · ")}
-                      </p>
-                    )}
-                    {m.sons && m.daughters && (
-                      <div className="text-xs text-gray-500 space-y-0.5">
-                        <p>♂ {Object.entries(m.sons).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_LABEL[k] ?? k}`).join(" · ")}</p>
-                        <p>♀ {Object.entries(m.daughters).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${ZYGOSITY_LABEL[k] ?? k}`).join(" · ")}</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-purple-100 bg-purple-50/30">
-              <CardContent className="pt-4">
-                <p className="text-sm text-gray-700">
-                  Nenhuma mutação em comum entre os dois genótipos cadastrados — preencha mais
-                  detalhes na ficha de cada pássaro para uma predição mais completa.
-                </p>
               </CardContent>
             </Card>
           )}
@@ -1053,273 +536,363 @@ function ModoAvancado() {
   );
 }
 
-// ============================================================================
-// Modo Par Ideal
-// ============================================================================
-const OBJECTIVE_OPTIONS: { value: string; label: string }[] = [
-  { value: "PLANEJAMENTO_LIVRE", label: "Planejamento livre (equilibrado)" },
-  { value: "REDUZIR_COI", label: "Reduzir consanguinidade" },
-  { value: "REPRODUCAO_SEGURA", label: "Reprodução segura (evitar riscos)" },
-  { value: "PRODUZIR_PORTADORES", label: "Produzir portadores" },
-  { value: "EXPOSICAO", label: "Preparar para exposição" },
-  { value: "MELHORAR_COR", label: "Melhorar cor" },
-  { value: "MELHORAR_PORTE", label: "Melhorar porte" },
-  { value: "MANTER_LINHAGEM", label: "Manter linhagem" },
+// ─── Modo Casal do Plantel ────────────────────────────────────────────────────
+
+function ModoCasalPlantel() {
+  const [maleId, setMaleId] = useState("");
+  const [femaleId, setFemaleId] = useState("");
+  const [calculated, setCalculated] = useState(false);
+
+  const { data: allBirds } = trpc.birds.list.useQuery({});
+  const { data: mutations = [] } = trpc.genetics.listMutations.useQuery();
+
+  const males = (allBirds ?? []).filter((b) => b.sex === "macho");
+  const females = (allBirds ?? []).filter((b) => b.sex === "fêmea");
+
+  const { data: maleGeno } = trpc.mendelian.getGenotype.useQuery(
+    Number(maleId), { enabled: !!maleId }
+  );
+  const { data: femaleGeno } = trpc.mendelian.getGenotype.useQuery(
+    Number(femaleId), { enabled: !!femaleId }
+  );
+
+  // Build genotype input from saved data
+  const maleInput = useMemo(() => {
+    if (!maleGeno) return { sex: "macho" as const };
+    const geno: Record<string, string> = { sex: "macho" };
+    const muts = (maleGeno.mutations as any[]) ?? [];
+    for (const m of muts) {
+      if (m.mutation && m.zygosity) {
+        const mut = mutations.find((x) => x.id === m.mutation);
+        if (!mut) continue;
+        if (mut.inheritance === "sex_linked") {
+          geno[m.mutation] = m.zygosity === "homozygous_mutant" ? "Z+Z+"
+            : m.zygosity === "heterozygous_carrier" ? "Z+Z-"
+            : "Z-Z-";
+        } else if (mut.inheritance === "autosomal_recessive") {
+          geno[m.mutation] = m.zygosity === "homozygous_mutant" ? "mm"
+            : m.zygosity === "heterozygous_carrier" ? "Nm"
+            : "NN";
+        } else {
+          geno[m.mutation] = m.zygosity === "homozygous_mutant" ? "NN"
+            : m.zygosity === "heterozygous_carrier" ? "Nn"
+            : "nn";
+        }
+      }
+    }
+    return geno;
+  }, [maleGeno, mutations]);
+
+  const femaleInput = useMemo(() => {
+    if (!femaleGeno) return { sex: "fêmea" as const };
+    const geno: Record<string, string> = { sex: "fêmea" };
+    const muts = (femaleGeno.mutations as any[]) ?? [];
+    for (const m of muts) {
+      if (m.mutation && m.zygosity) {
+        const mut = mutations.find((x) => x.id === m.mutation);
+        if (!mut) continue;
+        if (mut.inheritance === "sex_linked") {
+          geno[m.mutation] = m.zygosity === "homozygous_mutant" ? "Z+W" : "Z-W";
+        } else if (mut.inheritance === "autosomal_recessive") {
+          geno[m.mutation] = m.zygosity === "homozygous_mutant" ? "mm"
+            : m.zygosity === "heterozygous_carrier" ? "Nm"
+            : "NN";
+        } else {
+          geno[m.mutation] = m.zygosity === "homozygous_mutant" ? "NN"
+            : m.zygosity === "heterozygous_carrier" ? "Nn"
+            : "nn";
+        }
+      }
+    }
+    return geno;
+  }, [femaleGeno, mutations]);
+
+  const { data: result, isLoading, refetch } = trpc.genetics.calculateColorCross.useQuery(
+    { male: maleInput as any, female: femaleInput as any },
+    { enabled: calculated && !!maleId && !!femaleId }
+  );
+
+  const selectedMale = males.find((b) => b.id === Number(maleId));
+  const selectedFemale = females.find((b) => b.id === Number(femaleId));
+
+  return (
+    <div className="space-y-5">
+      <InlineAlert variant="info">
+        Selecione pássaros do seu plantel. O sistema puxa o genótipo cadastrado automaticamente.
+        Se não houver genótipo cadastrado, vá na ficha do pássaro e preencha primeiro.
+      </InlineAlert>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-1.5">♂ Macho</p>
+          <Select value={maleId} onValueChange={(v) => { setMaleId(v); setCalculated(false); }}>
+            <SelectTrigger><SelectValue placeholder="Selecione o macho" /></SelectTrigger>
+            <SelectContent className="max-h-64">
+              {males.map((b) => (
+                <SelectItem key={b.id} value={String(b.id)}>
+                  <span className="font-mono">{b.ring}</span>
+                  {b.displayTitle && <span className="text-gray-400 ml-2">— {b.displayTitle}</span>}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {maleGeno && (
+            <p className="text-xs text-gray-400 mt-1">
+              Mutações: {(maleGeno.mutations as any[])?.length > 0
+                ? (maleGeno.mutations as any[]).map((m: any) => m.mutation).join(", ")
+                : "nenhuma cadastrada"}
+            </p>
+          )}
+        </div>
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-1.5">♀ Fêmea</p>
+          <Select value={femaleId} onValueChange={(v) => { setFemaleId(v); setCalculated(false); }}>
+            <SelectTrigger><SelectValue placeholder="Selecione a fêmea" /></SelectTrigger>
+            <SelectContent className="max-h-64">
+              {females.map((b) => (
+                <SelectItem key={b.id} value={String(b.id)}>
+                  <span className="font-mono">{b.ring}</span>
+                  {b.displayTitle && <span className="text-gray-400 ml-2">— {b.displayTitle}</span>}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <Button
+        className="bg-amber-600 hover:bg-amber-700 gap-2"
+        disabled={!maleId || !femaleId || isLoading}
+        onClick={() => { setCalculated(true); refetch(); }}
+      >
+        <Calculator className="w-4 h-4" />
+        {isLoading ? "Calculando..." : "Calcular cruzamento"}
+      </Button>
+
+      {/* Nota sem genótipo */}
+      {maleId && !maleGeno?.mutations?.length && (
+        <InlineAlert variant="warning">
+          Macho {selectedMale?.ring} sem mutações cadastradas. Cadastre o genótipo na ficha do pássaro para resultados precisos.
+        </InlineAlert>
+      )}
+      {femaleId && !femaleGeno?.mutations?.length && (
+        <InlineAlert variant="warning">
+          Fêmea {selectedFemale?.ring} sem mutações cadastradas. Cadastre o genótipo na ficha do pássaro para resultados precisos.
+        </InlineAlert>
+      )}
+
+      {result && (
+        <div className="space-y-4">
+          {result.warnings?.map((w: string, i: number) => (
+            <InlineAlert key={i} variant={w.includes("⚠️") ? "error" : "warning"}>{w}</InlineAlert>
+          ))}
+          {result.summary && (
+            <Card className="border-green-100 bg-green-50">
+              <CardContent className="pt-4">
+                <p className="text-sm font-medium text-green-800">{result.summary}</p>
+              </CardContent>
+            </Card>
+          )}
+          {Object.values(result.byMutation as Record<string, any>).map((mutResult: any) => (
+            <MutationResultCard key={mutResult.mutationId} result={mutResult} />
+          ))}
+          {result.recommendations?.map((r: string, i: number) => (
+            <p key={i} className="text-sm text-blue-700 flex items-start gap-1.5">
+              <ArrowRight className="w-3.5 h-3.5 mt-0.5 shrink-0" />{r}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Modo Lipocromo ───────────────────────────────────────────────────────────
+
+const LIPO_BASE_OPTIONS = [
+  { value: "amarelo",           label: "Amarelo" },
+  { value: "vermelho",          label: "Vermelho (fator vermelho)" },
+  { value: "branco_dominante",  label: "Branco Dominante" },
+  { value: "branco_recessivo",  label: "Branco Recessivo" },
+  { value: "desconhecido",      label: "Desconhecido" },
+];
+const IVORY_OPTIONS = [
+  { value: "nenhum",   label: "Sem marfim" },
+  { value: "portador", label: "Portador (macho Z+Z-)" },
+  { value: "visual",   label: "Visual (manifesta)" },
+];
+const FEATHER_OPTIONS = [
+  { value: "intenso", label: "Intenso" },
+  { value: "nevado",  label: "Nevado" },
 ];
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  IDEAL: { label: "Ideal", className: "bg-emerald-100 text-emerald-800 border-emerald-300" },
-  APROVADO: { label: "Aprovado", className: "bg-blue-100 text-blue-800 border-blue-300" },
-  ATENCAO: { label: "Atenção", className: "bg-amber-100 text-amber-800 border-amber-300" },
-  NAO_RECOMENDADO: { label: "Não recomendado", className: "bg-red-100 text-red-800 border-red-300" },
-};
+function ModoLipocromo() {
+  const [father, setFather] = useState({ base: "amarelo" as any, ivoryStatus: "nenhum" as any, featherType: "intenso" as any });
+  const [mother, setMother] = useState({ base: "amarelo" as any, ivoryStatus: "nenhum" as any, featherType: "nevado" as any });
+  const [calculated, setCalculated] = useState(false);
 
-function ModoParIdeal() {
-  const [baseBirdId, setBaseBirdId] = useState(NONE_VALUE);
-  const [objective, setObjective] = useState("PLANEJAMENTO_LIVRE");
-  const [searched, setSearched] = useState(false);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-
-  const birdsQuery = trpc.birds.list.useQuery({ status: "active" });
-
-  const results = trpc.pairingOptimizer.findIdealPairs.useQuery(
-    { baseBirdId: Number(baseBirdId), objective: objective as any, limit: 10 },
-    { enabled: searched && baseBirdId !== NONE_VALUE, retry: false }
+  const { data: result, isLoading, refetch } = trpc.genetics.calculateLipochromeCross.useQuery(
+    { father, mother },
+    { enabled: calculated }
   );
 
   return (
-    <div className="space-y-6">
-      <Alert className="border-emerald-200 bg-emerald-50">
-        <Sparkles className="h-4 w-4 text-emerald-600" />
-        <AlertTitle className="text-emerald-800">Encontre o par ideal pro seu pássaro</AlertTitle>
-        <AlertDescription className="text-emerald-700 text-sm">
-          Escolha um pássaro do plantel e o objetivo do cruzamento. O sistema ranqueia os
-          candidatos pelo plantel inteiro usando genética (motor de Punnett), consanguinidade
-          (COI), saúde, histórico reprodutivo e o objetivo escolhido — nunca só por cor ou raça.
-        </AlertDescription>
-      </Alert>
+    <div className="space-y-5">
+      <InlineAlert variant="info">
+        Calcula a distribuição de lipocromo (cor de fundo) e alerta sobre plumagem double buffing, marfim e branco dominante.
+      </InlineAlert>
 
-      <Card>
-        <CardContent className="pt-5 space-y-4">
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Pássaro base</label>
-              <Select value={baseBirdId} onValueChange={(v) => { setBaseBirdId(v); setSearched(false); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um pássaro" />
-                </SelectTrigger>
-                <SelectContent className="max-h-64">
-                  {(birdsQuery.data ?? []).map((b) => (
-                    <SelectItem key={b.id} value={String(b.id)}>
-                      {b.ring} — {b.sex === "macho" ? "Macho" : "Fêmea"}
-                    </SelectItem>
+      <div className="grid sm:grid-cols-2 gap-5">
+        {[
+          { label: "♂ Pai", data: father, set: setFather },
+          { label: "♀ Mãe", data: mother, set: setMother },
+        ].map(({ label, data, set }) => (
+          <Card key={label}>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">{label}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Lipocromo base</p>
+                <Select value={data.base} onValueChange={(v) => { set((p: any) => ({ ...p, base: v })); setCalculated(false); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{LIPO_BASE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                  Marfim (ivory) <HelpTooltip text="Marfim é ligado ao sexo e dilui o lipocromo: amarelo→marfim claro, vermelho→salmão." />
+                </p>
+                <Select value={data.ivoryStatus} onValueChange={(v) => { set((p: any) => ({ ...p, ivoryStatus: v })); setCalculated(false); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{IVORY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                  Tipo de pluma <HelpTooltip text="Nevado × nevado = 25% double buffing (plumas moles excessivas). Prefira intenso × nevado." />
+                </p>
+                <Select value={data.featherType} onValueChange={(v) => { set((p: any) => ({ ...p, featherType: v })); setCalculated(false); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{FEATHER_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Button className="bg-amber-600 hover:bg-amber-700 gap-2" onClick={() => { setCalculated(true); refetch(); }} disabled={isLoading}>
+        <Calculator className="w-4 h-4" />{isLoading ? "Calculando..." : "Calcular lipocromo"}
+      </Button>
+
+      {result && (
+        <div className="space-y-3">
+          {result.warnings?.map((w: string, i: number) => (
+            <InlineAlert key={i} variant={w.includes("⚠️") || w.includes("DOMINANTE") ? "error" : "warning"}>{w}</InlineAlert>
+          ))}
+          {result.expected?.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Fenótipos esperados</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {result.expected.map((e: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <div>
+                        <span className="text-gray-800 font-medium">{e.phenotype}</span>
+                        {e.notes && <span className="text-xs text-gray-400 ml-2">({e.notes})</span>}
+                      </div>
+                      <span className="font-semibold font-mono">{Math.round(e.probability * 100)}%</span>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Objetivo do cruzamento</label>
-              <Select value={objective} onValueChange={(v) => { setObjective(v); setSearched(false); }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {OBJECTIVE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <Button
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            disabled={baseBirdId === NONE_VALUE || results.isFetching}
-            onClick={() => setSearched(true)}
-          >
-            {results.isFetching ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-            Buscar pares ideais
-          </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Referência genética ──────────────────────────────────────────────────────
+
+function ModoReferencia() {
+  const { data: mutations = [] } = trpc.genetics.listMutations.useQuery();
+
+  const groups = [
+    { key: "sex_linked",          label: "Ligadas ao sexo (cromossomo Z)", icon: "🔗", color: "bg-rose-50 border-rose-200" },
+    { key: "autosomal_recessive", label: "Autossômicas recessivas",          icon: "🔄", color: "bg-blue-50 border-blue-200" },
+    { key: "autosomal_dominant",  label: "Autossômicas dominantes",          icon: "⬆️",  color: "bg-purple-50 border-purple-200" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-amber-200 bg-amber-50">
+        <CardContent className="pt-4">
+          <p className="text-sm text-amber-800">
+            <strong>Sistema ZZ/ZW dos canários:</strong> Machos têm dois cromossomos Z (ZZ). Fêmeas têm um Z e um W (ZW).
+            Genes no cromossomo Z seguem regras especiais: <strong>fêmeas nunca são portadoras silenciosas</strong> — ou manifestam o gene ou não o possuem.
+            Machos ZZ podem ser portadores (Z⁺Z⁻) sem manifestar.
+          </p>
         </CardContent>
       </Card>
 
-      {searched && results.data && (
-        <div className="space-y-3">
-          {!results.data.baseBird?.hasGenotype && (
-            <Alert className="border-amber-200 bg-amber-50">
-              <Info className="h-4 w-4 text-amber-600" />
-              <AlertDescription className="text-amber-800 text-sm">
-                Este pássaro não tem Genótipo Avançado cadastrado — o ranking abaixo usa só
-                consanguinidade, saúde e histórico (sem o motor de Punnett). Preencha a ficha
-                genética dele pra sugestões mais precisas.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {results.data.recommendations.length === 0 && (
-            <p className="text-sm text-gray-400">Nenhum pássaro do sexo oposto disponível no plantel.</p>
-          )}
-
-          {results.data.recommendations.map((r, i) => {
-            const cfg = STATUS_CONFIG[r.status];
-            const isExpanded = expandedId === r.candidateBirdId;
-            return (
-              <Card key={r.candidateBirdId} className={r.status === "NAO_RECOMENDADO" ? "opacity-70" : ""}>
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {i === 0 && r.status !== "NAO_RECOMENDADO" && <span className="text-lg">🏆</span>}
-                      <div className="min-w-0">
-                        <p className="font-mono font-bold text-gray-900">{r.ring}</p>
-                        <p className="text-xs text-gray-500 truncate">{r.specialtyName} · {r.colorName}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <Badge className={`border ${cfg.className}`}>{cfg.label}</Badge>
-                      <p className="text-lg font-bold text-gray-800">{r.finalScore}<span className="text-xs text-gray-400">/100</span></p>
-                      <Button size="sm" variant="ghost" onClick={() => setExpandedId(isExpanded ? null : r.candidateBirdId)}>
-                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      </Button>
-                    </div>
+      {groups.map((group) => (
+        <div key={group.key}>
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <span>{group.icon}</span>{group.label}
+          </h3>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {mutations.filter((m) => m.inheritance === group.key).map((mut) => (
+              <Card key={mut.id} className={`border ${group.color}`}>
+                <CardContent className="pt-3 pb-3">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <p className="font-semibold text-sm text-gray-900">{mut.label}</p>
+                    {mut.isLethalHomozygous && (
+                      <span className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 shrink-0">⚠️ Letal</span>
+                    )}
                   </div>
-
-                  <p className="text-sm text-gray-600 mt-2">{r.recommendationText}</p>
-
-                  {isExpanded && (
-                    <div className="mt-3 pt-3 border-t space-y-3 text-sm">
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
-                        {[
-                          ["Genética", r.geneticScore, 35],
-                          ["COI", r.coiScore, 20],
-                          ["Saúde", r.healthScore, 15],
-                          ["Nutrição", r.nutritionScore, 10],
-                          ["Histórico", r.historyScore, 10],
-                          ["Objetivo", r.objectiveScore, 10],
-                        ].map(([label, val, max]) => (
-                          <div key={label as string} className="bg-gray-50 rounded-lg p-2">
-                            <p className="text-xs text-gray-400">{label}</p>
-                            <p className="font-semibold text-gray-700">{val}/{max}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      <p className="text-xs text-gray-500">COI calculado: {(r.coi * 100).toFixed(1)}%</p>
-
-                      {r.reasons.length > 0 && (
-                        <div>
-                          <p className="font-medium text-emerald-700 text-xs uppercase mb-1">Pontos positivos</p>
-                          {r.reasons.map((reason, j) => <p key={j} className="text-gray-600">✓ {reason}</p>)}
-                        </div>
-                      )}
-                      {r.warnings.length > 0 && (
-                        <div>
-                          <p className="font-medium text-amber-700 text-xs uppercase mb-1">Alertas</p>
-                          {r.warnings.map((w, j) => <p key={j} className="text-amber-700">⚠ {w}</p>)}
-                        </div>
-                      )}
-                      {r.missingData.length > 0 && (
-                        <div>
-                          <p className="font-medium text-gray-400 text-xs uppercase mb-1">Dados incompletos</p>
-                          {r.missingData.map((m, j) => <p key={j} className="text-gray-400">• {m}</p>)}
-                        </div>
-                      )}
-                      {r.predictedOffspring && r.predictedOffspring.mutations.length > 0 && (
-                        <div>
-                          <p className="font-medium text-gray-700 text-xs uppercase mb-1">Prole prevista (traços em comum)</p>
-                          {r.predictedOffspring.mutations.map((m) => (
-                            <p key={m.mutation} className="text-gray-600 capitalize">
-                              {m.mutation.replace(/_/g, " ")}:{" "}
-                              {m.overall
-                                ? Object.entries(m.overall).map(([k, v]) => `${Math.round((v ?? 0) * 100)}% ${k === "homozygous_mutant" ? "manifesta" : k === "heterozygous_carrier" ? "portador" : "normal"}`).join(" · ")
-                                : "varia por sexo"}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <p className="text-xs text-gray-600 mb-1">{mut.description}</p>
+                  <p className="text-xs text-amber-700 italic">Efeito visual: {mut.phenotypeEffect}</p>
                 </CardContent>
               </Card>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
+// ─── Página principal ──────────────────────────────────────────────────────────
 
 export default function GeneticsCalculator() {
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Cabeçalho */}
-        <div className="flex items-start gap-4">
-          <div className="p-3 bg-amber-100 rounded-xl">
-            <Dna className="w-7 h-7 text-amber-700" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Calculadora Genética</h1>
-            <p className="text-gray-500 mt-1 text-sm max-w-xl">
-              Simule cruzamentos e calcule probabilidades de filhotes com base nas leis de Mendel.
-              Escolha o modo de acordo com o seu nível de conhecimento.
-            </p>
-          </div>
+      <div className="space-y-5 max-w-5xl">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+            <Dna className="w-8 h-8 text-amber-600" />
+            Calculadora Genética
+          </h1>
+          <p className="text-gray-500 mt-1">
+            Punnett quadrado completo · 18 mutações · Sistema ZZ/ZW · Alertas de risco letal
+          </p>
         </div>
 
-        {/* Disclaimer de honestidade genética */}
-        <Alert className="border-amber-200 bg-amber-50">
-          <AlertTriangle className="h-4 w-4 text-amber-600" />
-          <AlertDescription className="text-amber-800 text-sm">
-            <strong>Honestidade genética:</strong> Esta calculadora é uma ferramenta de apoio.
-            Genes portados (não visíveis) nunca podem ser confirmados apenas pela aparência.
-            Para aumentar a precisão, informe pais, avós e resultados de ninhadas anteriores
-            na ficha genética de cada pássaro.
-          </AlertDescription>
-        </Alert>
-
-        {/* Tabs dos 4 modos */}
-        <Tabs defaultValue="parideal">
-          <TabsList className="grid grid-cols-4 w-full max-w-2xl">
-            <TabsTrigger value="parideal" className="flex items-center gap-1.5 text-sm">
-              <Sparkles className="h-4 w-4" />
-              Par Ideal
-            </TabsTrigger>
-            <TabsTrigger value="simples" className="flex items-center gap-1.5 text-sm">
-              <Calculator className="h-4 w-4" />
-              Simples
-            </TabsTrigger>
-            <TabsTrigger value="assistido" className="flex items-center gap-1.5 text-sm">
-              <BookOpen className="h-4 w-4" />
-              Assistido
-            </TabsTrigger>
-            <TabsTrigger value="avancado" className="flex items-center gap-1.5 text-sm">
-              <FlaskConical className="h-4 w-4" />
-              Casal do Plantel
-            </TabsTrigger>
+        <Tabs defaultValue="simples">
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="simples"><Calculator className="w-4 h-4 mr-1.5" />Calculadora</TabsTrigger>
+            <TabsTrigger value="plantel"><Users className="w-4 h-4 mr-1.5" />Casal do Plantel</TabsTrigger>
+            <TabsTrigger value="lipocromo"><Sparkles className="w-4 h-4 mr-1.5" />Lipocromo & Pluma</TabsTrigger>
+            <TabsTrigger value="referencia"><BookOpen className="w-4 h-4 mr-1.5" />Referência</TabsTrigger>
           </TabsList>
 
-          <div className="mt-2 mb-4 text-xs text-gray-500">
-            <span className="font-medium text-gray-700">Par Ideal:</span> escolha um pássaro e o objetivo, o sistema ranqueia os melhores pares •{" "}
-            <span className="font-medium text-gray-700">Simples:</span> selecione mutações manualmente •{" "}
-            <span className="font-medium text-gray-700">Assistido:</span> busque por classe oficial FOB/OBJO •{" "}
-            <span className="font-medium text-gray-700">Casal do Plantel:</span> compare dois pássaros específicos
-          </div>
-
-          <TabsContent value="parideal">
-            <ModoParIdeal />
-          </TabsContent>
-
-          <TabsContent value="simples">
-            <ModoSimples />
-          </TabsContent>
-
-          <TabsContent value="assistido">
-            <ModoAssistido />
-          </TabsContent>
-
-          <TabsContent value="avancado">
-            <ModoAvancado />
-          </TabsContent>
+          <TabsContent value="simples"    className="mt-5"><ModoSimples /></TabsContent>
+          <TabsContent value="plantel"    className="mt-5"><ModoCasalPlantel /></TabsContent>
+          <TabsContent value="lipocromo"  className="mt-5"><ModoLipocromo /></TabsContent>
+          <TabsContent value="referencia" className="mt-5"><ModoReferencia /></TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>
