@@ -39,6 +39,11 @@ const PublicBirdPage = lazy(() => import("@/pages/PublicBirdPage"));
 const Linhagem = lazy(() => import("@/pages/Linhagem"));
 const RotinaDiaria = lazy(() => import("@/pages/RotinaDiaria"));
 const Admin = lazy(() => import("@/pages/Admin"));
+const SecurityZone = lazy(() => import("@/pages/admin/SecurityZone"));
+const ResetCanaril = lazy(() => import("@/pages/admin/ResetCanaril"));
+const TestDataCleanup = lazy(() => import("@/pages/admin/TestDataCleanup"));
+const AnalysesCleanup = lazy(() => import("@/pages/admin/AnalysesCleanup"));
+const OrphanDataRepair = lazy(() => import("@/pages/admin/OrphanDataRepair"));
 
 // Fallback de loading para lazy pages
 function PageLoader() {
@@ -171,6 +176,21 @@ function Router() {
       </Route>
       <Route path={"/admin"}>
         {(params) => <ProtectedRoute component={Admin} {...params} />}
+      </Route>
+      <Route path={"/admin/security"}>
+        {(params) => <ProtectedRoute component={SecurityZone} {...params} />}
+      </Route>
+      <Route path={"/admin/security/reset"}>
+        {(params) => <ProtectedRoute component={ResetCanaril} {...params} />}
+      </Route>
+      <Route path={"/admin/security/test-cleanup"}>
+        {(params) => <ProtectedRoute component={TestDataCleanup} {...params} />}
+      </Route>
+      <Route path={"/admin/security/analyses"}>
+        {(params) => <ProtectedRoute component={AnalysesCleanup} {...params} />}
+      </Route>
+      <Route path={"/admin/security/orphans"}>
+        {(params) => <ProtectedRoute component={OrphanDataRepair} {...params} />}
       </Route>
 
       {/* Fallback */}

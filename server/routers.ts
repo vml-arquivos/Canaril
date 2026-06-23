@@ -30,6 +30,7 @@ import { qrcodeRouter } from "./routers/qrcode";
 import { dailyCareRouter } from "./routers/dailyCare";
 import { adminRouter } from "./routers/admin";
 import { intelligenceRouter } from "./routers/intelligence";
+import { adminResetRouter } from "./routers/adminReset";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -125,6 +126,7 @@ export const appRouter = router({
   dailyCare: dailyCareRouter,
   admin: adminRouter,
   intelligence: intelligenceRouter,
+  adminReset: adminResetRouter,
 });
 
 export type AppRouter = typeof appRouter;

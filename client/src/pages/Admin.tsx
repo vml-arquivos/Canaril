@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Shield, Users, Trash2, AlertTriangle, History, Building2, RotateCcw, X } from "lucide-react";
+import { Shield, Users, Trash2, AlertTriangle, History, Building2, RotateCcw, X, ExternalLink } from "lucide-react";
+import { Link } from "wouter";
 
 // ─── Tab: Usuários ────────────────────────────────────────────────────────────
 
