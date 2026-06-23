@@ -886,3 +886,107 @@ export type BreedingDailyLog = typeof breeding_daily_logs.$inferSelect;
 export type BreedingSpeciesRule = typeof breeding_species_rules.$inferSelect;
 export type Tenant = typeof tenants.$inferSelect;
 export type AuditLog = typeof audit_logs.$inferSelect;
+
+// ─── Missão 5: Canaril Intelligence Core ─────────────────────────────────────
+
+export const species_knowledge = pgTable("species_knowledge", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 30 }).notNull().unique(),
+  commonName: varchar("commonName", { length: 100 }).notNull(),
+  scientificName: varchar("scientificName", { length: 100 }),
+  groupName: varchar("groupName", { length: 50 }),
+  defaultSexSystem: varchar("defaultSexSystem", { length: 20 }).default("ZZ_ZW"),
+  notes: text("notes"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+});
+
+export const breed_knowledge = pgTable("breed_knowledge", {
+  id: serial("id").primaryKey(),
+  speciesCode: varchar("speciesCode", { length: 30 }).notNull(),
+  modality: varchar("modality", { length: 20 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  aliases: jsonb("aliases").default([]),
+  hasCrest: boolean("hasCrest").notNull().default(false),
+  hasPorteStandard: boolean("hasPorteStandard").notNull().default(false),
+  hasColorStandard: boolean("hasColorStandard").notNull().default(false),
+  defaultRingGaugeMm: real("defaultRingGaugeMm"),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (t) => ({ specModIdx: index("bk_species_mod_idx2").on(t.speciesCode, t.modality) }));
+
+export const color_knowledge = pgTable("color_knowledge", {
+  id: serial("id").primaryKey(),
+  speciesCode: varchar("speciesCode", { length: 30 }).notNull(),
+  modality: varchar("modality", { length: 20 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  type: varchar("type", { length: 20 }).notNull().default("UNKNOWN"),
+  lipochromeBase: varchar("lipochromeBase", { length: 50 }),
+  melaninSeries: varchar("melaninSeries", { length: 50 }),
+  featherCategory: varchar("featherCategory", { length: 30 }),
+  aliases: jsonb("aliases").default([]),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+});
+
+export const mutation_knowledge = pgTable("mutation_knowledge", {
+  id: serial("id").primaryKey(),
+  speciesCode: varchar("speciesCode", { length: 30 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  aliases: jsonb("aliases").default([]),
+  inheritanceType: varchar("inheritanceType", { length: 40 }).notNull().default("UNKNOWN"),
+  allowsCarrierMale: boolean("allowsCarrierMale").notNull().default(false),
+  allowsCarrierFemale: boolean("allowsCarrierFemale").notNull().default(false),
+  hasLethalDoubleFactor: boolean("hasLethalDoubleFactor").notNull().default(false),
+  visibleStates: jsonb("visibleStates").default([]),
+  carrierStates: jsonb("carrierStates").default([]),
+  description: text("description"),
+  warnings: text("warnings"),
+  active: boolean("active").notNull().default(true),
+});
+
+export const genetic_rule_knowledge = pgTable("genetic_rule_knowledge", {
+  id: serial("id").primaryKey(),
+  speciesCode: varchar("speciesCode", { length: 30 }).notNull(),
+  ruleCode: varchar("ruleCode", { length: 50 }).notNull().unique(),
+  ruleType: varchar("ruleType", { length: 30 }).notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description"),
+  conditionJson: jsonb("conditionJson"),
+  resultJson: jsonb("resultJson"),
+  severity: varchar("severity", { length: 20 }).notNull().default("medium"),
+  explanationSimple: text("explanationSimple"),
+  explanationTechnical: text("explanationTechnical"),
+  active: boolean("active").notNull().default(true),
+});
+
+export const knowledge_explanations = pgTable("knowledge_explanations", {
+  id: serial("id").primaryKey(),
+  term: varchar("term", { length: 100 }).notNull().unique(),
+  simpleExplanation: text("simpleExplanation").notNull(),
+  technicalExplanation: text("technicalExplanation"),
+  examples: jsonb("examples").default([]),
+  warnings: text("warnings"),
+  active: boolean("active").notNull().default(true),
+});
+
+export const dynamic_field_rules = pgTable("dynamic_field_rules", {
+  id: serial("id").primaryKey(),
+  speciesCode: varchar("speciesCode", { length: 30 }).notNull(),
+  modality: varchar("modality", { length: 20 }),
+  breedCode: varchar("breedCode", { length: 50 }),
+  fieldKey: varchar("fieldKey", { length: 50 }).notNull(),
+  showWhenJson: jsonb("showWhenJson"),
+  hideWhenJson: jsonb("hideWhenJson"),
+  requiredWhenJson: jsonb("requiredWhenJson"),
+  allowedValuesJson: jsonb("allowedValuesJson"),
+  defaultValue: text("defaultValue"),
+  helpText: text("helpText"),
+  active: boolean("active").notNull().default(true),
+});

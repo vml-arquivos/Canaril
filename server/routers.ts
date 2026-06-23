@@ -29,6 +29,7 @@ import { ringsRouter } from "./routers/rings";
 import { qrcodeRouter } from "./routers/qrcode";
 import { dailyCareRouter } from "./routers/dailyCare";
 import { adminRouter } from "./routers/admin";
+import { intelligenceRouter } from "./routers/intelligence";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -123,6 +124,7 @@ export const appRouter = router({
   qrcode: qrcodeRouter,
   dailyCare: dailyCareRouter,
   admin: adminRouter,
+  intelligence: intelligenceRouter,
 });
 
 export type AppRouter = typeof appRouter;
