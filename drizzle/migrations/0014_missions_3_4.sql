@@ -45,22 +45,25 @@ INSERT INTO "breeding_species_rules"
 VALUES ('Canário',13,14,7,7,9,3)
 ON CONFLICT DO NOTHING;
 
-CREATE TABLE IF NOT EXISTS "breeding_reminders" (
-  "id"          SERIAL PRIMARY KEY,
-  "coupleId"    INTEGER REFERENCES "couples"("id") ON DELETE CASCADE,
-  "clutchId"    INTEGER REFERENCES "clutches"("id") ON DELETE CASCADE,
-  "birdId"      INTEGER REFERENCES "birds"("id") ON DELETE CASCADE,
-  "reminderType" VARCHAR(30) NOT NULL,
-  -- CHECK_NEST|CANDLE_EGGS|EXPECTED_HATCH|RING_CHICKS|CLEAN_NEST|REST_FEMALE
-  "dueDate"     DATE NOT NULL,
-  "title"       VARCHAR(200) NOT NULL,
-  "notes"       TEXT,
-  "dismissed"   BOOLEAN NOT NULL DEFAULT FALSE,
-  "dismissedAt" TIMESTAMP,
-  "createdAt"   TIMESTAMP NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS br_due_date_idx  ON "breeding_reminders"("dueDate");
-CREATE INDEX IF NOT EXISTS br_couple_idx    ON "breeding_reminders"("coupleId");
+-- breeding_reminders já existe (criada em 0006). Apenas adiciona colunas novas.
+ALTER TABLE "breeding_reminders" ADD COLUMN IF NOT EXISTS "clutchId"     INTEGER REFERENCES "clutches"("id") ON DELETE CASCADE;
+ALTER TABLE "breeding_reminders" ADD COLUMN IF NOT EXISTS "birdId"       INTEGER REFERENCES "birds"("id")   ON DELETE CASCADE;
+ALTER TABLE "breeding_reminders" ADD COLUMN IF NOT EXISTS "reminderType" VARCHAR(30);
+ALTER TABLE "breeding_reminders" ADD COLUMN IF NOT EXISTS "dueDate"      DATE;
+ALTER TABLE "breeding_reminders" ADD COLUMN IF NOT EXISTS "title"        VARCHAR(200);
+ALTER TABLE "breeding_reminders" ADD COLUMN IF NOT EXISTS "dismissed"    BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE "breeding_reminders" ADD COLUMN IF NOT EXISTS "dismissedAt"  TIMESTAMP;
+-- Índices protegidos (falham silenciosamente se coluna ainda não existir)
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS br_due_date_idx ON "breeding_reminders"("dueDate");
+EXCEPTION WHEN undefined_column THEN
+  RAISE NOTICE 'Pulando index br_due_date_idx: coluna ausente.';
+END $$;
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS br_couple_idx ON "breeding_reminders"("coupleId");
+EXCEPTION WHEN undefined_column THEN
+  RAISE NOTICE 'Pulando index br_couple_idx: coluna ausente.';
+END $$;
 
 -- ─── MISSÃO 4: Administração Total ───────────────────────────────────────────
 
@@ -146,9 +149,17 @@ ALTER TABLE "users"           ADD COLUMN IF NOT EXISTS "lastLoginAt" TIMESTAMP;
 ALTER TABLE "users"           ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- Index for soft-deleted queries
-CREATE INDEX IF NOT EXISTS birds_deleted_idx        ON "birds"("deletedAt") WHERE "deletedAt" IS NOT NULL;
-CREATE INDEX IF NOT EXISTS rings_deleted_idx        ON "rings"("deletedAt") WHERE "deletedAt" IS NOT NULL;
-CREATE INDEX IF NOT EXISTS couples_deleted_idx      ON "couples"("deletedAt") WHERE "deletedAt" IS NOT NULL;
-CREATE INDEX IF NOT EXISTS clutches_deleted_idx     ON "clutches"("deletedAt") WHERE "deletedAt" IS NOT NULL;
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS birds_deleted_idx    ON "birds"("deletedAt") WHERE "deletedAt" IS NOT NULL;
+EXCEPTION WHEN undefined_column THEN RAISE NOTICE 'Pulando birds_deleted_idx.'; END $$;
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS rings_deleted_idx    ON "rings"("deletedAt") WHERE "deletedAt" IS NOT NULL;
+EXCEPTION WHEN undefined_column THEN RAISE NOTICE 'Pulando rings_deleted_idx.'; END $$;
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS couples_deleted_idx  ON "couples"("deletedAt") WHERE "deletedAt" IS NOT NULL;
+EXCEPTION WHEN undefined_column THEN RAISE NOTICE 'Pulando couples_deleted_idx.'; END $$;
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS clutches_deleted_idx ON "clutches"("deletedAt") WHERE "deletedAt" IS NOT NULL;
+EXCEPTION WHEN undefined_column THEN RAISE NOTICE 'Pulando clutches_deleted_idx.'; END $$;
 
 COMMIT;
