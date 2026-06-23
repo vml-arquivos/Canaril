@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, getPool } from "../db";
 import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
@@ -137,16 +137,30 @@ export const managementRouter = router({
       }),
 
     // Remove o lote e as anilhas individuais ainda disponíveis dele. Anilhas
-    // já em uso (vinculadas a pássaros reais) bloqueiam a remoção.
+    // já em uso vinculadas a pássaros ATIVOS bloqueiam a remoção. Órfãs são ignoradas.
     delete: protectedProcedure
       .input(z.number())
       .mutation(async ({ input }) => {
         const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        const inUse = await db.select().from(rings).where(and(eq(rings.batchId, input), eq(rings.status, "in_use")));
-        if (inUse.length > 0) {
-          throw new Error(`Este lote tem ${inUse.length} anilha(s) já em uso e não pode ser removido.`);
+        const pool = getPool();
+        if (!db || !pool) throw new Error("Database not available");
+
+        // Only block if rings are linked to an ACTIVE (non-deleted) bird
+        const { rows: activeRows } = await pool.query<{ id: number }>(
+          `SELECT r.id FROM rings r
+           JOIN birds b ON b.id = r."birdId"
+           WHERE r."batchId" = $1
+             AND r.status = 'in_use'
+             AND r."birdId" IS NOT NULL
+             AND (b."deletedAt" IS NULL)
+           LIMIT 1`,
+          [input]
+        );
+
+        if (activeRows.length > 0) {
+          throw new Error(`Este lote tem anilha(s) vinculada(s) a pássaro(s) ativo(s) e não pode ser removido. Use a opção "Reconciliar órfãs" se os pássaros já foram removidos.`);
         }
+
         await db.delete(rings).where(eq(rings.batchId, input));
         await db.delete(ring_batches).where(eq(ring_batches.id, input));
         return { success: true };

@@ -7,11 +7,160 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { Plus, Trash2, Edit2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Edit2, AlertCircle, RotateCcw, Shield, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { InlineAlert } from "@/components/ui-premium";
+
+// ─── Smart Delete Modal ───────────────────────────────────────────────────────
+
+function DeleteBatchModal({
+  batchId,
+  batchNumber,
+  onClose,
+  onDeleted,
+}: {
+  batchId: number;
+  batchNumber: string;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [forceConfirm, setForceConfirm] = useState("");
+  const [forceMode, setForceMode] = useState<"RECONCILE_AND_DELETE" | "DELETE_AVAILABLE_ONLY" | "FORCE_DELETE_ALL">("RECONCILE_AND_DELETE");
+
+  const { data: preview, isLoading: previewLoading } = trpc.ringsV2.batches.previewDelete.useQuery(batchId);
+
+  const deleteMutation = trpc.ringsV2.batches.delete.useMutation({
+    onSuccess: () => { toast.success("Lote excluído com sucesso!"); onDeleted(); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const reconcileMutation = trpc.ringsV2.batches.reconcileOrphans.useMutation({
+    onSuccess: (d) => { toast.success(d.message); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const forceMutation = trpc.ringsV2.batches.forceDelete.useMutation({
+    onSuccess: () => { toast.success("Lote excluído (força administrativa)."); onDeleted(); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md space-y-4 p-6">
+        <h2 className="font-bold text-gray-900 text-lg">Excluir Lote <span className="font-mono text-amber-700">{batchNumber}</span></h2>
+
+        {previewLoading && (
+          <div className="flex items-center gap-2 text-gray-400 py-4"><Loader2 className="w-4 h-4 animate-spin" />Verificando dependências...</div>
+        )}
+
+        {preview && (
+          <div className="space-y-3">
+            {/* Status visual */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-gray-50 rounded-lg py-3"><p className="text-xl font-bold text-gray-700">{preview.total}</p><p className="text-xs text-gray-400">Total</p></div>
+              <div className="bg-green-50 rounded-lg py-3"><p className="text-xl font-bold text-green-700">{preview.available}</p><p className="text-xs text-gray-400">Disponíveis</p></div>
+              <div className={`rounded-lg py-3 ${preview.activelyUsed > 0 ? "bg-red-50" : preview.orphans > 0 ? "bg-amber-50" : "bg-gray-50"}`}>
+                <p className={`text-xl font-bold ${preview.activelyUsed > 0 ? "text-red-700" : preview.orphans > 0 ? "text-amber-700" : "text-gray-300"}`}>{preview.inUse}</p>
+                <p className="text-xs text-gray-400">Em uso</p>
+              </div>
+            </div>
+
+            {/* Mensagem de status */}
+            <InlineAlert variant={preview.activelyUsed > 0 ? "error" : preview.orphans > 0 ? "warning" : "success"}>
+              {preview.message}
+            </InlineAlert>
+
+            {/* Orphan detail */}
+            {preview.orphans > 0 && preview.orphanNumbers.length > 0 && (
+              <div className="bg-amber-50 rounded-lg p-3 text-xs">
+                <p className="font-semibold text-amber-800 mb-1">Anilhas órfãs ({preview.orphans}):</p>
+                <p className="text-amber-700 font-mono break-all">{preview.orphanNumbers.slice(0, 8).join(", ")}{preview.orphanNumbers.length > 8 ? ` + ${preview.orphanNumbers.length - 8} mais` : ""}</p>
+              </div>
+            )}
+
+            {/* Active birds blocking */}
+            {preview.activelyUsed > 0 && preview.activeNumbers.length > 0 && (
+              <div className="bg-red-50 rounded-lg p-3 text-xs">
+                <p className="font-semibold text-red-800 mb-1">Vinculadas a pássaros ativos ({preview.activelyUsed}):</p>
+                <p className="text-red-700 font-mono break-all">{preview.activeNumbers.slice(0, 5).join(", ")}{preview.activeNumbers.length > 5 ? ` + ${preview.activeNumbers.length - 5} mais` : ""}</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="space-y-2 pt-1">
+              {/* Simple delete if safe */}
+              {preview.canSafeDelete && (
+                <Button
+                  className="w-full bg-red-600 hover:bg-red-700"
+                  onClick={() => deleteMutation.mutate(batchId)}
+                  disabled={deleteMutation.isPending}
+                >
+                  {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                  Excluir lote
+                </Button>
+              )}
+
+              {/* Reconcile orphans then delete */}
+              {preview.canReconcileAndDelete && (
+                <Button
+                  className="w-full bg-amber-600 hover:bg-amber-700"
+                  onClick={async () => {
+                    await reconcileMutation.mutateAsync(batchId);
+                    deleteMutation.mutate(batchId);
+                  }}
+                  disabled={reconcileMutation.isPending || deleteMutation.isPending}
+                >
+                  {reconcileMutation.isPending || deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}
+                  Corrigir órfãs e excluir
+                </Button>
+              )}
+
+              {/* Force delete — always available with confirmation */}
+              <details className="group">
+                <summary className="cursor-pointer text-xs text-red-600 flex items-center gap-1 hover:text-red-800">
+                  <Shield className="w-3 h-3" />Exclusão administrativa (força total)
+                </summary>
+                <div className="mt-2 space-y-2 border border-red-200 rounded-lg p-3 bg-red-50">
+                  <select
+                    className="w-full text-xs border border-red-200 rounded p-1.5"
+                    value={forceMode}
+                    onChange={(e) => setForceMode(e.target.value as any)}
+                  >
+                    <option value="RECONCILE_AND_DELETE">Corrigir órfãs + excluir tudo</option>
+                    <option value="DELETE_AVAILABLE_ONLY">Excluir só disponíveis</option>
+                    <option value="FORCE_DELETE_ALL">Forçar exclusão total</option>
+                  </select>
+                  <Input
+                    className="text-xs"
+                    placeholder="Digite EXCLUIR LOTE"
+                    value={forceConfirm}
+                    onChange={(e) => setForceConfirm(e.target.value)}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full bg-red-700 hover:bg-red-800 text-white text-xs"
+                    disabled={forceConfirm !== "EXCLUIR LOTE" || forceMutation.isPending}
+                    onClick={() => forceMutation.mutate({ batchId, mode: forceMode, confirmationText: "EXCLUIR LOTE" })}
+                  >
+                    {forceMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+                    Executar exclusão forçada
+                  </Button>
+                </div>
+              </details>
+            </div>
+          </div>
+        )}
+
+        <Button variant="outline" className="w-full" onClick={onClose}>Cancelar</Button>
+      </div>
+    </div>
+  );
+}
 
 export default function Rings() {
   const [open, setOpen] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<{ id: number; batchNumber: string } | null>(null);
   const [formData, setFormData] = useState({
     batch_number: "",
     year: new Date().getFullYear().toString(),
@@ -40,20 +189,17 @@ export default function Rings() {
     },
   });
 
-  const deleteRingBatch = trpc.management.rings.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Lote removido com sucesso!");
-      refetch();
-    },
-    onError: (error) => toast.error("Erro ao remover lote: " + error.message),
-  });
-
   const updateRingBatch = trpc.management.rings.update.useMutation({
     onSuccess: () => {
       toast.success("Lote atualizado com sucesso!");
       refetch();
     },
     onError: (error) => toast.error("Erro ao atualizar lote: " + error.message),
+  });
+
+  const reconcileAll = trpc.ringsV2.batches.reconcileAllOrphans.useMutation({
+    onSuccess: (d) => { toast.success(d.message); refetch(); },
+    onError: (e) => toast.error("Erro: " + e.message),
   });
 
   const handleEditColor = (id: number, currentColor: string) => {
@@ -83,10 +229,8 @@ export default function Rings() {
     });
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Tem certeza que deseja remover este lote? Anilhas já em uso bloqueiam a remoção.")) {
-      deleteRingBatch.mutate(id);
-    }
+  const handleDelete = (id: number, batchNumber: string) => {
+    setDeleteModal({ id, batchNumber });
   };
 
   const previewCount =
@@ -95,19 +239,41 @@ export default function Rings() {
       : 0;
 
   const totalRings = rings?.reduce((sum, r) => sum + r.quantity_total, 0) || 0;
+  // Use the raw count from quantity_used (it's recalculated on reconcile)
   const usedRings = rings?.reduce((sum, r) => sum + r.quantity_used, 0) || 0;
   const availableRings = totalRings - usedRings;
 
   return (
     <DashboardLayout>
+      {/* Smart delete modal */}
+      {deleteModal && (
+        <DeleteBatchModal
+          batchId={deleteModal.id}
+          batchNumber={deleteModal.batchNumber}
+          onClose={() => setDeleteModal(null)}
+          onDeleted={() => { refetch(); setDeleteModal(null); }}
+        />
+      )}
+
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center flex-wrap gap-3">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Gestão de Anilhas</h1>
             <p className="text-gray-600 mt-2">Controle de lotes e disponibilidade</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <div className="flex gap-2 flex-wrap items-center">
+            <Button
+              variant="outline"
+              className="border-amber-200 text-amber-700 hover:bg-amber-50"
+              onClick={() => reconcileAll.mutate()}
+              disabled={reconcileAll.isPending}
+              title="Corrige anilhas 'em uso' cujo pássaro foi removido"
+            >
+              {reconcileAll.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}
+              Reconciliar órfãs
+            </Button>
+            <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button className="bg-purple-600 hover:bg-purple-700">
                 <Plus className="w-4 h-4 mr-2" />
@@ -187,7 +353,8 @@ export default function Rings() {
               </form>
             </DialogContent>
           </Dialog>
-        </div>
+          </div> {/* end flex gap-2 */}
+        </div> {/* end header */}
 
         {/* Stats */}
         <div className="grid md:grid-cols-3 gap-4">
@@ -283,8 +450,9 @@ export default function Rings() {
                                 size="sm"
                                 variant="ghost"
                                 className="text-red-600"
-                                onClick={() => handleDelete(ring.id)}
-                                title="Remover lote (só se nenhuma anilha estiver em uso)"
+                                aria-label={`Excluir lote ${ring.batch_number}`}
+                                onClick={() => handleDelete(ring.id, ring.batch_number)}
+                                title="Verificar dependências e excluir lote"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
