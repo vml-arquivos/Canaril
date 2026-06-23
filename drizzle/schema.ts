@@ -4,7 +4,8 @@
 // primary key, and `integer` represents standard integer columns. Other
 // helpers (varchar, text, timestamp, index) remain the same API across
 // dialects.
-import { serial, integer, varchar, text, timestamp, pgTable, index, jsonb, boolean, real } from "drizzle-orm/pg-core";
+import { serial, integer, varchar, text, timestamp, date, pgTable, index, jsonb, boolean, real } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 /**
  * Estrutura de um possível resultado de cruzamento, usada pela calculadora
@@ -42,6 +43,8 @@ export const users = pgTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
 });
 
 /**
@@ -172,6 +175,10 @@ export const birds = pgTable("birds", {
   isPublic: boolean("isPublic").default(false).notNull(),
   // Código público único para QR Code — gerado pelo backend, nullable até ser ativado.
   publicCode: varchar("publicCode", { length: 20 }).unique(),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
+  deleteReason: text("deleteReason"),
+  updatedBy: integer("updatedBy"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -199,6 +206,8 @@ export const couples = pgTable("couples", {
   // antes desta tabela existir.
   cageId: integer("cageId"),
   formationDate: timestamp("formationDate").notNull(),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -220,6 +229,8 @@ export const clutches = pgTable("clutches", {
   infertileEggs: integer("infertileEggs").default(0).notNull(),
   lostEggs: integer("lostEggs").default(0).notNull(),
   hatchedChicks: integer("hatchedChicks").default(0).notNull(),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -239,6 +250,8 @@ export const chicks = pgTable("chicks", {
   birthDate: timestamp("birthDate").notNull(),
   ringDate: timestamp("ringDate"),
   weanDate: timestamp("weanDate"),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   // Quando o filhote é "promovido" ao plantel reprodutor (vira candidato a
   // formar casais/entrar em exposições), uma linha correspondente é criada
@@ -380,6 +393,8 @@ export const cages = pgTable("cages", {
   status: varchar("status", { length: 20 }).default("free").notNull(), // free | occupied | maintenance
   // Código público único para QR Code — nullable até ser ativado.
   publicCode: varchar("publicCode", { length: 20 }).unique(),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -400,6 +415,9 @@ export const championships = pgTable("championships", {
   status: varchar("status", { length: 20 }).default("upcoming").notNull(), // upcoming | ongoing | finished
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
@@ -791,3 +809,80 @@ export type BirdPhotoAnalysis = typeof bird_photo_analyses.$inferSelect;
 export type InsertBirdPhotoAnalysis = typeof bird_photo_analyses.$inferInsert;
 export type BirdGeneticInferenceLog = typeof bird_genetic_inference_logs.$inferSelect;
 export type InsertBirdGeneticInferenceLog = typeof bird_genetic_inference_logs.$inferInsert;
+
+// ─── Missão 3.1 + 4: Rotina Diária & Administração ───────────────────────────
+
+export const breeding_daily_logs = pgTable("breeding_daily_logs", {
+  id: serial("id").primaryKey(),
+  coupleId: integer("coupleId").notNull(),
+  clutchId: integer("clutchId"),
+  cageId: integer("cageId"),
+  date: date("date").notNull().default(sql`CURRENT_DATE`),
+  eventType: varchar("eventType", { length: 30 }).notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  notePreset: varchar("notePreset", { length: 100 }),
+  noteText: text("noteText"),
+  photoUrl: text("photoUrl"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (t) => ({
+  coupleDateIdx: index("bdl_couple_date_idx2").on(t.coupleId, t.date),
+}));
+
+export const breeding_species_rules = pgTable("breeding_species_rules", {
+  id: serial("id").primaryKey(),
+  species: varchar("species", { length: 50 }).notNull().unique(),
+  incubationDaysMin: integer("incubationDaysMin").notNull().default(13),
+  incubationDaysMax: integer("incubationDaysMax").notNull().default(14),
+  candlingDay: integer("candlingDay").notNull().default(7),
+  ringingDayMin: integer("ringingDayMin").notNull().default(7),
+  ringingDayMax: integer("ringingDayMax").notNull().default(9),
+  maxClutchesPerSeason: integer("maxClutchesPerSeason").notNull().default(3),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const tenants = pgTable("tenants", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  ownerUserId: integer("ownerUserId"),
+  breederCode: varchar("breederCode", { length: 50 }),
+  associationName: varchar("associationName", { length: 100 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 50 }),
+  country: varchar("country", { length: 10 }).default("BR"),
+  phone: varchar("phone", { length: 30 }),
+  email: varchar("email", { length: 200 }),
+  logoUrl: text("logoUrl"),
+  publicSiteEnabled: boolean("publicSiteEnabled").notNull().default(true),
+  publicSlug: varchar("publicSlug", { length: 100 }).unique(),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
+});
+
+export const audit_logs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenantId"),
+  userId: integer("userId"),
+  action: varchar("action", { length: 30 }).notNull(),
+  entityType: varchar("entityType", { length: 50 }).notNull(),
+  entityId: integer("entityId"),
+  oldValueJson: jsonb("oldValueJson"),
+  newValueJson: jsonb("newValueJson"),
+  reason: text("reason"),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: text("userAgent"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  entityIdx: index("al_entity_idx2").on(t.entityType, t.entityId),
+  dateIdx: index("al_date_idx2").on(t.createdAt),
+}));
+
+export type BreedingDailyLog = typeof breeding_daily_logs.$inferSelect;
+export type BreedingSpeciesRule = typeof breeding_species_rules.$inferSelect;
+export type Tenant = typeof tenants.$inferSelect;
+export type AuditLog = typeof audit_logs.$inferSelect;

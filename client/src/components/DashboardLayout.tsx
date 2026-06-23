@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map, TrendingUp } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map, TrendingUp, ClipboardList, Shield } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -31,6 +31,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Bird, label: "Pássaros", path: "/birds" },
   { icon: Heart, label: "Casais", path: "/couples" },
+  { icon: ClipboardList, label: "Rotina Diária", path: "/rotina" },
   { icon: Calendar, label: "Temporada", path: "/temporada" },
   { icon: Map, label: "Mapa do Criadouro", path: "/criadouro-mapa" },
   { icon: TrendingUp, label: "Linhagem & Genética", path: "/linhagem" },
@@ -41,6 +42,7 @@ const menuItems = [
   { icon: Trophy, label: "Campeonatos", path: "/championships" },
   { icon: BarChart3, label: "Relatórios", path: "/reports" },
   { icon: Settings, label: "Configurações", path: "/settings" },
+  { icon: Shield, label: "Administração", path: "/admin" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

@@ -27,6 +27,8 @@ import { photoAnalysisRouter } from "./routers/photoAnalysis";
 import { pairingOptimizerRouter } from "./routers/pairingOptimizer";
 import { ringsRouter } from "./routers/rings";
 import { qrcodeRouter } from "./routers/qrcode";
+import { dailyCareRouter } from "./routers/dailyCare";
+import { adminRouter } from "./routers/admin";
 
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
@@ -119,6 +121,8 @@ export const appRouter = router({
   pairingOptimizer: pairingOptimizerRouter,
   ringsV2: ringsRouter,
   qrcode: qrcodeRouter,
+  dailyCare: dailyCareRouter,
+  admin: adminRouter,
 });
 
 export type AppRouter = typeof appRouter;
