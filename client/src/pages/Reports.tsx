@@ -15,22 +15,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { SexBadge, CoiRiskBadge } from "@/components/ui-premium";
 
 function labelFor(list: readonly { id: string; name: string }[], code: string) {
   return list.find((i) => i.id === code)?.name ?? code;
-}
-
-function SexBadge({ sex }: { sex: string }) {
-  if (sex === "macho" || sex === "M") return <Badge className="bg-blue-100 text-blue-800 border-blue-200">♂ Macho</Badge>;
-  if (sex === "fêmea" || sex === "F") return <Badge className="bg-rose-100 text-rose-800 border-rose-200">♀ Fêmea</Badge>;
-  return <Badge variant="outline">{sex}</Badge>;
-}
-
-function CoiRiskBadge({ risk }: { risk: string | null }) {
-  if (!risk) return <span className="text-gray-400 text-xs">—</span>;
-  if (risk === "low") return <Badge className="bg-green-100 text-green-800 text-xs">Baixo</Badge>;
-  if (risk === "moderate") return <Badge className="bg-amber-100 text-amber-800 text-xs">Moderado</Badge>;
-  return <Badge className="bg-red-100 text-red-800 text-xs">Alto</Badge>;
 }
 
 // ────────────────────────────────────────────────────────────

@@ -16,36 +16,17 @@ import {
   Star, Egg, BarChart3, Zap,
 } from "lucide-react";
 import { Link } from "wouter";
+import { CoiRiskBadge, ScoreBar, PairingStatusBadge } from "@/components/ui-premium";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-function CoiRiskBadge({ risk }: { risk: string | null }) {
-  if (!risk) return <span className="text-gray-300 text-xs">—</span>;
-  const cfg: Record<string, string> = { low: "bg-green-100 text-green-800", moderate: "bg-amber-100 text-amber-800", high: "bg-red-100 text-red-800", very_high: "bg-red-200 text-red-900" };
-  const label: Record<string, string> = { low: "Baixo", moderate: "Moderado", high: "Alto", very_high: "Muito alto" };
-  return <Badge className={`text-xs ${cfg[risk] ?? "bg-gray-100 text-gray-600"}`}>{label[risk] ?? risk}</Badge>;
-}
-
-function ScoreBar({ value, max = 100, color = "bg-amber-500" }: { value: number; max?: number; color?: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${Math.min((value / max) * 100, 100)}%` }} />
-      </div>
-      <span className="text-xs text-gray-600 font-mono">{value}</span>
-    </div>
-  );
-}
+// ── StatusBadge local (specific to pairing statuses shown here) ─────────────
 
 function StatusBadge({ status }: { status: string }) {
-  const cfg: Record<string, { color: string; label: string }> = {
-    ideal: { color: "bg-green-100 text-green-800 border-green-200", label: "Ideal" },
-    aprovado: { color: "bg-blue-100 text-blue-800 border-blue-200", label: "Aprovado" },
-    atencao: { color: "bg-amber-100 text-amber-800 border-amber-200", label: "Atenção" },
-    nao_recomendado: { color: "bg-red-100 text-red-800 border-red-200", label: "Não recomendado" },
-  };
-  const c = cfg[status] ?? cfg.atencao;
-  return <Badge className={`text-xs border ${c.color}`}>{c.label}</Badge>;
+  // Use PairingStatusBadge from premium if it's a pairing status
+  if (["ideal","aprovado","atencao","nao_recomendado"].includes(status)) {
+    const map: Record<string, any> = { ideal: "ideal", aprovado: "approved", atencao: "caution", nao_recomendado: "not_recommended" };
+    return <PairingStatusBadge status={map[status] ?? "caution"} />;
+  }
+  return <span className="text-xs text-gray-500">{status}</span>;
 }
 
 // ── Tab: Índice de Linhagem ──────────────────────────────────────────────────
@@ -294,7 +275,7 @@ function TabAssistente() {
                     <span className="text-xs text-gray-400 font-mono">{i + 1}.</span>
                     <Link href={`/birds/${c.birdId}/ficha`} className="font-mono font-semibold text-sm text-amber-700 hover:underline">{c.ring}</Link>
                     <StatusBadge status={c.status} />
-                    <CoiRiskBadge risk={c.coiRisk} />
+                    <CoiRiskBadge risk={c.coiRisk === "very_high" ? "high" : (c.coiRisk as any)} />
                     <span className="text-xs text-gray-400">COI {c.coiPct}</span>
                   </div>
                   {c.displayTitle && <p className="text-xs text-gray-500 mb-1">{c.displayTitle}</p>}

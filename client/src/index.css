@@ -175,3 +175,66 @@
     }
   }
 }
+/* ─── Safe area for mobile bottom nav ───────────────────────────────────────── */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Print stylesheet ───────────────────────────────────────────────────────── */
+@media print {
+  .print\\:hidden { display: none !important; }
+
+  body {
+    font-size: 12pt;
+    color: #111;
+    background: white;
+  }
+
+  /* Remove all backgrounds/shadows in print */
+  * {
+    box-shadow: none !important;
+    border-color: #ddd !important;
+  }
+
+  /* Ensure cards print cleanly */
+  .card, [class*="rounded"] {
+    border-radius: 0 !important;
+  }
+
+  /* Page breaks */
+  .page-break-before { page-break-before: always; }
+  .page-break-after  { page-break-after: always; }
+  .no-page-break     { page-break-inside: avoid; }
+
+  /* Remove fixed/sticky elements */
+  header, nav, aside, footer { display: none !important; }
+}
+
+/* ─── Mobile table overflow fix ─────────────────────────────────────────────── */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Scrollbar hide for mobile filter chips ────────────────────────────────── */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Focus visible ring — acessibilidade ────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid theme('colors.amber.500');
+  outline-offset: 2px;
+}
+
+/* ─── Bottom nav content spacer on mobile ────────────────────────────────────── */
+@media (max-width: 767px) {
+  .has-bottom-nav {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+}

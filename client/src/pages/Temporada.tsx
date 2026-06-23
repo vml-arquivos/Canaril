@@ -9,6 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import {
+  MetricCard, InlineAlert, EmptyState, LoadingSkeleton, PageHeader,
+} from "@/components/ui-premium";
+import {
   Bird, Egg, Heart, Feather, AlertTriangle, CheckCircle2,
   Calendar, Clock, Bell, TrendingUp,
 } from "lucide-react";

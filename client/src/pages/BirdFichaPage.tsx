@@ -14,10 +14,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import {
+  CoiRiskBadge, GeneticStatusBadge, HelpTooltip, InlineAlert,
+  EmptyState, MetricCard, PageHeader, SexBadge,
+} from "@/components/ui-premium";
+import { BACKGROUND_COLORS, FEATHER_TYPES } from "@shared/constants";
+import {
   Bird, Dna, GitBranch, Egg, Printer, ArrowLeft,
   AlertTriangle, CheckCircle2, Calendar, Feather, Info, QrCode, Clock,
 } from "lucide-react";
-import { BACKGROUND_COLORS, FEATHER_TYPES } from "@shared/constants";
 import { toast } from "sonner";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -46,12 +50,6 @@ function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="text-sm text-gray-800 flex-1">{value ?? "—"}</span>
     </div>
   );
-}
-
-function SexBadge({ sex }: { sex: string }) {
-  if (sex === "macho" || sex === "M") return <Badge className="bg-blue-100 text-blue-800 border-blue-200">♂ Macho</Badge>;
-  if (sex === "fêmea" || sex === "F") return <Badge className="bg-rose-100 text-rose-800 border-rose-200">♀ Fêmea</Badge>;
-  return <Badge variant="outline">{sex}</Badge>;
 }
 
 const ZYGOSITY_PT: Record<string, string> = {
