@@ -25,15 +25,26 @@ const TODAY = () => new Date().toISOString().slice(0, 10);
 export const dailyCareRouter = router({
 
   // ─── Listar casais ativos com resumo do dia ─────────────────────────────
-  listActiveCouples: protectedProcedure.query(async () => {
+  listActiveCouples: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+
+    // Filtrar por tenant quando usuário operacional
+    const coupleFilter = tenantId
+      ? and(eq(couples.status, "active"), isNull(couples.deletedAt), eq(couples.tenantId, tenantId))
+      : and(eq(couples.status, "active"), isNull(couples.deletedAt));
+    const birdFilter  = tenantId ? eq(birds.tenantId, tenantId)   : undefined;
+    const cageFilter  = tenantId ? eq(cages.tenantId, tenantId)   : undefined;
+    const clutchFilter = tenantId
+      ? and(isNull(clutches.deletedAt), eq(clutches.tenantId, tenantId))
+      : isNull(clutches.deletedAt);
 
     const [activeCouples, allBirds, allCages, allClutches, allLogs, speciesRules] = await Promise.all([
-      db.select().from(couples).where(and(eq(couples.status, "active"), isNull(couples.deletedAt))),
-      db.select().from(birds),
-      db.select().from(cages),
-      db.select().from(clutches).where(isNull(clutches.deletedAt)),
+      db.select().from(couples).where(coupleFilter),
+      birdFilter ? db.select().from(birds).where(birdFilter) : db.select().from(birds),
+      cageFilter ? db.select().from(cages).where(cageFilter) : db.select().from(cages),
+      db.select().from(clutches).where(clutchFilter),
       db.select().from(breeding_daily_logs),
       db.select().from(breeding_species_rules).limit(1),
     ]);
@@ -223,13 +234,18 @@ export const dailyCareRouter = router({
     }),
 
   // ─── Casais sem registro hoje ─────────────────────────────────────────
-  getDailySummary: protectedProcedure.query(async () => {
+  getDailySummary: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { couplesWithLogs: [], couplesWithoutLogs: [], totalActive: 0 };
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
 
     const todayStr = TODAY();
+    const coupleWhere = tenantId
+      ? and(eq(couples.status, "active"), isNull(couples.deletedAt), eq(couples.tenantId, tenantId))
+      : and(eq(couples.status, "active"), isNull(couples.deletedAt));
+
     const [activeCouples, todayLogs] = await Promise.all([
-      db.select({ id: couples.id }).from(couples).where(and(eq(couples.status, "active"), isNull(couples.deletedAt))),
+      db.select({ id: couples.id }).from(couples).where(coupleWhere),
       db.select({ coupleId: breeding_daily_logs.coupleId }).from(breeding_daily_logs).where(eq(breeding_daily_logs.date, todayStr)),
     ]);
 

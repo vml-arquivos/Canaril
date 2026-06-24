@@ -29,7 +29,7 @@ function countBy<T extends Record<string, any>>(rows: T[], key: keyof T): Record
 
 export const reportsRouter = router({
   // ─── Existente: Dashboard summary ──────────────────────────────────────────
-  summary: protectedProcedure.query(async () => {
+  summary: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) {
       return {
@@ -50,13 +50,15 @@ export const reportsRouter = router({
         topScores: [] as Array<{ entryId: number; birdId: number; category: string; totalScore: number; placement: number | null; championshipName: string }>,
       };
     }
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tf = tenantId !== null;
 
     const [birdsList, couplesList, clutchesList, ringsList, championshipsList, entriesList, scoresList] = await Promise.all([
-      db.select().from(birds),
-      db.select().from(couples),
-      db.select().from(clutches),
-      db.select().from(rings),
-      db.select().from(championships),
+      tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
+      tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
+      tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
+      tf ? db.select().from(rings).where(eq(rings.tenantId, tenantId)) : db.select().from(rings),
+      tf ? db.select().from(championships).where(eq(championships.tenantId, tenantId)) : db.select().from(championships),
       db.select().from(championship_entries),
       db.select().from(scores).orderBy(desc(scores.totalScore)),
     ]);
@@ -110,16 +112,18 @@ export const reportsRouter = router({
         search: z.string().optional(),
       }).optional()
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { rows: [], generatedAt: new Date(), total: 0 };
+      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tf = tenantId !== null;
 
       const [allBirds, allGenotypes, allProfiles, allCouples, allClutches] = await Promise.all([
-        db.select().from(birds),
+        tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
         db.select().from(bird_genotype),
         db.select().from(bird_genetic_profiles),
-        db.select().from(couples),
-        db.select().from(clutches),
+        tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
+        tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
       ]);
 
       const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
@@ -270,12 +274,14 @@ export const reportsRouter = router({
     }),
 
   // ─── NOVO: Relatório de Lacunas de Dados ───────────────────────────────────
-  lacunasDados: protectedProcedure.query(async () => {
+  lacunasDados: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { rows: [], generatedAt: new Date(), summary: null };
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tf = tenantId !== null;
 
     const [allBirds, allGenotypes, allProfiles] = await Promise.all([
-      db.select().from(birds).where(eq(birds.status, "active")),
+      tf ? db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))) : db.select().from(birds).where(eq(birds.status, "active")),
       db.select().from(bird_genotype),
       db.select().from(bird_genetic_profiles),
     ]);
@@ -320,13 +326,17 @@ export const reportsRouter = router({
   }),
 
   // ─── NOVO: Relatório de Anilhas ─────────────────────────────────────────────
-  anilhas: protectedProcedure.query(async () => {
+  anilhas: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { batches: [], rings: [], generatedAt: new Date(), summary: null };
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tf = tenantId !== null;
 
     const [batches, allRings] = await Promise.all([
-      db.select().from(ring_batches).orderBy(desc(ring_batches.year)),
-      db.select().from(rings),
+      tf
+        ? db.select().from(ring_batches).where(eq(ring_batches.tenantId, tenantId)).orderBy(desc(ring_batches.year))
+        : db.select().from(ring_batches).orderBy(desc(ring_batches.year)),
+      tf ? db.select().from(rings).where(eq(rings.tenantId, tenantId)) : db.select().from(rings),
     ]);
 
     const ringsByBatch = new Map<number, typeof allRings>();
@@ -436,14 +446,16 @@ export const reportsRouter = router({
     }),
 
   // ─── NOVO: Relatório de Casais e Reprodução ──────────────────────────────
-  casaisReproducao: protectedProcedure.query(async () => {
+  casaisReproducao: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { rows: [], generatedAt: new Date() };
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tf = tenantId !== null;
 
     const [allCouples, allBirds, allClutches] = await Promise.all([
-      db.select().from(couples),
-      db.select().from(birds),
-      db.select().from(clutches),
+      tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
+      tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
+      tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
     ]);
 
     const birdMap = new Map(allBirds.map((b) => [b.id, b]));
@@ -501,9 +513,11 @@ export const reportsRouter = router({
   }),
 
   // ─── NOVO: Painel de Temporada ────────────────────────────────────────────
-  temporada: protectedProcedure.query(async () => {
+  temporada: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return null;
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tf = tenantId !== null;
 
     const now = new Date();
     const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -513,11 +527,11 @@ export const reportsRouter = router({
     const RINGING_DAYS_AFTER_HATCH = 8;
 
     const [allCouples, allClutches, allChicks, allRings, allBirds] = await Promise.all([
-      db.select().from(couples),
-      db.select().from(clutches),
-      db.select().from(chicks),
-      db.select().from(rings),
-      db.select().from(birds).where(eq(birds.status, "active")),
+      tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
+      tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
+      tf ? db.select().from(chicks).where(eq(chicks.tenantId, tenantId)) : db.select().from(chicks),
+      tf ? db.select().from(rings).where(eq(rings.tenantId, tenantId)) : db.select().from(rings),
+      tf ? db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))) : db.select().from(birds).where(eq(birds.status, "active")),
     ]);
 
     const activeCouples = allCouples.filter((c) => c.status === "active");
@@ -617,13 +631,15 @@ export const reportsRouter = router({
       return { ...analysis, commonAncestors: enriched, generatedAt: new Date() };
     }),
 
-indice: protectedProcedure.query(async () => {
+indice: protectedProcedure.query(async ({ ctx }) => {
   const db = await getDb();
   if (!db) return { rows: [], generatedAt: new Date() };
+  const tenantId = (ctx.user as any)?.tenantId ?? null;
+  const tf = tenantId !== null;
   const [allBirds, allCouples, allClutches, allEntries, allScores] = await Promise.all([
-    db.select().from(birds),
-    db.select().from(couples),
-    db.select().from(clutches),
+    tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
+    tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
+    tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
     db.select().from(championship_entries),
     db.select().from(scores),
   ]);
@@ -660,11 +676,13 @@ indice: protectedProcedure.query(async () => {
   return { rows, generatedAt: new Date() };
 }),
 
-mapaGenetico: protectedProcedure.query(async () => {
+mapaGenetico: protectedProcedure.query(async ({ ctx }) => {
   const db = await getDb();
   if (!db) return null;
+  const tenantId = (ctx.user as any)?.tenantId ?? null;
+  const tf = tenantId !== null;
   const [allBirds, allGenotypes, allProfiles] = await Promise.all([
-    db.select().from(birds).where(eq(birds.status, "active")),
+    tf ? db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))) : db.select().from(birds).where(eq(birds.status, "active")),
     db.select().from(bird_genotype),
     db.select().from(bird_genetic_profiles),
   ]);

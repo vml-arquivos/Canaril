@@ -193,4 +193,67 @@ export const adminResetRouter = router({
         .orderBy(desc(audit_logs.createdAt))
         .limit(input.limit);
     }),
+
+  // ─── Backfill de tenantId nos dados antigos ───────────────────────────────
+  // Vincula registros sem tenantId ao tenant principal do sistema.
+  // Executar uma vez após deploy da migration 0018.
+  backfillTenantIds: protectedProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new Error("Banco não disponível.");
+
+      // Descobrir tenant principal (menor id não deletado)
+      const { tenants } = await import("../../drizzle/schema");
+      const { isNull: isNullDrizzle, asc } = await import("drizzle-orm");
+      const [firstTenant] = await db
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(isNullDrizzle(tenants.deletedAt))
+        .orderBy(asc(tenants.id))
+        .limit(1);
+
+      if (!firstTenant) {
+        return { success: false, message: "Nenhum tenant encontrado. Crie um canaril primeiro." };
+      }
+
+      const tid = firstTenant.id;
+      const {
+        birds: birdsT, rings: ringsT, ring_batches: rbT,
+        couples: couplesT, clutches: clutchesT, chicks: chicksT,
+        cages: cagesT, championships: chipsT,
+      } = await import("../../drizzle/schema");
+      const { isNull: isNullD, eq: eqD } = await import("drizzle-orm");
+
+      const tables = [
+        { table: birdsT,   name: "birds" },
+        { table: ringsT,   name: "rings" },
+        { table: rbT,      name: "ring_batches" },
+        { table: couplesT, name: "couples" },
+        { table: clutchesT,name: "clutches" },
+        { table: chicksT,  name: "chicks" },
+        { table: cagesT,   name: "cages" },
+        { table: chipsT,   name: "championships" },
+      ] as const;
+
+      const results: Record<string, number> = {};
+      for (const { table, name } of tables) {
+        try {
+          const updated = await (db as any)
+            .update(table)
+            .set({ tenantId: tid })
+            .where(isNullD((table as any).tenantId))
+            .returning({ id: (table as any).id });
+          results[name] = updated.length;
+        } catch {
+          results[name] = -1;
+        }
+      }
+
+      return {
+        success: true,
+        tenantId: tid,
+        updated: results,
+        message: `Backfill concluído para o tenant principal #${tid}.`,
+      };
+    }),
 });

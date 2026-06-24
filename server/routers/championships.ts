@@ -14,11 +14,13 @@ const criteriaScoreSchema = z.object({
 });
 
 export const championshipsRouter = router({
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-
-    return db.select().from(championships).orderBy(desc(championships.startDate));
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    let query: any = db.select().from(championships).orderBy(desc(championships.startDate));
+    if (tenantId !== null) query = query.where(eq(championships.tenantId, tenantId));
+    return query;
   }),
 
   getById: protectedProcedure
@@ -43,10 +45,10 @@ export const championshipsRouter = router({
         notes: z.string().trim().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível");
-
+      const tenantId = (ctx.user as any)?.tenantId ?? null;
       const [created] = await db
         .insert(championships)
         .values({
@@ -57,6 +59,7 @@ export const championshipsRouter = router({
           endDate: input.endDate,
           status: input.status ?? "upcoming",
           notes: input.notes || null,
+          tenantId: tenantId ?? null,
         })
         .returning();
 

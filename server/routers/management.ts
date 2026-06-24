@@ -108,11 +108,13 @@ export const managementRouter = router({
     // Anilhas individuais disponíveis (para selects de cadastro de pássaro/filhote)
     listAvailable: protectedProcedure
       .input(z.object({ batchId: z.number().optional() }).optional())
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) return [];
         try {
-          const conditions = [eq(rings.status, "available")];
+          const tenantId = (ctx.user as any)?.tenantId ?? null;
+          const conditions: any[] = [eq(rings.status, "available")];
+          if (tenantId !== null) conditions.push(eq(rings.tenantId, tenantId));
           if (input?.batchId) conditions.push(eq(rings.batchId, input.batchId));
           return await db.select().from(rings).where(and(...conditions)).orderBy(rings.sequence);
         } catch (error) {
@@ -345,11 +347,14 @@ export const managementRouter = router({
 
   // ===== POSTURAS =====
   clutches: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(clutches).orderBy(desc(clutches.createdAt));
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        let query: any = db.select().from(clutches).orderBy(desc(clutches.createdAt));
+        if (tenantId !== null) query = query.where(eq(clutches.tenantId, tenantId));
+        return query;
       } catch (error) {
         console.error("Error listing clutches:", error);
         return [];
@@ -379,9 +384,10 @@ export const managementRouter = router({
         lostEggs: z.number().optional(),
         hatchedChicks: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
         try {
           await db.insert(clutches).values({
             coupleId: input.coupleId,
@@ -391,6 +397,7 @@ export const managementRouter = router({
             infertileEggs: input.infertileEggs || 0,
             lostEggs: input.lostEggs || 0,
             hatchedChicks: input.hatchedChicks || 0,
+            tenantId: tenantId ?? null,
           });
           return { success: true };
         } catch (error) {
@@ -402,11 +409,14 @@ export const managementRouter = router({
 
   // ===== FILHOTES =====
   chicks: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(chicks).orderBy(desc(chicks.createdAt));
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        let query: any = db.select().from(chicks).orderBy(desc(chicks.createdAt));
+        if (tenantId !== null) query = query.where(eq(chicks.tenantId, tenantId));
+        return query;
       } catch (error) {
         console.error("Error listing chicks:", error);
         return [];
@@ -436,9 +446,10 @@ export const managementRouter = router({
         ringDate: z.date().optional(),
         weanDate: z.date().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
         try {
           const [createdChick] = await db.insert(chicks).values({
             clutchId: input.clutchId,
@@ -449,6 +460,7 @@ export const managementRouter = router({
             ringDate: input.ringDate,
             weanDate: input.weanDate,
             status: "active",
+            tenantId: tenantId ?? null,
           }).returning();
 
           if (createdChick) {
@@ -465,25 +477,48 @@ export const managementRouter = router({
 
   // ===== ESTATÍSTICAS =====
   dashboard: router({
-    stats: protectedProcedure.query(async () => {
+    stats: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return { birds: 0, couples: 0, chicks: 0, rings: 0 };
 
       try {
-        const birdsList = await db.select().from(birds);
-        const couplesList = await db.select().from(couples);
-        const chicksList = await db.select().from(chicks);
-        const individualRings = await db.select().from(rings);
-        const ringBatches = await db.select().from(ring_batches);
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+
+        // Helpers de filtro
+        const birdFilter   = tenantId ? eq(birds.tenantId, tenantId)         : undefined;
+        const coupleFilter = tenantId ? eq(couples.tenantId, tenantId)        : undefined;
+        const chickFilter  = tenantId ? eq(chicks.tenantId, tenantId)         : undefined;
+        const ringFilter   = tenantId ? eq(rings.tenantId, tenantId)          : undefined;
+        const batchFilter  = tenantId ? eq(ring_batches.tenantId, tenantId)   : undefined;
+
+        const [birdsList, couplesList, chicksList, individualRings, ringBatches] = await Promise.all([
+          birdFilter
+            ? db.select().from(birds).where(birdFilter)
+            : db.select().from(birds),
+          coupleFilter
+            ? db.select().from(couples).where(coupleFilter)
+            : db.select().from(couples),
+          chickFilter
+            ? db.select().from(chicks).where(chickFilter)
+            : db.select().from(chicks),
+          ringFilter
+            ? db.select().from(rings).where(ringFilter)
+            : db.select().from(rings),
+          batchFilter
+            ? db.select().from(ring_batches).where(batchFilter)
+            : db.select().from(ring_batches),
+        ]);
 
         const availableIndividualRings = individualRings.filter((r) => r.status === "available").length;
-        const legacyAvailableRings = ringBatches.reduce((sum, r) => sum + Math.max(0, r.quantity_total - r.quantity_used), 0);
+        const legacyAvailableRings     = ringBatches.reduce(
+          (sum, r) => sum + Math.max(0, r.quantity_total - r.quantity_used), 0
+        );
 
         return {
-          birds: birdsList.length,
+          birds:   birdsList.length,
           couples: couplesList.filter((c) => c.status === "active").length,
-          chicks: chicksList.length,
-          rings: availableIndividualRings || legacyAvailableRings,
+          chicks:  chicksList.length,
+          rings:   availableIndividualRings || legacyAvailableRings,
         };
       } catch (error) {
         console.error("Error getting dashboard stats:", error);
