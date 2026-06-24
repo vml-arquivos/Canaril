@@ -57,7 +57,6 @@ export default function LoginPage() {
               <Bird className="w-8 h-8 text-white" />
             </div>
           </div>
-          {/* Altera a marca da tela de login para refletir a identidade institucional */}
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Canaril Lima</h1>
           <p className="text-gray-600">Gestão Profissional de Criadouro</p>
         </div>

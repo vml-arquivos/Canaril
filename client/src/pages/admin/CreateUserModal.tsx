@@ -211,7 +211,7 @@ export default function CreateUserModal({ open, onOpenChange }: CreateUserModalP
         </div>
         <DialogFooter className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={createUser.isLoading}>Criar Usuário</Button>
+          <Button onClick={handleSubmit} disabled={createUser.isPending}>Criar Usuário</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

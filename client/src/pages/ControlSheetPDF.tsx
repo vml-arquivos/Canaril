@@ -134,7 +134,7 @@ export default function ControlSheetPDF() {
             </div>
 
             <div class="footer">
-              <p>Ficha gerada pelo Sistema Canaril Lima - ${new Date().toLocaleDateString("pt-BR")}</p>
+              <p>Ficha gerada pelo Canaril Lima - ${new Date().toLocaleDateString("pt-BR")}</p>
             </div>
           </body>
         </html>

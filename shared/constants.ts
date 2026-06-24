@@ -95,16 +95,13 @@ export const COLORS_BY_SPECIALTY: Record<string, string[]> = {
 };
 
 export const BREEDER_INFO = {
-  // Nome oficial do criadouro. A marca "Canário Lima" foi substituída por "Canaril Lima" para refletir a identidade institucional.
   name: "Canaril Lima",
   city: "Brasília",
   state: "DF",
-  // Descrição institucional destacando criação responsável, genética e bem-estar.
-  description:
-    "Criadouro dedicado à criação responsável de canários, com valorização genética, manejo profissional e bem-estar animal.",
+  description: "Criadouro profissional especializado em Canários Belga com foco em qualidade genética e bem-estar animal.",
   phone: "(61) 9999-9999",
-  email: "contato@canarillima.com.br",
-  website: "www.canarillima.com.br",
+  email: "contato@canarioslima.com.br",
+  website: "www.canarioslima.com.br",
 };
 
 /**
