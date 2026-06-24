@@ -95,7 +95,7 @@ export const COLORS_BY_SPECIALTY: Record<string, string[]> = {
 };
 
 export const BREEDER_INFO = {
-  name: "Canaril Lima",
+  name: "Canário Lima",
   city: "Brasília",
   state: "DF",
   description: "Criadouro profissional especializado em Canários Belga com foco em qualidade genética e bem-estar animal.",

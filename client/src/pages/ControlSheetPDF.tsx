@@ -27,7 +27,7 @@ export default function ControlSheetPDF() {
       const htmlContent = `
         <html>
           <head>
-            <title>Ficha de Controle de Choca - Canaril Lima</title>
+            <title>Ficha de Controle de Choca - Canário Lima</title>
             <style>
               body { font-family: Arial, sans-serif; margin: 20px; }
               .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
@@ -49,7 +49,7 @@ export default function ControlSheetPDF() {
           <body>
             <div class="header">
               <h1>🐦 FICHA DE CONTROLE DE CHOCA</h1>
-              <p>Criadouro Canaril Lima - Brasília, DF</p>
+              <p>Criadouro Canário Lima - Brasília, DF</p>
               <p>Temporada de Reprodução</p>
             </div>
 
@@ -134,7 +134,7 @@ export default function ControlSheetPDF() {
             </div>
 
             <div class="footer">
-              <p>Ficha gerada pelo Canaril Lima - ${new Date().toLocaleDateString("pt-BR")}</p>
+              <p>Ficha gerada pelo Sistema Canário Lima - ${new Date().toLocaleDateString("pt-BR")}</p>
             </div>
           </body>
         </html>
