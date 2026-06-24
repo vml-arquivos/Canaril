@@ -39,6 +39,18 @@ export const users = pgTable("users", {
   name:             text("name"),
   email:            varchar("email", { length: 320 }),
   loginMethod:      varchar("loginMethod", { length: 64 }),
+  /**
+   * Hash da senha local. Para usuários cadastrados manualmente, a senha deve
+   * ser armazenada de forma segura. Este campo não armazena a senha em
+   * texto claro. Quando loginMethod = 'local', passwordHash deve ser
+   * preenchido; quando loginMethod refere-se a OAuth/externo, pode ser nulo.
+   */
+  passwordHash:     varchar("passwordHash", { length: 255 }),
+  /**
+   * Indica que o usuário deve alterar a senha no primeiro acesso. Útil
+   * quando um administrador cria uma senha temporária.
+   */
+  mustChangePassword: boolean("mustChangePassword").default(true),
   // Roles: PLATFORM_ADMIN | CANARIL_MANAGER | CANARIL_MEMBER | VIEWER
   role:             varchar("role", { length: 30 }).default("CANARIL_MANAGER").notNull(),
   tenantId:         integer("tenantId"),
@@ -48,6 +60,10 @@ export const users = pgTable("users", {
   disabledBy:       integer("disabledBy"),
   disabledReason:   text("disabledReason"),
   accessExpiresAt:  timestamp("accessExpiresAt"),
+  /**
+   * Observação interna, visível apenas aos administradores da plataforma.
+   */
+  internalNote:     text("internalNote"),
   createdAt:        timestamp("createdAt").defaultNow().notNull(),
   updatedAt:        timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   lastSignedIn:     timestamp("lastSignedIn").defaultNow().notNull(),
@@ -143,13 +159,17 @@ export const ring_batches = pgTable("ring_batches", {
   currentNumber: integer("currentNumber").default(1).notNull(),
   formatPattern: varchar("formatPattern", { length: 100 }).default("{breederCode}-{year}-{seq}").notNull(),
   notes: text("notes"),
-  tenantId: integer("tenantId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  /**
+   * Tenant proprietário do lote de anilhas. Utilizado para isolar lotes por canaril.
+   */
+  tenantId: integer("tenantId"),
 }, (table) => ({
   batchIdx: index("ring_batches_batch_idx").on(table.batch_number),
   batchYearIdx: index("ring_batches_year_idx").on(table.year),
   batchStatusIdx: index("ring_batches_status_idx").on(table.status),
+  tenantIdx: index("ring_batches_tenant_idx").on(table.tenantId),
 }));
 
 /**
@@ -184,7 +204,6 @@ export const birds = pgTable("birds", {
   isPublic: boolean("isPublic").default(false).notNull(),
   // Código público único para QR Code — gerado pelo backend, nullable até ser ativado.
   publicCode: varchar("publicCode", { length: 20 }).unique(),
-  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   deleteReason: text("deleteReason"),
@@ -192,6 +211,13 @@ export const birds = pgTable("birds", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  /**
+   * Identificador do canaril/tenant ao qual este pássaro pertence.
+   * Usado para isolar registros por canaril no multi-tenant. Pode ser nulo
+   * temporariamente até que o backfill seja executado. Rotas operacionais
+   * devem preencher este campo a partir de ctx.user.tenantId.
+   */
+  tenantId: integer("tenantId"),
 }, (table) => ({
   ringIdx: index("birds_ring_idx").on(table.ring),
   displayTitleIdx: index("birds_display_title_idx").on(table.displayTitle),
@@ -201,6 +227,8 @@ export const birds = pgTable("birds", {
   specialtyIdx: index("birds_specialty_idx").on(table.specialty_code),
   colorIdx: index("birds_color_idx").on(table.color_code),
   cageIdx: index("birds_cage_idx").on(table.cageId),
+  /** Indexa os pássaros pelo tenantId para acelerar filtros multi-tenant. */
+  tenantIdx: index("birds_tenant_idx").on(table.tenantId),
 }));
 
 /**
@@ -216,16 +244,20 @@ export const couples = pgTable("couples", {
   // antes desta tabela existir.
   cageId: integer("cageId"),
   formationDate: timestamp("formationDate").notNull(),
-  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
   notes: text("notes"),
+  /**
+   * Identificador do canaril/tenant ao qual este casal pertence.
+   */
+  tenantId: integer("tenantId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   cageIdx: index("couples_cage_idx").on(table.cageNumber),
   statusIdx: index("couples_status_idx").on(table.status),
+  tenantIdx: index("couples_tenant_idx").on(table.tenantId),
 }));
 
 /**
@@ -240,14 +272,16 @@ export const clutches = pgTable("clutches", {
   infertileEggs: integer("infertileEggs").default(0).notNull(),
   lostEggs: integer("lostEggs").default(0).notNull(),
   hatchedChicks: integer("hatchedChicks").default(0).notNull(),
-  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  /** Tenant ao qual a postura pertence */
+  tenantId: integer("tenantId"),
 }, (table) => ({
   coupleIdx: index("clutches_couple_idx").on(table.coupleId),
+  tenantIdx: index("clutches_tenant_idx").on(table.tenantId),
 }));
 
 /**
@@ -271,14 +305,16 @@ export const chicks = pgTable("chicks", {
   // criadouro ficavam fora da árvore genealógica (fatherId/motherId só
   // existe em "birds").
   birdId: integer("birdId"),
-  tenantId: integer("tenantId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  /** Tenant ao qual o filhote pertence */
+  tenantId: integer("tenantId"),
 }, (table) => ({
   ringIdx: index("chicks_ring_idx").on(table.ring),
   clutchIdx: index("chicks_clutch_idx").on(table.clutchId),
   birdIdx: index("chicks_bird_idx").on(table.birdId),
+  tenantIdx: index("chicks_tenant_idx").on(table.tenantId),
 }));
 
 /**
@@ -339,14 +375,18 @@ export const rings = pgTable("rings", {
   ringSource: varchar("ringSource", { length: 20 }).default("BATCH").notNull(),
   // BATCH | MANUAL
   reservedAt: timestamp("reservedAt"),
-  tenantId: integer("tenantId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  /**
+   * Tenant proprietário desta anilha. Usado para isolar anilhas por canaril.
+   */
+  tenantId: integer("tenantId"),
 }, (table) => ({
   batchIdx: index("rings_batch_idx").on(table.batchId),
   statusIdx: index("rings_status_idx").on(table.status),
   fullCodeIdx: index("rings_fullcode_idx").on(table.fullCode),
+  tenantIdx: index("rings_tenant_idx").on(table.tenantId),
 }));
 
 /**
@@ -407,7 +447,6 @@ export const cages = pgTable("cages", {
   status: varchar("status", { length: 20 }).default("free").notNull(), // free | occupied | maintenance
   // Código público único para QR Code — nullable até ser ativado.
   publicCode: varchar("publicCode", { length: 20 }).unique(),
-  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   notes: text("notes"),
@@ -428,7 +467,6 @@ export const championships = pgTable("championships", {
   startDate: timestamp("startDate").notNull(),
   endDate: timestamp("endDate"),
   status: varchar("status", { length: 20 }).default("upcoming").notNull(), // upcoming | ongoing | finished
-  tenantId: integer("tenantId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 

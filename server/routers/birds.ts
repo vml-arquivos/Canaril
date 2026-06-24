@@ -1,12 +1,11 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, requireTenantAccess, getCallerTenantId } from "../_core/trpc";
 import { getDb } from "../db";
 import { bird_genetic_inference_logs, bird_genetic_profiles, birds, official_bird_classes, rings } from "../../drizzle/schema";
-import { eq, desc, and, or, isNull } from "drizzle-orm";
+import { eq, desc, and, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { generateBirdDisplayTitle, deriveLegacyColorCode, deriveLegacySpecialtyCode } from "../_core/birdIdentity";
 import { interpretOfficialClass } from "../_core/officialClassInterpreter";
-import { getQueryTenantId, assertSameTenant } from "../_core/tenant";
 
 // Schema reutilizável para birthDate: aceita Date (superjson) ou string 'YYYY-MM-DD'
 const birthDateSchema = z
@@ -128,12 +127,14 @@ export const birdsRouter = router({
       if (!db) return [];
 
       try {
-        const tenantId = getQueryTenantId(ctx);
-        let query = db.select().from(birds).orderBy(desc(birds.createdAt));
-        if (tenantId !== null) {
-          query = query.where(eq(birds.tenantId, tenantId)) as any;
+        // Se usuário possui tenantId, filtrar por esse tenant. Plataforma Admin (tenantId null) vê todos
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        let query = db.select().from(birds);
+        if (tenantId !== null && tenantId !== undefined) {
+          query = query.where(eq(birds.tenantId, tenantId));
         }
-        return query;
+        const results = await query.orderBy(desc(birds.createdAt));
+        return results;
       } catch (error) {
         console.error("Error listing birds:", error);
         return [];
@@ -150,10 +151,14 @@ export const birdsRouter = router({
       try {
         const result = await db.select().from(birds).where(eq(birds.id, input));
         const bird = result[0] || null;
-        if (bird) assertSameTenant(ctx, bird.tenantId);
+        if (!bird) return null;
+        // Verifica se o pássaro pertence ao tenant atual (exceto para admins globais)
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        if (tenantId !== null && tenantId !== undefined) {
+          requireTenantAccess(ctx, bird.tenantId);
+        }
         return bird;
       } catch (error) {
-        if (error instanceof TRPCError) throw error;
         console.error("Error getting bird:", error);
         return null;
       }
@@ -191,15 +196,14 @@ export const birdsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
-      const tenantId = getQueryTenantId(ctx);
 
-      // Verifica unicidade da anilha na tabela birds
+      // Verifica unicidade da anilha na tabela birds (global)
+      const tenantId = (ctx.user as any)?.tenantId ?? null;
       const existing = await db
         .select({ id: birds.id })
         .from(birds)
         .where(eq(birds.ring, input.ring))
         .limit(1);
-
       if (existing.length > 0) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -244,7 +248,7 @@ export const birdsRouter = router({
           motherId: input.motherId ?? null,
           notes: input.notes || null,
           status: "active",
-          tenantId: tenantId ?? null,
+          tenantId: tenantId,
         }).returning();
 
         if (createdBird && officialClass) {
@@ -253,7 +257,6 @@ export const birdsRouter = router({
 
         if (createdBird) {
           // Marca a anilha como em uso na tabela rings (se existir lá)
-          // Verifica tanto por number quanto por fullCode para compatibilidade
           await db
             .update(rings)
             .set({
@@ -261,6 +264,7 @@ export const birdsRouter = router({
               birdId: createdBird.id,
               usedAt: new Date(),
               updatedAt: new Date(),
+              tenantId: tenantId,
             })
             .where(
               and(
@@ -276,7 +280,6 @@ export const birdsRouter = router({
         return { success: true, bird: createdBird };
       } catch (error: any) {
         console.error("Error creating bird:", error);
-        // Trata constraint de unicidade do banco (PostgreSQL code 23505)
         if (error?.code === "23505" || error?.message?.includes("unique")) {
           throw new TRPCError({
             code: "CONFLICT",
@@ -309,19 +312,23 @@ export const birdsRouter = router({
       notes: z.string().optional().nullable(),
       ...birdIdentitySchema,
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
 
       const { id, birthDate: rawBirthDate, ...fields } = input;
 
-      // Normaliza birthDate se vier como string
       const birthDate = rawBirthDate !== undefined ? normalizeBirthDate(rawBirthDate) : undefined;
 
       try {
         const [existingBird] = await db.select().from(birds).where(eq(birds.id, id)).limit(1);
         if (!existingBird) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
+        }
+        // Verifica se pertence ao tenant do usuário
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        if (tenantId !== null && tenantId !== undefined) {
+          requireTenantAccess(ctx, existingBird.tenantId);
         }
 
         const officialClass = await getOfficialClassById(db, input.officialClassId ?? existingBird.officialClassId);
@@ -381,15 +388,24 @@ export const birdsRouter = router({
   // Deletar pássaro
   delete: protectedProcedure
     .input(z.number())
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
 
       try {
+        const [existingBird] = await db.select().from(birds).where(eq(birds.id, input)).limit(1);
+        if (!existingBird) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
+        }
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        if (tenantId !== null && tenantId !== undefined) {
+          requireTenantAccess(ctx, existingBird.tenantId);
+        }
         await db.delete(birds).where(eq(birds.id, input));
         return { success: true };
       } catch (error: any) {
         console.error("Error deleting bird:", error);
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: error?.message ?? "Erro ao deletar pássaro.",

@@ -126,7 +126,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (user.role !== undefined) {
       values.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
+      // Por compatibilidade, usuários criados a partir de ENV.ownerOpenId sempre
+      // recebem o papel PLATFORM_ADMIN. Não use o valor legado "admin".
+      values.role = 'PLATFORM_ADMIN';
     }
 
     if (!values.lastSignedIn) {

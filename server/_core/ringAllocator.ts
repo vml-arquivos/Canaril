@@ -25,6 +25,12 @@ export interface RingCriteria {
   ringGaugeMm?: number;
   year?: number;
   batchId?: number;
+  /**
+   * tenantId usado para filtrar lotes e anilhas disponíveis. Somente lotes
+   * pertencentes a esse tenant serão considerados. Se undefined ou null,
+   * considera lotes globais (PLATFORM_ADMIN).
+   */
+  tenantId?: number | null;
 }
 
 export interface NextRingResult {
@@ -68,6 +74,10 @@ export async function getNextAvailableRing(
   if (criteria.ringGaugeMm) {
     batchConditions.push(eq(ring_batches.ringGaugeMm, criteria.ringGaugeMm));
   }
+  // Filtra por tenant se especificado (usuários operacionais)
+  if (criteria.tenantId !== null && criteria.tenantId !== undefined) {
+    batchConditions.push(eq(ring_batches.tenantId, criteria.tenantId));
+  }
 
   // Busca lotes compatíveis ordenados por ano asc (mais antigo com vagas primeiro)
   const compatibleBatches = await db
@@ -85,7 +95,11 @@ export async function getNextAvailableRing(
         and(
           eq(rings.batchId, batch.id),
           eq(rings.status, "available"),
-          isNull(rings.birdId)
+          isNull(rings.birdId),
+          // Filtra por tenant do lote se tenantId estiver presente (para segurança redundante)
+          (criteria.tenantId !== null && criteria.tenantId !== undefined
+            ? eq(rings.tenantId, criteria.tenantId)
+            : sql`true`)
         )
       )
       .orderBy(asc(rings.sequence))
@@ -259,7 +273,6 @@ export async function generateRingsForBatch(
     formatPattern: string;
     startNumber: number;
     endNumber: number;
-    tenantId?: number | null;
   }
 ): Promise<number> {
   const codes = generateBatchCodes({
@@ -288,7 +301,6 @@ export async function generateRingsForBatch(
       sequence: c.sequence,
       status: "available" as const,
       ringSource: "BATCH" as const,
-      tenantId: batch.tenantId ?? null,
     }));
 
     await db.insert(rings).values(values).onConflictDoNothing();

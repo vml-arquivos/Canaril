@@ -18,15 +18,15 @@
  */
 
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
 import {
   ring_batches,
   rings,
   ring_gauge_rules,
+  birds,
 } from "../../drizzle/schema";
 import { and, eq, desc, asc, isNull, or, ilike, sql } from "drizzle-orm";
-import { getQueryTenantId, assertSameTenant } from "../_core/tenant";
 import {
   getNextAvailableRing,
   assignRingToBird,
@@ -66,10 +66,12 @@ export const ringsRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        const tenantId = getQueryTenantId(ctx);
-        let q = db.select().from(ring_batches).orderBy(desc(ring_batches.year), desc(ring_batches.createdAt));
-        if (tenantId !== null) q = q.where(eq(ring_batches.tenantId, tenantId)) as any;
-        return q;
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        let query = db.select().from(ring_batches);
+        if (tenantId !== null && tenantId !== undefined) {
+          query = query.where(eq(ring_batches.tenantId, tenantId));
+        }
+        return await query.orderBy(desc(ring_batches.year), desc(ring_batches.createdAt));
       } catch (e) {
         console.error("[rings.batches.list]", e);
         return [];
@@ -78,7 +80,7 @@ export const ringsRouter = router({
 
     getById: protectedProcedure
       .input(z.number().int().positive())
-      .query(async ({ input: id }) => {
+      .query(async ({ ctx, input: id }) => {
         const db = await getDb();
         if (!db) return null;
         const rows = await db
@@ -86,7 +88,13 @@ export const ringsRouter = router({
           .from(ring_batches)
           .where(eq(ring_batches.id, id))
           .limit(1);
-        return rows[0] ?? null;
+        const batch = rows[0] ?? null;
+        if (!batch) return null;
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        if (tenantId !== null && tenantId !== undefined) {
+          requireTenantAccess(ctx, batch.tenantId);
+        }
+        return batch;
       }),
 
     create: protectedProcedure
@@ -94,13 +102,13 @@ export const ringsRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
-        const tenantId = getQueryTenantId(ctx);
 
         const quantity_total = input.endNumber - input.startNumber + 1;
         if (quantity_total <= 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "endNumber deve ser maior que startNumber." });
         }
 
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
         const [batch] = await db
           .insert(ring_batches)
           .values({
@@ -124,7 +132,7 @@ export const ringsRouter = router({
             currentNumber:   input.startNumber,
             formatPattern:   input.formatPattern,
             notes:           input.notes,
-            tenantId:        tenantId ?? null,
+            tenantId:        tenantId,
           })
           .returning();
 
@@ -138,7 +146,6 @@ export const ringsRouter = router({
           formatPattern: batch.formatPattern,
           startNumber:   batch.startNumber,
           endNumber:     batch.endNumber,
-          tenantId:      tenantId ?? null,
         });
 
         return { success: true, batch, generated };
@@ -444,10 +451,12 @@ export const ringsRouter = router({
         year:        z.number().int().optional(),
         batchId:     z.number().int().optional(),
       }).optional())
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) return null;
-        return getNextAvailableRing(db, input ?? {});
+        // Para usuários operacionais, inclui tenantId nos critérios para filtrar lotes
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        return getNextAvailableRing(db, { ...(input ?? {}), tenantId });
       }),
 
     assign: protectedProcedure
@@ -455,10 +464,25 @@ export const ringsRouter = router({
         ringId: z.number().int().positive(),
         birdId: z.number().int().positive(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         const pool = getPool();
         if (!db || !pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+
+        // Carrega anilha e pássaro para validar tenant antes de alocar
+        const [ringRow] = await db.select().from(rings).where(eq(rings.id, input.ringId)).limit(1);
+        if (!ringRow) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Anilha não encontrada." });
+        }
+        const [birdRow] = await db.select().from(birds).where(eq(birds.id, input.birdId)).limit(1);
+        if (!birdRow) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
+        }
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        if (tenantId !== null && tenantId !== undefined) {
+          requireTenantAccess(ctx, ringRow.tenantId);
+          requireTenantAccess(ctx, birdRow.tenantId);
+        }
 
         const fullCode = await assignRingToBird(db, pool, input.ringId, input.birdId);
         return { success: true, fullCode };
@@ -466,10 +490,19 @@ export const ringsRouter = router({
 
     release: protectedProcedure
       .input(z.number().int().positive())
-      .mutation(async ({ input: birdId }) => {
+      .mutation(async ({ ctx, input: birdId }) => {
         const db = await getDb();
         const pool = getPool();
         if (!db || !pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        // Verifica se o pássaro pertence ao tenant do usuário
+        const [birdRow] = await db.select().from(birds).where(eq(birds.id, birdId)).limit(1);
+        if (!birdRow) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
+        }
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        if (tenantId !== null && tenantId !== undefined) {
+          requireTenantAccess(ctx, birdRow.tenantId);
+        }
 
         await releaseRingFromBird(db, pool, birdId);
         return { success: true };
@@ -481,11 +514,16 @@ export const ringsRouter = router({
         batchId:  z.number().int().positive(),
         notes:    z.string().max(500).optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
         const ring = await createManualRing(db, input);
+        // Se usuário operacional, atualiza o tenantId da anilha manual para o tenant da sessão
+        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        if (tenantId !== null && tenantId !== undefined) {
+          await db.update(rings).set({ tenantId }).where(eq(rings.id, ring.id));
+        }
         return { success: true, ring };
       }),
 
@@ -558,28 +596,64 @@ export const ringsRouter = router({
   }),
 
   // ── Estatísticas ───────────────────────────────────────────────────────────
+  /**
+   * Retorna contagens de anilhas e lotes por status.
+   * Para usuários com tenantId (CANARIL_MANAGER, CANARIL_MEMBER, VIEWER),
+   * as contagens são filtradas pelo tenantId da sessão. Plataforma Admin
+   * (tenantId null) vê contagens globais.
+   */
   stats: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) return { total: 0, available: 0, inUse: 0, batches: 0, exhaustedBatches: 0 };
+    if (!db) {
+      return { total: 0, available: 0, inUse: 0, batches: 0, exhaustedBatches: 0 };
+    }
 
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
     try {
-      const tenantId = getQueryTenantId(ctx);
-      const tenantFilter = tenantId !== null ? eq(rings.tenantId, tenantId) : undefined;
-      const batchTenantFilter = tenantId !== null ? eq(ring_batches.tenantId, tenantId) : undefined;
+      // Constrói filtros por tenantId se necessário
+      const ringFilter = tenantId !== null && tenantId !== undefined ? eq(rings.tenantId, tenantId) : undefined;
+      const batchFilter = tenantId !== null && tenantId !== undefined ? eq(ring_batches.tenantId, tenantId) : undefined;
 
       const [totalRows, availableRows, inUseRows, batchRows, exhaustedRows] = await Promise.all([
-        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(tenantFilter),
-        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(tenantFilter ? and(tenantFilter, eq(rings.status, "available")) : eq(rings.status, "available")),
-        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(tenantFilter ? and(tenantFilter, eq(rings.status, "in_use")) : eq(rings.status, "in_use")),
-        db.select({ count: sql<number>`count(*)::int` }).from(ring_batches).where(batchTenantFilter),
-        db.select({ count: sql<number>`count(*)::int` }).from(ring_batches).where(batchTenantFilter ? and(batchTenantFilter, eq(ring_batches.status, "exhausted")) : eq(ring_batches.status, "exhausted")),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rings)
+          .where((ringFilter as any) ?? sql`true`),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rings)
+          .where(
+            (ringFilter as any) !== undefined
+              ? and(ringFilter as any, eq(rings.status, "available"))
+              : eq(rings.status, "available")
+          ),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rings)
+          .where(
+            (ringFilter as any) !== undefined
+              ? and(ringFilter as any, eq(rings.status, "in_use"))
+              : eq(rings.status, "in_use")
+          ),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(ring_batches)
+          .where((batchFilter as any) ?? sql`true`),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(ring_batches)
+          .where(
+            (batchFilter as any) !== undefined
+              ? and(batchFilter as any, eq(ring_batches.status, "exhausted"))
+              : eq(ring_batches.status, "exhausted")
+          ),
       ]);
 
       return {
-        total:            totalRows[0]?.count ?? 0,
-        available:        availableRows[0]?.count ?? 0,
-        inUse:            inUseRows[0]?.count ?? 0,
-        batches:          batchRows[0]?.count ?? 0,
+        total: totalRows[0]?.count ?? 0,
+        available: availableRows[0]?.count ?? 0,
+        inUse: inUseRows[0]?.count ?? 0,
+        batches: batchRows[0]?.count ?? 0,
         exhaustedBatches: exhaustedRows[0]?.count ?? 0,
       };
     } catch (e) {

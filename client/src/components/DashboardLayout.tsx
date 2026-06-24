@@ -1,4 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+// Importa função de checagem de administrador da plataforma
+import { isPlatformAdmin as checkPlatformAdmin } from "@shared/permissions";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -201,13 +203,11 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
               {(() => {
-                const isPlatformAdmin = (user as any)?.role === "PLATFORM_ADMIN"
-                  || (user as any)?.role === "admin"
-                  || (user as any)?.role === "OWNER"
-                  || (user as any)?.role === "SUPER_ADMIN";
+                // Usa helper centralizado para verificar se o usuário é administrador da plataforma
+                const isPlatformAdminFlag = checkPlatformAdmin((user as any)?.role);
                 const visibleItems = [
                   ...menuItems,
-                  ...(isPlatformAdmin ? adminMenuItems : []),
+                  ...(isPlatformAdminFlag ? adminMenuItems : []),
                 ];
                 return visibleItems.map(item => {
                   const isActive = location === item.path;
