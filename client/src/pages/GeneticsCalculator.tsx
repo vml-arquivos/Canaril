@@ -270,16 +270,19 @@ function ParIdeal() {
       </InlineAlert>
 
       <div className="flex gap-3 flex-wrap items-end">
-        <div className="flex-1 min-w-[200px]">
+        <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-500 mb-1.5">Pássaro base</p>
           <Select value={birdId} onValueChange={setBirdId}>
-            <SelectTrigger><SelectValue placeholder="Selecione o pássaro" /></SelectTrigger>
-            <SelectContent className="max-h-64">
+            <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione o pássaro" /></SelectTrigger>
+            <SelectContent className="max-h-64 w-[min(480px,90vw)]">
               {(allBirds ?? []).map((b) => (
                 <SelectItem key={b.id} value={String(b.id)}>
-                  <span className="font-mono">{b.ring}</span>
-                  {b.displayTitle && <span className="text-gray-400 ml-2">— {b.displayTitle}</span>}
-                  <span className="text-gray-300 ml-2">{b.sex === "macho" ? "♂" : "♀"}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono font-semibold shrink-0">{b.ring}</span>
+                    <span className="text-gray-400 text-xs truncate max-w-[280px]">
+                      {b.sex === "macho" ? "♂" : "♀"}{b.displayTitle ? ` · ${b.displayTitle}` : ""}
+                    </span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -372,24 +375,39 @@ function CasalPlantel() {
 
   return (
     <div className="space-y-5">
-      <div className="grid sm:grid-cols-2 gap-4">
+      {/* Selects empilhados sempre — evita sobreposição de texto longo */}
+      <div className="space-y-3">
         {[
           { label: "♂ Macho", list: males, val: maleId, set: setMaleId },
           { label: "♀ Fêmea", list: females, val: femaleId, set: setFemaleId },
         ].map(({ label, list, val, set }) => (
-          <div key={label}>
+          <div key={label} className="min-w-0">
             <p className="text-xs text-gray-500 mb-1.5">{label}</p>
             <Select value={val} onValueChange={set}>
-              <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectTrigger className="w-full min-w-0">
+                <SelectValue placeholder="Selecione..." />
+              </SelectTrigger>
               <SelectContent className="max-h-64">
                 {list.map((b) => (
                   <SelectItem key={b.id} value={String(b.id)}>
-                    <span className="font-mono">{b.ring}</span>
-                    {b.displayTitle && <span className="text-gray-400 ml-2">— {b.displayTitle}</span>}
+                    <span className="font-mono font-semibold">{b.ring}</span>
+                    {b.displayTitle && (
+                      <span className="text-gray-400 ml-2 text-xs">
+                        {/* Truncar displayTitle longo para evitar overflow */}
+                        {b.displayTitle.length > 60
+                          ? b.displayTitle.slice(0, 60) + "…"
+                          : b.displayTitle}
+                      </span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {val && (
+              <p className="text-xs text-gray-400 mt-0.5 truncate">
+                {list.find((b) => String(b.id) === val)?.displayTitle ?? ""}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -557,18 +575,28 @@ function ModoGuiado() {
             <div>
               <p className="text-xs text-gray-500 mb-1.5">♂ Macho</p>
               <Select value={maleId} onValueChange={setMaleId}>
-                <SelectTrigger><SelectValue placeholder="Selecione o macho" /></SelectTrigger>
-                <SelectContent className="max-h-56">
-                  {males.map((b) => <SelectItem key={b.id} value={String(b.id)}><span className="font-mono">{b.ring}</span> {b.displayTitle ? `— ${b.displayTitle}` : ""}</SelectItem>)}
+                <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione o macho" /></SelectTrigger>
+                <SelectContent className="max-h-56 w-[min(440px,90vw)]">
+                  {males.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      <span className="font-mono font-semibold">{b.ring}</span>
+                      {b.displayTitle && <span className="text-gray-400 text-xs ml-2 truncate max-w-[280px] inline-block">{b.displayTitle}</span>}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
               <p className="text-xs text-gray-500 mb-1.5">♀ Fêmea</p>
               <Select value={femaleId} onValueChange={setFemaleId}>
-                <SelectTrigger><SelectValue placeholder="Selecione a fêmea" /></SelectTrigger>
-                <SelectContent className="max-h-56">
-                  {females.map((b) => <SelectItem key={b.id} value={String(b.id)}><span className="font-mono">{b.ring}</span> {b.displayTitle ? `— ${b.displayTitle}` : ""}</SelectItem>)}
+                <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione a fêmea" /></SelectTrigger>
+                <SelectContent className="max-h-56 w-[min(440px,90vw)]">
+                  {females.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>
+                      <span className="font-mono font-semibold">{b.ring}</span>
+                      {b.displayTitle && <span className="text-gray-400 text-xs ml-2 truncate max-w-[280px] inline-block">{b.displayTitle}</span>}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

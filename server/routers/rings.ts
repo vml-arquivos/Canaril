@@ -67,7 +67,7 @@ export const ringsRouter = router({
       if (!db) return [];
       try {
         const tenantId = (ctx.user as any)?.tenantId ?? null;
-        let query = db.select().from(ring_batches);
+        let query: any = db.select().from(ring_batches);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(ring_batches.tenantId, tenantId));
         }

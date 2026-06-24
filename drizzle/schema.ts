@@ -447,6 +447,7 @@ export const cages = pgTable("cages", {
   status: varchar("status", { length: 20 }).default("free").notNull(), // free | occupied | maintenance
   // Código público único para QR Code — nullable até ser ativado.
   publicCode: varchar("publicCode", { length: 20 }).unique(),
+  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   notes: text("notes"),
@@ -467,6 +468,7 @@ export const championships = pgTable("championships", {
   startDate: timestamp("startDate").notNull(),
   endDate: timestamp("endDate"),
   status: varchar("status", { length: 20 }).default("upcoming").notNull(), // upcoming | ongoing | finished
+  tenantId: integer("tenantId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 

@@ -129,7 +129,7 @@ export const birdsRouter = router({
       try {
         // Se usuário possui tenantId, filtrar por esse tenant. Plataforma Admin (tenantId null) vê todos
         const tenantId = (ctx.user as any)?.tenantId ?? null;
-        let query = db.select().from(birds);
+        let query: any = db.select().from(birds);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(birds.tenantId, tenantId));
         }

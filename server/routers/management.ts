@@ -47,7 +47,7 @@ export const managementRouter = router({
       if (!db) return [];
       try {
         const tenantId = (ctx.user as any)?.tenantId ?? null;
-        let query = db.select().from(ring_batches);
+        let query: any = db.select().from(ring_batches);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(ring_batches.tenantId, tenantId));
         }
@@ -185,7 +185,7 @@ export const managementRouter = router({
       if (!db) return [];
       try {
         const tenantId = (ctx.user as any)?.tenantId ?? null;
-        let query = db.select().from(couples);
+        let query: any = db.select().from(couples);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(couples.tenantId, tenantId));
         }
