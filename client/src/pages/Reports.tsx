@@ -12,6 +12,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Toolti
 import {
   Egg, Feather, Heart, Trophy, Bird as BirdIcon, Dna, AlertTriangle,
   CheckCircle2, XCircle, Printer, Search, List, FlaskConical, Tag,
+  Calendar, Clock, Activity, TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -739,6 +740,168 @@ function TabCasais() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Tab 7: Temporada — painel operacional da reprodução atual
+// ────────────────────────────────────────────────────────────
+function TabTemporada() {
+  const { data, isLoading } = trpc.reports.temporada.useQuery();
+
+  if (isLoading) return <div className="py-8 text-center text-gray-400 text-sm">Carregando painel da temporada...</div>;
+  if (!data) return <div className="py-8 text-center text-gray-400 text-sm">Nenhum dado de temporada disponível.</div>;
+
+  const severityColor = {
+    high: "bg-red-50 border-red-200 text-red-800",
+    medium: "bg-amber-50 border-amber-200 text-amber-800",
+    low: "bg-blue-50 border-blue-200 text-blue-800",
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Métricas rápidas */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: "Casais ativos", value: data.activeCouplesCount, icon: Heart, color: "text-rose-600" },
+          { label: "Posturas ativas", value: data.activeClutchesCount, icon: Egg, color: "text-amber-600" },
+          { label: "Eclosões previstas (7d)", value: data.nearHatchCount, icon: Clock, color: "text-emerald-600" },
+          { label: "Anilhas disponíveis", value: data.ringsAvailable, icon: Tag, color: "text-blue-600" },
+        ].map(({ label, value, icon: Icon, color }) => (
+          <Card key={label}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Icon className={`w-6 h-6 ${color} shrink-0`} />
+              <div>
+                <p className="text-2xl font-bold text-gray-900">{value}</p>
+                <p className="text-xs text-gray-500">{label}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Alertas */}
+      {data.alerts.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-amber-500" />Alertas da temporada
+          </h3>
+          {data.alerts.map((a, i) => (
+            <div key={i} className={`border rounded-lg px-4 py-2.5 text-sm ${severityColor[a.severity]}`}>
+              {a.severity === "high" && <AlertTriangle className="w-3.5 h-3.5 inline mr-1.5" />}
+              {a.message}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Resumo por casal */}
+      {(data.casaisResumo as any[]).length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-blue-500" />Situação por casal
+          </h3>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Gaiola</TableHead>
+                  <TableHead>Macho</TableHead>
+                  <TableHead>Fêmea</TableHead>
+                  <TableHead>Posturas</TableHead>
+                  <TableHead>Eclosão prevista</TableHead>
+                  <TableHead>Filhotes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(data.casaisResumo as any[]).map((c) => (
+                  <TableRow key={c.coupleId} className={c.nearHatchSoon ? "bg-emerald-50" : ""}>
+                    <TableCell className="font-medium">{c.cageNumber}</TableCell>
+                    <TableCell className="font-mono text-sm">{c.maleRing}</TableCell>
+                    <TableCell className="font-mono text-sm">{c.femaleRing}</TableCell>
+                    <TableCell>{c.clutchesCount}</TableCell>
+                    <TableCell>
+                      {c.expectedHatchDate
+                        ? <span className={c.nearHatchSoon ? "text-emerald-700 font-semibold" : ""}>
+                            {new Date(c.expectedHatchDate).toLocaleDateString("pt-BR")}
+                            {c.nearHatchSoon && " ⚡"}
+                          </span>
+                        : "—"}
+                    </TableCell>
+                    <TableCell>{c.totalHatched}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab 8: Índice — ranking de desempenho por pássaro
+// ────────────────────────────────────────────────────────────
+function TabIndice() {
+  const { data, isLoading } = trpc.reports.indice.useQuery();
+
+  if (isLoading) return <div className="py-8 text-center text-gray-400 text-sm">Calculando índices...</div>;
+  if (!data || !(data as any).rows?.length) return <div className="py-8 text-center text-gray-400 text-sm">Nenhum dado de índice disponível.</div>;
+
+  const rows = (data as any).rows as Array<{
+    birdId: number; ring: string; displayTitle: string | null;
+    sex: string; modality: string | null;
+    totalClutches: number; totalEggs: number; totalHatched: number;
+    hatchRate: number; bestScore: number | null;
+    coi: number; coiRisk: string; hasGenotype: boolean;
+  }>;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">Ranking por desempenho reprodutivo + melhor pontuação em campeonato.</p>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>#</TableHead>
+              <TableHead>Anilha</TableHead>
+              <TableHead>Sexo</TableHead>
+              <TableHead>Posturas</TableHead>
+              <TableHead>Ovos</TableHead>
+              <TableHead>Filhotes</TableHead>
+              <TableHead>% Eclosão</TableHead>
+              <TableHead>Melhor nota</TableHead>
+              <TableHead>COI</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r, i) => (
+              <TableRow key={r.birdId}>
+                <TableCell className="text-gray-400 text-sm">{i + 1}</TableCell>
+                <TableCell>
+                  <Link href={`/birds/${r.birdId}/ficha`}>
+                    <span className="font-mono font-bold text-amber-700 hover:underline">{r.ring}</span>
+                  </Link>
+                  {r.displayTitle && <p className="text-xs text-gray-400 truncate max-w-[160px]">{r.displayTitle}</p>}
+                </TableCell>
+                <TableCell><SexBadge sex={r.sex} /></TableCell>
+                <TableCell>{r.totalClutches}</TableCell>
+                <TableCell>{r.totalEggs}</TableCell>
+                <TableCell className="font-semibold">{r.totalHatched}</TableCell>
+                <TableCell>
+                  <span className={r.hatchRate >= 70 ? "text-emerald-700 font-bold" : r.hatchRate >= 40 ? "text-amber-700" : "text-red-600"}>
+                    {r.hatchRate.toFixed(1)}%
+                  </span>
+                </TableCell>
+                <TableCell>{r.bestScore != null ? <span className="font-semibold">{r.bestScore}</span> : <span className="text-gray-300">—</span>}</TableCell>
+                <TableCell><CoiRiskBadge risk={r.coiRisk as any} pct={`${(r.coi * 100).toFixed(1)}%`} /></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Componente principal
 // ────────────────────────────────────────────────────────────
 export default function Reports() {
@@ -766,6 +929,8 @@ export default function Reports() {
             <TabsTrigger value="anilhas">Anilhas</TabsTrigger>
             <TabsTrigger value="casais">Casais</TabsTrigger>
             <TabsTrigger value="confronto">Confronto Genético</TabsTrigger>
+            <TabsTrigger value="temporada">Temporada</TabsTrigger>
+            <TabsTrigger value="indice">Índice</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="mt-6"><TabDashboard /></TabsContent>
@@ -774,6 +939,8 @@ export default function Reports() {
           <TabsContent value="anilhas" className="mt-6"><TabAnilhas /></TabsContent>
           <TabsContent value="casais" className="mt-6"><TabCasais /></TabsContent>
           <TabsContent value="confronto" className="mt-6"><TabConfronto /></TabsContent>
+          <TabsContent value="temporada" className="mt-6"><TabTemporada /></TabsContent>
+          <TabsContent value="indice" className="mt-6"><TabIndice /></TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>

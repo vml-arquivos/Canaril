@@ -23,7 +23,7 @@ import {
   Star, TrendingUp, Shield, Info, Heart, FlaskConical, GitCompare,
 } from "lucide-react";
 import { InlineAlert, HelpTooltip, ScoreBar, CoiRiskBadge } from "@/components/ui-premium";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -105,8 +105,133 @@ function ProbBar({ value, label, sublabel, color }: {
   );
 }
 
+function PunnettGrid({ sons, daughters, offspring, inheritance }: {
+  sons?: Record<string, number>;
+  daughters?: Record<string, number>;
+  offspring?: Record<string, number>;
+  inheritance: string;
+}) {
+  if (inheritance === "sex_linked" && sons && daughters) {
+    const alleles = { male: ["Z+", "Z-"], female: ["Z+", "W"] };
+    const grid = [
+      [sons["Z+Z+"] ?? 0, sons["Z+Z-"] ?? 0],
+      [daughters["Z+W"] ?? 0, daughters["Z-W"] ?? 0],
+    ];
+    const rowLabels = ["♂ (Z+)", "♂ (Z-)"];
+    const colLabels = ["♀ (Z+)", "♀ (W)"];
+    const cellLabel = (row: number, col: number) => {
+      if (row === 0 && col === 0) return "Z+Z+ (visual ♂)";
+      if (row === 0 && col === 1) return "Z+W (visual ♀)";
+      if (row === 1 && col === 0) return "Z+Z- (portador ♂)";
+      return "Z-W (normal ♀)";
+    };
+    const cellColor = (row: number, col: number) => {
+      if (row === 0 && col === 0) return "bg-amber-100 border-amber-300";
+      if (row === 0 && col === 1) return "bg-amber-100 border-amber-300";
+      if (row === 1 && col === 0) return "bg-blue-50 border-blue-200";
+      return "bg-gray-50 border-gray-200";
+    };
+    return (
+      <div className="mt-2">
+        <p className="text-xs text-gray-400 mb-1.5 font-medium">Quadro de Punnett</p>
+        <div className="overflow-x-auto">
+          <table className="text-xs border-collapse min-w-full">
+            <thead>
+              <tr>
+                <th className="w-8 h-8"></th>
+                {colLabels.map((l) => (
+                  <th key={l} className="px-2 py-1 text-center text-rose-700 font-semibold border border-gray-200 bg-rose-50">{l}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rowLabels.map((rl, ri) => (
+                <tr key={rl}>
+                  <td className="px-2 py-1 text-center text-blue-700 font-semibold border border-gray-200 bg-blue-50">{rl}</td>
+                  {colLabels.map((_, ci) => (
+                    <td key={ci} className={`px-2 py-1.5 text-center border ${cellColor(ri, ci)} leading-tight`}>
+                      <div className="font-mono text-xs">{cellLabel(ri, ci).split(" ")[0]}</div>
+                      <div className="text-gray-500">{Math.round(grid[ri][ci] * 100)}%</div>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (inheritance === "autosomal_recessive" && offspring) {
+    const states = ["NN", "Nm", "mm"];
+    const labels: Record<string, string> = { NN: "Normal", Nm: "Portador", mm: "Visual" };
+    const colors: Record<string, string> = { NN: "bg-gray-50 border-gray-200", Nm: "bg-blue-50 border-blue-200", mm: "bg-amber-100 border-amber-300" };
+    const rows = ["N", "m"];
+    const grid = [
+      [offspring["NN"] ?? 0, offspring["Nm"] ?? 0],
+      [offspring["Nm"] ?? 0, offspring["mm"] ?? 0],
+    ];
+    return (
+      <div className="mt-2">
+        <p className="text-xs text-gray-400 mb-1.5 font-medium">Quadro de Punnett</p>
+        <div className="overflow-x-auto">
+          <table className="text-xs border-collapse">
+            <thead>
+              <tr>
+                <th className="w-8 h-8"></th>
+                {rows.map((l) => <th key={l} className="px-3 py-1 text-center text-rose-700 font-semibold border border-gray-200 bg-rose-50">{l}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((rl, ri) => (
+                <tr key={rl}>
+                  <td className="px-3 py-1 text-center text-blue-700 font-semibold border border-gray-200 bg-blue-50">{rl}</td>
+                  {rows.map((_, ci) => {
+                    const geno = ri === 0 && ci === 0 ? "NN" : (ri === 1 && ci === 1) ? "mm" : "Nm";
+                    return (
+                      <td key={ci} className={`px-2 py-1.5 text-center border ${colors[geno]} leading-tight`}>
+                        <div className="font-mono">{geno}</div>
+                        <div className="text-gray-500 text-xs">{labels[geno]}</div>
+                        <div className="text-gray-400 text-xs">{Math.round((grid[ri][ci]) * 100)}%</div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (inheritance === "autosomal_dominant" && offspring) {
+    const states = ["nn", "Nn", "NN"];
+    const labels: Record<string, string> = { nn: "Normal", Nn: "Visual (het)", NN: "⚠️ Homozigoto" };
+    const colors: Record<string, string> = { nn: "bg-gray-50 border-gray-200", Nn: "bg-amber-100 border-amber-300", NN: "bg-red-100 border-red-300" };
+    return (
+      <div className="mt-2">
+        <p className="text-xs text-gray-400 mb-1.5 font-medium">Distribuição de Punnett (dominante)</p>
+        <div className="flex gap-2 flex-wrap">
+          {states.filter((s) => (offspring[s] ?? 0) > 0).map((s) => (
+            <div key={s} className={`border rounded px-3 py-2 text-center ${colors[s]}`}>
+              <div className="font-mono text-sm font-bold">{s}</div>
+              <div className="text-xs text-gray-600">{labels[s]}</div>
+              <div className="text-sm font-bold mt-0.5">{Math.round((offspring[s] ?? 0) * 100)}%</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function MutResultCard({ result }: { result: any }) {
   const [open, setOpen] = useState(false);
+  const [showPunnett, setShowPunnett] = useState(false);
   const hasWarn = (result.warnings?.length ?? 0) > 0;
   return (
     <Card className={`border-2 ${hasWarn ? "border-red-200 bg-red-50" : "border-gray-100"}`}>
@@ -117,6 +242,12 @@ function MutResultCard({ result }: { result: any }) {
             {result.inheritanceLabel}
           </Badge>
           {hasWarn && <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />}
+          <button
+            onClick={() => setShowPunnett((v) => !v)}
+            className="ml-auto text-xs text-blue-600 underline"
+          >
+            {showPunnett ? "Ocultar Punnett" : "Ver Punnett"}
+          </button>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -125,6 +256,16 @@ function MutResultCard({ result }: { result: any }) {
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600" />{w}
           </div>
         ))}
+
+        {showPunnett && (
+          <PunnettGrid
+            sons={result.sons}
+            daughters={result.daughters}
+            offspring={result.offspring}
+            inheritance={result.inheritance}
+          />
+        )}
+
         {result.sons && result.daughters && (
           <div className="grid sm:grid-cols-2 gap-3">
             {[
@@ -255,22 +396,31 @@ function MutSelector({ mutations, sex, selected, genotypes, onToggle, onGeno }: 
 // ─── 1. PAR IDEAL ────────────────────────────────────────────────────────────
 
 function ParIdeal() {
-  const [birdId, setBirdId] = useState("");
-  const [limit, setLimit] = useState("5");
+  const [birdId, setBirdId]       = useState("");
+  const [objective, setObjective] = useState<string>("linhagem");
   const { data: allBirds } = trpc.birds.list.useQuery({});
-  const { data, isLoading } = trpc.mendelian.suggestMatches.useQuery(
-    { birdId: Number(birdId), limit: Number(limit) },
+  const { data, isLoading } = trpc.genetics.recommendPairing.useQuery(
+    { birdId: Number(birdId), objective: objective as any },
     { enabled: !!birdId }
   );
+
+  const OBJECTIVES = [
+    { value: "linhagem",    label: "Preservar linhagem" },
+    { value: "cor",         label: "Melhorar cor" },
+    { value: "porte",       label: "Melhorar porte" },
+    { value: "show",        label: "Preparar para exposição" },
+    { value: "diversidade", label: "Aumentar diversidade genética" },
+    { value: "portadores",  label: "Produzir portadores" },
+  ];
 
   return (
     <div className="space-y-5">
       <InlineAlert variant="info">
-        Selecione um pássaro do plantel. O sistema analisa todos os parceiros compatíveis por COI, genética, alertas de risco e histórico — retornando os mais indicados por pontuação.
+        O sistema avalia <strong>genética (Punnett), COI, histórico reprodutivo e objetivo</strong> — retornando os melhores pares ranqueados por pontuação (0–100).
       </InlineAlert>
 
-      <div className="flex gap-3 flex-wrap items-end">
-        <div className="flex-1 min-w-0">
+      <div className="space-y-3">
+        <div className="min-w-0">
           <p className="text-xs text-gray-500 mb-1.5">Pássaro base</p>
           <Select value={birdId} onValueChange={setBirdId}>
             <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione o pássaro" /></SelectTrigger>
@@ -288,50 +438,80 @@ function ParIdeal() {
             </SelectContent>
           </Select>
         </div>
-        <div className="w-28">
-          <p className="text-xs text-gray-500 mb-1.5">Resultados</p>
-          <Select value={limit} onValueChange={setLimit}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+        <div className="min-w-0">
+          <p className="text-xs text-gray-500 mb-1.5">Objetivo do cruzamento</p>
+          <Select value={objective} onValueChange={setObjective}>
+            <SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {["3","5","8","10","15"].map((n) => <SelectItem key={n} value={n}>Top {n}</SelectItem>)}
+              {OBJECTIVES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      {isLoading && <div className="text-center py-8 text-gray-400 text-sm">Analisando plantel...</div>}
+      {isLoading && (
+        <div className="text-center py-8 text-gray-400 text-sm animate-pulse">
+          Analisando plantel com 6 critérios…
+        </div>
+      )}
 
       {data && (
         <div className="space-y-3">
+          {data.totalEvaluated > 0 && (
+            <p className="text-xs text-gray-400">
+              {data.candidates.length} melhores de {data.totalEvaluated} avaliados ·{" "}
+              objetivo: <span className="font-medium">{OBJECTIVES.find(o => o.value === data.objective)?.label}</span>
+            </p>
+          )}
           {data.candidates.length === 0 ? (
-            <InlineAlert variant="warning">Nenhum candidato disponível. Verifique se há pássaros do sexo oposto com status ativo.</InlineAlert>
+            <InlineAlert variant="warning">
+              Nenhum candidato disponível. Verifique se há pássaros do sexo oposto com status ativo.
+            </InlineAlert>
           ) : (
-            data.candidates.map((c, i) => (
-              <Card key={c.id} className={`border-2 ${i === 0 ? "border-emerald-300 bg-emerald-50" : c.coiRisk === "high" ? "border-red-200" : "border-gray-100"}`}>
+            data.candidates.map((c: any, i: number) => (
+              <Card key={c.id} className={`border-2 transition-colors ${
+                i === 0 ? "border-emerald-300 bg-emerald-50/60"
+                : (c.coiRisk === "high" ? "border-red-200" : "border-gray-100 hover:border-gray-200")
+              }`}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         {i === 0 && <Star className="w-4 h-4 text-amber-500 shrink-0" />}
                         <Link href={`/birds/${c.id}/ficha`}>
                           <span className="font-mono font-bold text-amber-700 hover:underline">{c.ring}</span>
                         </Link>
-                        <CoiRiskBadge risk={c.coiRisk} pct={`${(c.coi*100).toFixed(1)}%`} />
-                        {!c.hasGenotype && <span className="text-xs text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Sem genótipo</span>}
+                        <CoiRiskBadge risk={c.coiRisk} pct={c.coiPct} />
+                        {!c.hasGenotype && (
+                          <span className="text-xs text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Sem genótipo</span>
+                        )}
                       </div>
-                      <p className="text-xs text-gray-500">{c.specialtyName} · {c.colorName}</p>
-                      {c.highlights.length > 0 && (
-                        <div className="mt-1.5 space-y-0.5">
-                          {c.highlights.map((h, j) => (
+                      {c.displayTitle && (
+                        <p className="text-xs text-gray-500 mb-1.5 truncate">{c.displayTitle}</p>
+                      )}
+
+                      {/* Score breakdown */}
+                      <div className="flex gap-1.5 flex-wrap mt-1 mb-1.5">
+                        <span className="text-xs text-purple-700 bg-purple-50 border border-purple-100 rounded px-1.5 py-0.5">
+                          Genética {c.geneticScore}/35
+                        </span>
+                        <span className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5">
+                          COI {c.coiScore}/20
+                        </span>
+                      </div>
+
+                      {c.reasons?.length > 0 && (
+                        <div className="space-y-0.5">
+                          {c.reasons.slice(0, 2).map((r: string, j: number) => (
                             <p key={j} className="text-xs text-emerald-700 flex items-center gap-1">
-                              <CheckCircle className="w-3 h-3 shrink-0" />{h}
+                              <CheckCircle className="w-3 h-3 shrink-0" />{r}
                             </p>
                           ))}
                         </div>
                       )}
-                      {c.warnings.length > 0 && (
-                        <div className="mt-1.5 space-y-0.5">
-                          {c.warnings.slice(0, 2).map((w, j) => (
+                      {c.warnings?.length > 0 && (
+                        <div className="space-y-0.5 mt-0.5">
+                          {c.warnings.slice(0, 2).map((w: string, j: number) => (
                             <p key={j} className="text-xs text-amber-700 flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3 shrink-0" />{w}
                             </p>
@@ -340,9 +520,9 @@ function ParIdeal() {
                       )}
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-2xl font-bold text-gray-900">{c.compatibilityScore}</p>
+                      <p className="text-2xl font-bold text-gray-900">{c.finalScore}</p>
                       <p className="text-xs text-gray-400">/ 100</p>
-                      <ScoreBar value={c.compatibilityScore} />
+                      <ScoreBar value={c.finalScore} />
                     </div>
                   </div>
                 </CardContent>
@@ -354,6 +534,7 @@ function ParIdeal() {
     </div>
   );
 }
+
 
 // ─── 2. CASAL DO PLANTEL + RELATÓRIO ─────────────────────────────────────────
 
@@ -542,6 +723,7 @@ const OBJETIVOS = [
 
 function ModoGuiado() {
   const [step, setStep] = useState(0);
+  const [, setLocation] = useLocation();
   const [maleId, setMaleId] = useState("");
   const [femaleId, setFemaleId] = useState("");
   const [objetivo, setObjetivo] = useState("");
@@ -687,6 +869,14 @@ function ModoGuiado() {
                 <Button variant="outline" onClick={() => window.print()} className="gap-2 print:hidden">
                   <Printer className="w-4 h-4" />Imprimir
                 </Button>
+                {report.status !== "NAO_RECOMENDADO" && (
+                  <Button
+                    className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                    onClick={() => setLocation(`/couples?maleId=${maleId}&femaleId=${femaleId}`)}
+                  >
+                    <Heart className="w-4 h-4" />Criar casal
+                  </Button>
+                )}
               </div>
             </>
           )}
@@ -910,32 +1100,34 @@ function CompararCenarios() {
 
       {comparison && (
         <div className="space-y-3">
-          <h3 className="font-semibold text-gray-800 text-sm">Resultado da comparação — melhor para pior:</h3>
-          {[...comparison]
-            .sort((a, b) => (RISK_RANK[a.riskScore] ?? 9) - (RISK_RANK[b.riskScore] ?? 9) || a.warningCount - b.warningCount)
-            .map((sc, i) => (
-              <Card key={sc.label} className={`border-2 ${i === 0 ? "border-emerald-300" : "border-gray-100"}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        {i === 0 && <Star className="w-4 h-4 text-amber-500" />}
-                        <span className="font-semibold text-gray-900">{sc.label}</span>
-                        <StatusBadge status={sc.riskScore as any} />
-                      </div>
-                      {sc.result.warnings?.slice(0, 2).map((w: string, j: number) => (
-                        <p key={j} className="text-xs text-amber-700 flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3 shrink-0" />{w.slice(0, 80)}{w.length > 80 ? "..." : ""}
-                        </p>
-                      ))}
+          <h3 className="font-semibold text-gray-800 text-sm">Resultado — ranqueado do melhor para o pior:</h3>
+          {[...comparison].map((sc: any, i: number) => (
+            <Card key={sc.label} className={`border-2 ${i === 0 ? "border-emerald-300 bg-emerald-50/40" : "border-gray-100"}`}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {i === 0 && <Star className="w-4 h-4 text-amber-500 shrink-0" />}
+                      <span className="font-semibold text-gray-900">{sc.label}</span>
+                      <StatusBadge status={sc.riskScore as any} />
+                      {sc.coiPct && (
+                        <CoiRiskBadge risk={sc.coiRisk} pct={sc.coiPct} />
+                      )}
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400">{sc.mutationCount} mutação(ões) · {sc.warningCount} alerta(s)</p>
-                    </div>
+                    {sc.result.warnings?.slice(0, 2).map((w: string, j: number) => (
+                      <p key={j} className="text-xs text-amber-700 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 shrink-0" />{w.slice(0, 80)}{w.length > 80 ? "..." : ""}
+                      </p>
+                    ))}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  <div className="text-right shrink-0">
+                    <p className="text-xs text-gray-400">{sc.mutationCount} mutação(ões)</p>
+                    <p className="text-xs text-gray-400">{sc.warningCount} alerta(s)</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>

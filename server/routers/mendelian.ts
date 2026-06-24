@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { bird_genotype, birds } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { predictCross, BirdGenotypeInput } from "../_core/mendelian";
 import { calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
@@ -42,6 +42,22 @@ export const mendelianRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível");
       const { birdId, ...fields } = input;
+
+      // ── Validação backend: fêmea NÃO pode ser portadora de gene sex-linked
+      if (fields.mutations && fields.mutations.length > 0) {
+        const [bird] = await db.select().from(birds).where(eq(birds.id, birdId)).limit(1);
+        if (bird?.sex === "fêmea") {
+          const invalidMutation = fields.mutations.find(
+            (m) => m.inheritance === "sex_linked_recessive" && m.zygosity === "heterozygous_carrier"
+          );
+          if (invalidMutation) {
+            throw new Error(
+              `Genótipo inválido: fêmeas não podem ser portadoras silenciosas de genes ligados ao sexo (${invalidMutation.mutation}). ` +
+              `No sistema ZZ/ZW, a fêmea tem apenas um cromossomo Z — ela é visual (Z⁺W) ou normal (Z⁻W), nunca portadora silenciosa.`
+            );
+          }
+        }
+      }
 
       const existing = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, birdId));
       if (existing.length === 0) {
@@ -115,7 +131,7 @@ export const mendelianRouter = router({
    */
   suggestMatches: protectedProcedure
     .input(z.object({ birdId: z.number(), limit: z.number().min(1).max(20).default(5) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { target: null, candidates: [] };
 
@@ -125,7 +141,13 @@ export const mendelianRouter = router({
       const targetGenotype = (await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.birdId)))[0];
 
       const oppositeSex = target.sex === "macho" ? "fêmea" : "macho";
-      const allBirds = await db.select().from(birds).where(eq(birds.status, "active"));
+      const tenantId = (ctx.user as any)?.tenantId ?? null;
+
+      // Filtrar pássaros do próprio tenant
+      const activeBirdsQuery = tenantId
+        ? and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))
+        : eq(birds.status, "active");
+      const allBirds = await db.select().from(birds).where(activeBirdsQuery);
       const allGenotypes = await db.select().from(bird_genotype);
       const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
 

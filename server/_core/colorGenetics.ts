@@ -129,6 +129,8 @@ interface MutationConfig {
   warningCarrier?:     string;
   description:         string;
   phenotypeEffect:     string;  // o que o gene faz visualmente
+  compoundNote?:       string;  // nota sobre mutação composta (isabelino, topázio)
+  compound?:           string[]; // mutações componentes
 }
 
 export const MUTATION_CONFIG: Record<string, MutationConfig> = {
@@ -283,6 +285,23 @@ export const MUTATION_CONFIG: Record<string, MutationConfig> = {
     warningHomozygous: "⚠️ NEVADO × NEVADO (Double Buffing): ~25% dos filhotes terão plumas excessivamente macias, associadas a problemas de saúde. Prefira intenso × nevado.",
     description: "Controla o tipo de pluma: nevado (buffed) vs intenso. Homozigoto nevado = double buffing.",
     phenotypeEffect: "Tipo de pluma: nevado (bordas claras/macias) vs intenso (saturado)",
+  },
+  // ── Mutações compostas (isabelino e topázio) ────────────────────────────
+  isabelino: {
+    label: "Isabelino (Isabel)",
+    labelEn: "Isabel",
+    inheritance: "sex_linked",
+    inheritanceLabel: "ligada ao sexo (ágata + canela simultâneos)",
+    description: "Composto de ágata E canela no mesmo pássaro. Macho isabelino é ZZ+ para ambos os loci. Fêmea isabelina é Z+W para ágata e Z+W para canela. Melanina muito reduzida — plumagem extremamente clara.",
+    phenotypeEffect: "Eumelanina fortemente reduzida em todas as partes; plumagem muito pálida com reflexo marrom-acinzentado",
+  },
+  topazio: {
+    label: "Topázio (Topaz)",
+    labelEn: "Topaz",
+    inheritance: "sex_linked",
+    inheritanceLabel: "ligada ao sexo (ino + opalino simultâneos)",
+    description: "Composto de ino E opalino ligados ao sexo. Produz pássaro com eumelanina ausente (ino) e redistribuição de melanina (opalino), resultando em fenótipo único dourado/âmbar.",
+    phenotypeEffect: "Ausência de eumelanina com redistribuição opalina; reflexo dourado/topázio característico",
   },
 };
 

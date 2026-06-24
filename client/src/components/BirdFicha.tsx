@@ -428,44 +428,38 @@ function GeneticProfileSection({ birdId, sex }: { birdId: number; sex: string })
 }
 
 function PairingSuggestions({ birdId }: { birdId: number }) {
-  const recommend = trpc.genetics.recommendPairing.useMutation();
+  const recommend = trpc.genetics.recommendPairing.useQuery(
+    { birdId },
+    { enabled: !!birdId }
+  );
 
   return (
     <div>
-      {!recommend.data && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={recommend.isPending}
-          onClick={() => recommend.mutate({ birdId })}
-        >
-          {recommend.isPending ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <Sparkles className="w-4 h-4 mr-2" />
-          )}
-          {recommend.isPending ? "Buscando melhores pares..." : "Sugerir melhor par (IA)"}
-        </Button>
+      {recommend.isLoading && (
+        <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+          <Loader2 className="w-4 h-4 animate-spin" />Buscando melhores pares…
+        </div>
       )}
 
       {recommend.data && (
         <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase">Melhores pares sugeridos</p>
+          <p className="text-xs text-gray-400 uppercase">Melhores pares · {recommend.data.candidates.length} de {recommend.data.totalEvaluated} avaliados</p>
           {recommend.data.candidates.length > 0 ? (
             <div className="space-y-1.5">
-              {recommend.data.candidates.map((c, i) => (
+              {recommend.data.candidates.slice(0, 5).map((c: any, i: number) => (
                 <div key={c.id} className="flex items-center justify-between text-sm rounded-lg border p-2">
-                  <div>
+                  <div className="min-w-0">
                     <span className="font-mono font-semibold">{i === 0 ? "🏆 " : ""}{c.ring}</span>
-                    <span className="text-gray-400 ml-2">COI {(c.coi * 100).toFixed(1)}%</span>
+                    <span className="text-gray-400 ml-2">COI {c.coiPct}</span>
+                    {c.displayTitle && <span className="text-gray-400 ml-2 text-xs truncate">· {c.displayTitle}</span>}
                   </div>
-                  {c.bestScore != null && <span className="text-xs text-gray-500">nota {c.bestScore}</span>}
+                  <span className="text-xs font-bold text-gray-700 shrink-0 ml-2">{c.finalScore}/100</span>
                 </div>
               ))}
             </div>
-          ) : null}
-          <p className="text-sm text-gray-600 italic">{recommend.data.summary}</p>
+          ) : (
+            <p className="text-sm text-gray-400">Nenhum candidato disponível.</p>
+          )}
         </div>
       )}
     </div>
