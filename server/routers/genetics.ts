@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { birds, genetic_rules, couples, scores, championship_entries } from "../../drizzle/schema";
+import { birds, genetic_rules, couples, scores, championship_entries, bird_genotype } from "../../drizzle/schema";
 import { eq, or } from "drizzle-orm";
 import {
   buildPedigreeTree,
@@ -233,6 +233,138 @@ export const geneticsRouter = router({
       }
 
       return { summary, candidates };
+    }),
+
+  // =========================================================================
+  // Compara múltiplos cenários de cruzamento
+  // =========================================================================
+  compareCrossings: protectedProcedure
+    .input(z.object({
+      scenarios: z.array(z.object({
+        label: z.string().max(50),
+        male: parentGenotypesSchema,
+        female: parentGenotypesSchema,
+      })).min(2).max(6),
+    }))
+    .query(({ input }) => {
+      return input.scenarios.map((scenario) => {
+        const result = calculateColorCross({ male: scenario.male as any, female: scenario.female as any });
+        const lethalFraction = result.phenotypeSummary.lethalFraction;
+        const mutCount = Object.keys(result.byMutation).length;
+        const riskScore = lethalFraction > 0 ? "RISCO_LETAL"
+          : result.warnings.length > 0 ? "ATENCAO"
+          : mutCount === 0 ? "SEM_DADOS"
+          : "APROVADO";
+        return {
+          label: scenario.label,
+          result,
+          riskScore,
+          mutationCount: mutCount,
+          hasLethalRisk: lethalFraction > 0,
+          warningCount: result.warnings.length,
+          summary: result.summary,
+        };
+      });
+    }),
+
+  // =========================================================================
+  // Relatório completo de cruzamento — inclui dados de pássaros reais
+  // =========================================================================
+  buildCrossReport: protectedProcedure
+    .input(z.object({ maleId: z.number().int().positive(), femaleId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+
+      const [male]   = await db.select().from(birds).where(eq(birds.id, input.maleId)).limit(1);
+      const [female] = await db.select().from(birds).where(eq(birds.id, input.femaleId)).limit(1);
+      if (!male || !female) return null;
+
+      const [maleGeno]   = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.maleId)).limit(1);
+      const [femaleGeno] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.femaleId)).limit(1);
+
+      // COI
+      const allBirds = await db.select().from(birds);
+      const birdMap = new Map<number, PedigreeBird>(
+        allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+      );
+      const coi    = calculateCOIForPair(male.id, female.id, birdMap, 6);
+      const coiRisk = classifyCOIRisk(coi);
+
+      // Confidence
+      const hasMaleGeno   = !!maleGeno   && (maleGeno.mutations as any[])?.length > 0;
+      const hasFemaleGeno = !!femaleGeno && (femaleGeno.mutations as any[])?.length > 0;
+      const hasBothParents = !!(male.fatherId && male.motherId && female.fatherId && female.motherId);
+      const confidenceScore =
+        hasMaleGeno && hasFemaleGeno && hasBothParents ? 0.90
+        : hasMaleGeno && hasFemaleGeno ? 0.75
+        : (hasMaleGeno || hasFemaleGeno) && hasBothParents ? 0.60
+        : hasMaleGeno || hasFemaleGeno ? 0.45
+        : hasBothParents ? 0.30
+        : 0.15;
+      const confidenceLabel =
+        confidenceScore >= 0.75 ? "Alta" : confidenceScore >= 0.45 ? "Média" : "Baixa";
+
+      // Build genotype input for color cross if genotypes exist
+      let colorResult = null;
+      if (hasMaleGeno && hasFemaleGeno) {
+        const mutForColor = (geno: typeof maleGeno, sex: "macho" | "fêmea") => {
+          const muts = (geno?.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [];
+          const out: Record<string, string> = { sex };
+          for (const m of muts) {
+            if (!m.mutation || !m.zygosity) continue;
+            if ((MUTATION_CONFIG as any)[m.mutation]) {
+              const cfg = (MUTATION_CONFIG as any)[m.mutation];
+              if (cfg.inheritance === "sex_linked") {
+                out[m.mutation] = sex === "macho"
+                  ? m.zygosity === "homozygous_mutant" ? "Z+Z+" : m.zygosity === "heterozygous_carrier" ? "Z+Z-" : "Z-Z-"
+                  : m.zygosity === "homozygous_mutant" ? "Z+W" : "Z-W";
+              } else if (cfg.inheritance === "autosomal_recessive") {
+                out[m.mutation] = m.zygosity === "homozygous_mutant" ? "mm" : m.zygosity === "heterozygous_carrier" ? "Nm" : "NN";
+              } else {
+                out[m.mutation] = m.zygosity === "homozygous_mutant" ? "NN" : m.zygosity === "heterozygous_carrier" ? "Nn" : "nn";
+              }
+            }
+          }
+          return out as any;
+        };
+        colorResult = calculateColorCross({
+          male:   mutForColor(maleGeno!,   "macho"),
+          female: mutForColor(femaleGeno!, "fêmea"),
+        });
+      }
+
+      // Missing data
+      const missingData: string[] = [];
+      if (!hasMaleGeno)   missingData.push("Genótipo do macho não cadastrado");
+      if (!hasFemaleGeno) missingData.push("Genótipo da fêmea não cadastrado");
+      if (!male.fatherId)   missingData.push("Pai do macho desconhecido");
+      if (!male.motherId)   missingData.push("Mãe do macho desconhecida");
+      if (!female.fatherId) missingData.push("Pai da fêmea desconhecido");
+      if (!female.motherId) missingData.push("Mãe da fêmea desconhecida");
+
+      // Status
+      const hasLethal = (colorResult?.phenotypeSummary?.lethalFraction ?? 0) > 0 || coiRisk === "high";
+      const status: "IDEAL" | "APROVADO" | "ATENCAO" | "NAO_RECOMENDADO" | "DADOS_INSUFICIENTES" =
+        !hasMaleGeno && !hasFemaleGeno ? "DADOS_INSUFICIENTES"
+        : hasLethal ? "NAO_RECOMENDADO"
+        : coiRisk === "moderate" ? "ATENCAO"
+        : "APROVADO";
+
+      return {
+        male:   { id: male.id,   ring: male.ring,   displayTitle: male.displayTitle,   sex: male.sex,   modality: male.modality,   breedName: male.breedName,   hasGenotype: hasMaleGeno },
+        female: { id: female.id, ring: female.ring, displayTitle: female.displayTitle, sex: female.sex, modality: female.modality, breedName: female.breedName, hasGenotype: hasFemaleGeno },
+        coi,   coiRisk,
+        coiPct: `${(coi * 100).toFixed(2)}%`,
+        confidenceScore,
+        confidenceLabel,
+        missingData,
+        status,
+        colorResult,
+        warnings: colorResult?.warnings ?? [],
+        recommendations: colorResult?.recommendations ?? [],
+        generatedAt: new Date(),
+      };
     }),
 
   // =========================================================================
