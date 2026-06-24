@@ -39,6 +39,18 @@ export const users = pgTable("users", {
   name:             text("name"),
   email:            varchar("email", { length: 320 }),
   loginMethod:      varchar("loginMethod", { length: 64 }),
+  /**
+   * Hash da senha local. Para usuários cadastrados manualmente, a senha deve
+   * ser armazenada de forma segura. Este campo não armazena a senha em
+   * texto claro. Quando loginMethod = 'local', passwordHash deve ser
+   * preenchido; quando loginMethod refere-se a OAuth/externo, pode ser nulo.
+   */
+  passwordHash:     varchar("passwordHash", { length: 255 }),
+  /**
+   * Indica que o usuário deve alterar a senha no primeiro acesso. Útil
+   * quando um administrador cria uma senha temporária.
+   */
+  mustChangePassword: boolean("mustChangePassword").default(true),
   // Roles: PLATFORM_ADMIN | CANARIL_MANAGER | CANARIL_MEMBER | VIEWER
   role:             varchar("role", { length: 30 }).default("CANARIL_MANAGER").notNull(),
   tenantId:         integer("tenantId"),
@@ -48,6 +60,10 @@ export const users = pgTable("users", {
   disabledBy:       integer("disabledBy"),
   disabledReason:   text("disabledReason"),
   accessExpiresAt:  timestamp("accessExpiresAt"),
+  /**
+   * Observação interna, visível apenas aos administradores da plataforma.
+   */
+  internalNote:     text("internalNote"),
   createdAt:        timestamp("createdAt").defaultNow().notNull(),
   updatedAt:        timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   lastSignedIn:     timestamp("lastSignedIn").defaultNow().notNull(),

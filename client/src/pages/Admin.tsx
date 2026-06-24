@@ -7,6 +7,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+// Importa modal de criação de usuário
+import CreateUserModal from "@/pages/admin/CreateUserModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,17 +26,26 @@ function TabUsuarios() {
   const deleteUser = trpc.admin.deleteUser.useMutation({ onSuccess: () => { toast.success("Usuário removido."); refetch(); }, onError: (e) => toast.error(e.message) });
   const updateUser = trpc.admin.updateUser.useMutation({ onSuccess: () => { toast.success("Usuário atualizado."); refetch(); }, onError: (e) => toast.error(e.message) });
 
+  // Estado para mostrar a modal de criação de usuário
+  const [showCreate, setShowCreate] = useState(false);
+
+  // Mapeamento de cores para os papéis oficiais
   const roleColors: Record<string, string> = {
-    SUPER_ADMIN: "bg-purple-100 text-purple-900",
-    OWNER: "bg-amber-100 text-amber-900",
-    ADMIN: "bg-blue-100 text-blue-800",
-    MANAGER: "bg-green-100 text-green-800",
-    MEMBER: "bg-gray-100 text-gray-700",
+    PLATFORM_ADMIN: "bg-purple-100 text-purple-900",
+    CANARIL_MANAGER: "bg-green-100 text-green-800",
+    CANARIL_MEMBER: "bg-blue-100 text-blue-800",
     VIEWER: "bg-gray-50 text-gray-500",
   };
 
+  // Lista de papéis para o select (usado abaixo). A ordem define a ordem de exibição.
+  const roleOptions = ["PLATFORM_ADMIN", "CANARIL_MANAGER", "CANARIL_MEMBER", "VIEWER"];
+
   return (
     <div className="space-y-4">
+      {/* Botão de criação de usuário */}
+      <div className="flex justify-end">
+        <Button onClick={() => setShowCreate(true)}>+ Novo Usuário</Button>
+      </div>
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -54,16 +65,18 @@ function TabUsuarios() {
                     <TableCell className="font-medium">{u.name ?? "—"}</TableCell>
                     <TableCell className="text-sm text-gray-500">{u.email ?? "—"}</TableCell>
                     <TableCell>
-                      <Select
-                        defaultValue={u.role ?? "MEMBER"}
+                    <Select
+                        defaultValue={u.role ?? "CANARIL_MEMBER"}
                         onValueChange={(v) => updateUser.mutate({ id: u.id, role: v as any })}
                       >
-                        <SelectTrigger className="w-32 h-7 text-xs">
+                        <SelectTrigger className="w-40 h-7 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {["SUPER_ADMIN","OWNER","ADMIN","MANAGER","MEMBER","VIEWER"].map((r) => (
-                            <SelectItem key={r} value={r}><span className={`text-xs px-1.5 py-0.5 rounded ${roleColors[r]}`}>{r}</span></SelectItem>
+                          {roleOptions.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${roleColors[r]}`}>{r}</span>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -87,6 +100,8 @@ function TabUsuarios() {
           </div>
         </CardContent>
       </Card>
+      {/* Modal de criação de usuário */}
+      <CreateUserModal open={showCreate} onOpenChange={setShowCreate} />
     </div>
   );
 }
