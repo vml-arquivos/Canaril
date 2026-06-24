@@ -3,9 +3,17 @@
  *
  * Soft delete, lixeira, restauração, gestão de usuários,
  * tenants, auditoria e limpeza de dados de teste.
+ *
+ * RBAC (Missão 8):
+ *   - Gestão de usuários/tenants → somente PLATFORM_ADMIN
+ *   - Auditoria global           → somente PLATFORM_ADMIN
+ *   - Soft delete operacional    → protectedProcedure (qualquer autenticado)
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import {
+  protectedProcedure, platformAdminProcedure, router,
+  requirePlatformAdmin, callerIsPlatformAdmin,
+} from "../_core/trpc";
 import { getDb } from "../db";
 import {
   users, birds, rings, ring_batches, couples, clutches, chicks, cages,
@@ -41,15 +49,15 @@ function restorePatch() {
 
 export const adminRouter = router({
 
-  // ─── TENANTS ─────────────────────────────────────────────────────────────
+  // ─── TENANTS (somente PLATFORM_ADMIN) ─────────────────────────────────────
 
-  getTenants: protectedProcedure.query(async () => {
+  getTenants: platformAdminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(tenants).where(isNull(tenants.deletedAt));
   }),
 
-  createTenant: protectedProcedure
+  createTenant: platformAdminProcedure
     .input(z.object({
       name: z.string().min(2).max(200),
       slug: z.string().min(2).max(100).regex(/^[a-z0-9-]+$/),
@@ -68,7 +76,7 @@ export const adminRouter = router({
       return t;
     }),
 
-  updateTenant: protectedProcedure
+  updateTenant: platformAdminProcedure
     .input(z.object({
       id: z.number().int().positive(),
       name: z.string().min(2).max(200).optional(),
@@ -90,7 +98,7 @@ export const adminRouter = router({
       return updated;
     }),
 
-  deleteTenant: protectedProcedure
+  deleteTenant: platformAdminProcedure
     .input(z.object({ id: z.number().int().positive(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -101,60 +109,134 @@ export const adminRouter = router({
       return { success: true };
     }),
 
-  // ─── USUÁRIOS ────────────────────────────────────────────────────────────
+  // ─── USUÁRIOS (somente PLATFORM_ADMIN) ────────────────────────────────────
 
-  listUsers: protectedProcedure.query(async () => {
+  listUsers: platformAdminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db.select().from(users).where(isNull(users.deletedAt));
   }),
 
-  updateUser: protectedProcedure
+  createUser: platformAdminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(200),
+      email: z.string().email(),
+      role: z.enum(["PLATFORM_ADMIN", "CANARIL_MANAGER", "CANARIL_MEMBER", "VIEWER"]).default("CANARIL_MANAGER"),
+      tenantId: z.number().int().positive().optional(),
+      isActive: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Banco não disponível.");
+      const uid = (ctx as any)?.userId;
+      // openId gerado como slug único para usuários criados internamente
+      const openId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const [created] = await db.insert(users).values({
+        openId,
+        name: input.name,
+        email: input.email,
+        role: input.role,
+        tenantId: input.tenantId ?? null,
+        isActive: input.isActive,
+        loginMethod: "local",
+        lastSignedIn: new Date(),
+      }).returning();
+      await writeAudit(db, { userId: uid, action: "create", entityType: "user", entityId: created.id, newVal: created });
+      return created;
+    }),
+
+  updateUser: platformAdminProcedure
     .input(z.object({
       id: z.number().int().positive(),
       name: z.string().optional().nullable(),
       email: z.string().email().optional().nullable(),
-      role: z.enum(["SUPER_ADMIN","OWNER","ADMIN","MANAGER","MEMBER","VIEWER"]).optional(),
+      role: z.enum(["PLATFORM_ADMIN", "CANARIL_MANAGER", "CANARIL_MEMBER", "VIEWER"]).optional(),
+      tenantId: z.number().int().positive().optional().nullable(),
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
+      const uid = (ctx as any)?.userId;
       const { id, ...patch } = input;
-      const [old] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+
+      // Proteção absoluta: verificar se o alvo é o último PLATFORM_ADMIN
+      const [target] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      if (!target) throw new Error("Usuário não encontrado.");
+      if (target.role === "PLATFORM_ADMIN" && patch.role && patch.role !== "PLATFORM_ADMIN") {
+        const admins = await db.select({ id: users.id }).from(users)
+          .where(and(eq(users.role, "PLATFORM_ADMIN"), isNull(users.deletedAt)));
+        if (admins.length === 1) throw new Error("Não é possível rebaixar o único PLATFORM_ADMIN do sistema.");
+      }
+
       const [updated] = await db.update(users).set(patch as any).where(eq(users.id, id)).returning();
-      await writeAudit(db, { userId: (ctx as any)?.userId, action: "update", entityType: "user", entityId: id, old, newVal: updated });
+      await writeAudit(db, { userId: uid, action: "update", entityType: "user", entityId: id, newVal: updated });
       return updated;
     }),
 
-  disableUser: protectedProcedure
-    .input(z.object({ id: z.number().int().positive(), reason: z.string().optional() }))
+  disableUser: platformAdminProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      reason: z.string().optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
       const uid = (ctx as any)?.userId;
-      // Não pode desativar o único owner
-      const owners = await db.select({ id: users.id }).from(users).where(and(eq(users.role, "OWNER"), isNull(users.deletedAt)));
-      if (owners.length === 1 && owners[0].id === input.id) {
-        throw new Error("Não é possível desativar o único proprietário do sistema.");
+      const { id } = input;
+
+      // Proteção: não suspender o último PLATFORM_ADMIN
+      const [tgt] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      if (tgt?.role === "PLATFORM_ADMIN") {
+        const admins = await db.select({ id: users.id }).from(users)
+          .where(and(eq(users.role, "PLATFORM_ADMIN"), isNull(users.deletedAt), eq(users.isActive, true)));
+        if (admins.length === 1 && admins[0].id === id) {
+          throw new Error("Não é possível suspender o único PLATFORM_ADMIN ativo do sistema.");
+        }
       }
-      await db.update(users).set({ isActive: false } as any).where(eq(users.id, input.id));
-      await writeAudit(db, { userId: uid, action: "update", entityType: "user", entityId: input.id, reason: `desativado: ${input.reason ?? ""}` });
+
+      await db.update(users).set({
+        isActive: false,
+        disabledAt: new Date(),
+        disabledBy: uid ?? null,
+        disabledReason: input.reason ?? null,
+      } as any).where(eq(users.id, id));
+      await writeAudit(db, { userId: uid, action: "update", entityType: "user", entityId: id, reason: `suspenso: ${input.reason ?? ""}` });
       return { success: true };
     }),
 
-  deleteUser: protectedProcedure
+  restoreUser: platformAdminProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Banco não disponível.");
+      const uid = (ctx as any)?.userId;
+      await db.update(users).set({
+        isActive: true,
+        disabledAt: null,
+        disabledBy: null,
+        disabledReason: null,
+      } as any).where(eq(users.id, input.id));
+      await writeAudit(db, { userId: uid, action: "restore", entityType: "user", entityId: input.id });
+      return { success: true };
+    }),
+
+  deleteUser: platformAdminProcedure
     .input(z.object({ id: z.number().int().positive(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
       const uid = (ctx as any)?.userId;
-      const owners = await db.select({ id: users.id }).from(users).where(and(eq(users.role, "OWNER"), isNull(users.deletedAt)));
-      if (owners.length === 1 && owners[0].id === input.id) {
-        throw new Error("Não é possível remover o único proprietário do sistema.");
+      const { id } = input;
+
+      const admins = await db.select({ id: users.id }).from(users)
+        .where(and(eq(users.role, "PLATFORM_ADMIN"), isNull(users.deletedAt)));
+      if (admins.length === 1 && admins[0].id === id) {
+        throw new Error("Não é possível remover o único PLATFORM_ADMIN do sistema.");
       }
-      await db.update(users).set(softDeletePatch(uid) as any).where(eq(users.id, input.id));
-      await writeAudit(db, { userId: uid, action: "soft_delete", entityType: "user", entityId: input.id, reason: input.reason });
+
+      await db.update(users).set(softDeletePatch(uid) as any).where(eq(users.id, id));
+      await writeAudit(db, { userId: uid, action: "soft_delete", entityType: "user", entityId: id, reason: input.reason });
       return { success: true };
     }),
 
@@ -230,9 +312,9 @@ export const adminRouter = router({
       return Object.fromEntries(results.map((r) => [r.label, r.rows]));
     }),
 
-  // ─── AUDITORIA ───────────────────────────────────────────────────────────
+  // ─── AUDITORIA GLOBAL (somente PLATFORM_ADMIN) ────────────────────────────
 
-  listAuditLogs: protectedProcedure
+  listAuditLogs: platformAdminProcedure
     .input(z.object({ entityType: z.string().optional(), limit: z.number().int().max(200).default(50) }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -242,6 +324,30 @@ export const adminRouter = router({
         ? q.where(eq(audit_logs.entityType, input.entityType))
         : q
       ).orderBy(sql`${audit_logs.createdAt} DESC`).limit(input.limit);
+    }),
+
+  // ─── AUDITORIA DO PRÓPRIO CANARIL (CANARIL_MANAGER + PLATFORM_ADMIN) ──────
+
+  listOwnAuditLogs: protectedProcedure
+    .input(z.object({
+      limit: z.number().int().max(200).default(50),
+      entityType: z.string().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      // PLATFORM_ADMIN sem tenant vê tudo; CANARIL_MANAGER vê só o próprio
+      const q = db.select().from(audit_logs);
+      const filtered = tenantId
+        ? q.where(and(
+            eq(audit_logs.tenantId as any, tenantId),
+            // Não mostrar logs administrativos globais
+            sql`${audit_logs.action} NOT IN ('execute_reset','delete_ring_batch','global_reset')`,
+            ...(input.entityType ? [eq(audit_logs.entityType, input.entityType)] : [])
+          ))
+        : (input.entityType ? q.where(eq(audit_logs.entityType, input.entityType)) : q);
+      return filtered.orderBy(sql`${audit_logs.createdAt} DESC`).limit(input.limit);
     }),
 
   // ─── PRÉVIA DE LIMPEZA DE TESTES ────────────────────────────────────────

@@ -44,6 +44,7 @@ const ResetCanaril = lazy(() => import("@/pages/admin/ResetCanaril"));
 const TestDataCleanup = lazy(() => import("@/pages/admin/TestDataCleanup"));
 const AnalysesCleanup = lazy(() => import("@/pages/admin/AnalysesCleanup"));
 const OrphanDataRepair = lazy(() => import("@/pages/admin/OrphanDataRepair"));
+const TenantAudit = lazy(() => import("@/pages/admin/TenantAudit"));
 
 // Fallback de loading para lazy pages
 function PageLoader() {
@@ -68,6 +69,37 @@ function ProtectedRoute({ component: Component, ...props }: any) {
 
   if (!user) {
     return <LoginPage />;
+  }
+
+  return <Component {...props} />;
+}
+
+// Componente para rotas exclusivas do PLATFORM_ADMIN
+function PlatformAdminRoute({ component: Component, ...props }: any) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
+  }
+
+  if (!user) return <LoginPage />;
+
+  const role = (user as any)?.role;
+  const isPlatformAdmin =
+    role === "PLATFORM_ADMIN" || role === "admin" || role === "OWNER" || role === "SUPER_ADMIN";
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center max-w-sm px-6">
+          <p className="text-5xl mb-4">🔒</p>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Acesso restrito</h2>
+          <p className="text-gray-500 text-sm">
+            Esta área é exclusiva para administradores da plataforma. Seu usuário não possui permissão para acessá-la.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return <Component {...props} />;
@@ -175,22 +207,25 @@ function Router() {
         {(params) => <ProtectedRoute component={RotinaDiaria} {...params} />}
       </Route>
       <Route path={"/admin"}>
-        {(params) => <ProtectedRoute component={Admin} {...params} />}
+        {(params) => <PlatformAdminRoute component={Admin} {...params} />}
       </Route>
       <Route path={"/admin/security"}>
-        {(params) => <ProtectedRoute component={SecurityZone} {...params} />}
+        {(params) => <PlatformAdminRoute component={SecurityZone} {...params} />}
       </Route>
       <Route path={"/admin/security/reset"}>
-        {(params) => <ProtectedRoute component={ResetCanaril} {...params} />}
+        {(params) => <PlatformAdminRoute component={ResetCanaril} {...params} />}
       </Route>
       <Route path={"/admin/security/test-cleanup"}>
-        {(params) => <ProtectedRoute component={TestDataCleanup} {...params} />}
+        {(params) => <PlatformAdminRoute component={TestDataCleanup} {...params} />}
       </Route>
       <Route path={"/admin/security/analyses"}>
-        {(params) => <ProtectedRoute component={AnalysesCleanup} {...params} />}
+        {(params) => <PlatformAdminRoute component={AnalysesCleanup} {...params} />}
       </Route>
       <Route path={"/admin/security/orphans"}>
-        {(params) => <ProtectedRoute component={OrphanDataRepair} {...params} />}
+        {(params) => <PlatformAdminRoute component={OrphanDataRepair} {...params} />}
+      </Route>
+      <Route path={"/meu-canaril/auditoria"}>
+        {(params) => <ProtectedRoute component={TenantAudit} {...params} />}
       </Route>
 
       {/* Fallback */}

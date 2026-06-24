@@ -34,17 +34,25 @@ export type CriteriaScore = {
  * Tabela de Usuários (OAuth)
  */
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: varchar("role", { length: 20 }).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-  deletedAt: timestamp("deletedAt"),
-  deletedBy: integer("deletedBy"),
+  id:               serial("id").primaryKey(),
+  openId:           varchar("openId", { length: 64 }).notNull().unique(),
+  name:             text("name"),
+  email:            varchar("email", { length: 320 }),
+  loginMethod:      varchar("loginMethod", { length: 64 }),
+  // Roles: PLATFORM_ADMIN | CANARIL_MANAGER | CANARIL_MEMBER | VIEWER
+  role:             varchar("role", { length: 30 }).default("CANARIL_MANAGER").notNull(),
+  tenantId:         integer("tenantId"),
+  isActive:         boolean("isActive").default(true).notNull(),
+  lastLoginAt:      timestamp("lastLoginAt"),
+  disabledAt:       timestamp("disabledAt"),
+  disabledBy:       integer("disabledBy"),
+  disabledReason:   text("disabledReason"),
+  accessExpiresAt:  timestamp("accessExpiresAt"),
+  createdAt:        timestamp("createdAt").defaultNow().notNull(),
+  updatedAt:        timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  lastSignedIn:     timestamp("lastSignedIn").defaultNow().notNull(),
+  deletedAt:        timestamp("deletedAt"),
+  deletedBy:        integer("deletedBy"),
 });
 
 /**

@@ -70,7 +70,7 @@ export const appRouter = router({
           name: adminName,
           email: adminEmail,
           loginMethod: "local-admin",
-          role: "admin",
+          role: "PLATFORM_ADMIN",
           lastSignedIn: new Date(),
         });
 

@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map, TrendingUp, ClipboardList, Shield } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map, TrendingUp, ClipboardList, Shield, History } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -29,20 +29,26 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Bird, label: "Pássaros", path: "/birds" },
-  { icon: Heart, label: "Casais", path: "/couples" },
-  { icon: ClipboardList, label: "Rotina Diária", path: "/rotina" },
-  { icon: Calendar, label: "Temporada", path: "/temporada" },
-  { icon: Map, label: "Mapa do Criadouro", path: "/criadouro-mapa" },
-  { icon: TrendingUp, label: "Linhagem & Genética", path: "/linhagem" },
-  { icon: Calculator, label: "Calculadora Genética", path: "/genetics-calculator" },
-  { icon: Egg, label: "Posturas", path: "/clutches" },
-  { icon: Feather, label: "Anilhas", path: "/rings" },
-  { icon: DoorOpen, label: "Gaiolas", path: "/cages" },
-  { icon: Trophy, label: "Campeonatos", path: "/championships" },
-  { icon: BarChart3, label: "Relatórios", path: "/reports" },
-  { icon: Settings, label: "Configurações", path: "/settings" },
+  { icon: LayoutDashboard, label: "Dashboard",            path: "/dashboard" },
+  { icon: Bird,            label: "Pássaros",             path: "/birds" },
+  { icon: Heart,           label: "Casais",               path: "/couples" },
+  { icon: ClipboardList,   label: "Rotina Diária",        path: "/rotina" },
+  { icon: Calendar,        label: "Temporada",            path: "/temporada" },
+  { icon: Map,             label: "Mapa do Criadouro",    path: "/criadouro-mapa" },
+  { icon: TrendingUp,      label: "Linhagem & Genética",  path: "/linhagem" },
+  { icon: Calculator,      label: "Calculadora Genética", path: "/genetics-calculator" },
+  { icon: Egg,             label: "Posturas",             path: "/clutches" },
+  { icon: Feather,         label: "Anilhas",              path: "/rings" },
+  { icon: DoorOpen,        label: "Gaiolas",              path: "/cages" },
+  { icon: Trophy,          label: "Campeonatos",          path: "/championships" },
+  { icon: BarChart3,       label: "Relatórios",           path: "/reports" },
+  { icon: Settings,        label: "Configurações",        path: "/settings" },
+  // Auditoria do Canaril — disponível para qualquer usuário autenticado
+  { icon: History,         label: "Auditoria do Canaril", path: "/meu-canaril/auditoria", managerOnly: true },
+];
+
+// Itens exclusivos do PLATFORM_ADMIN — nunca exibidos para CANARIL_MANAGER
+const adminMenuItems = [
   { icon: Shield, label: "Administração", path: "/admin" },
 ];
 
@@ -194,24 +200,34 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {(() => {
+                const isPlatformAdmin = (user as any)?.role === "PLATFORM_ADMIN"
+                  || (user as any)?.role === "admin"
+                  || (user as any)?.role === "OWNER"
+                  || (user as any)?.role === "SUPER_ADMIN";
+                const visibleItems = [
+                  ...menuItems,
+                  ...(isPlatformAdmin ? adminMenuItems : []),
+                ];
+                return visibleItems.map(item => {
+                  const isActive = location === item.path;
+                  return (
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setLocation(item.path)}
+                        tooltip={(item as any).label}
+                        className={`h-10 transition-all font-normal`}
+                      >
+                        <item.icon
+                          className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+                        />
+                        <span>{(item as any).label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                });
+              })()}
             </SidebarMenu>
           </SidebarContent>
 
