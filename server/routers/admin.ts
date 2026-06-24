@@ -118,58 +118,27 @@ export const adminRouter = router({
   }),
 
   createUser: platformAdminProcedure
-    .input(
-      z.object({
-        name: z.string().min(1).max(200),
-        email: z.string().email(),
-        password: z.string().min(6, "A senha deve ter ao menos 6 caracteres"),
-        role: z.enum(["PLATFORM_ADMIN", "CANARIL_MANAGER", "CANARIL_MEMBER", "VIEWER"]).default("CANARIL_MANAGER"),
-        tenantId: z.number().int().positive().optional(),
-        isActive: z.boolean().default(true).optional(),
-        mustChangePassword: z.boolean().default(true).optional(),
-        accessExpiresAt: z.string().optional().nullable(),
-        internalNote: z.string().optional().nullable(),
-      })
-    )
+    .input(z.object({
+      name: z.string().min(1).max(200),
+      email: z.string().email(),
+      role: z.enum(["PLATFORM_ADMIN", "CANARIL_MANAGER", "CANARIL_MEMBER", "VIEWER"]).default("CANARIL_MANAGER"),
+      tenantId: z.number().int().positive().optional(),
+      isActive: z.boolean().default(true),
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
       const uid = (ctx as any)?.userId;
-
-      // Verificar se email já existe
-      const existing = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
-      if (existing.length > 0) {
-        throw new Error("E-mail já está em uso.");
-      }
-      // Se não for PLATFORM_ADMIN, require tenantId
-      if (input.role !== "PLATFORM_ADMIN" && !input.tenantId) {
-        throw new Error("tenantId é obrigatório para usuários não administradores da plataforma.");
-      }
-
-      // Gerar hash da senha (usa Node.js crypto.scrypt)
-      const crypto = await import("crypto");
-      const passwordHash: string = await new Promise((resolve, reject) => {
-        crypto.scrypt(input.password, "canaril-salt", 64, (err: any, derivedKey: Buffer) => {
-          if (err) return reject(err);
-          resolve(derivedKey.toString("hex"));
-        });
-      });
-
-      // Gera openId único para usuários criados manualmente
+      // openId gerado como slug único para usuários criados internamente
       const openId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
       const [created] = await db.insert(users).values({
         openId,
         name: input.name,
         email: input.email,
         role: input.role,
-        tenantId: input.role === "PLATFORM_ADMIN" ? null : input.tenantId ?? null,
-        isActive: input.isActive ?? true,
+        tenantId: input.tenantId ?? null,
+        isActive: input.isActive,
         loginMethod: "local",
-        passwordHash,
-        mustChangePassword: input.mustChangePassword ?? true,
-        accessExpiresAt: input.accessExpiresAt ? new Date(input.accessExpiresAt as any) : null,
-        internalNote: input.internalNote ?? null,
         lastSignedIn: new Date(),
       }).returning();
       await writeAudit(db, { userId: uid, action: "create", entityType: "user", entityId: created.id, newVal: created });

@@ -39,18 +39,6 @@ export const users = pgTable("users", {
   name:             text("name"),
   email:            varchar("email", { length: 320 }),
   loginMethod:      varchar("loginMethod", { length: 64 }),
-  /**
-   * Hash da senha local. Para usuários cadastrados manualmente, a senha deve
-   * ser armazenada de forma segura. Este campo não armazena a senha em
-   * texto claro. Quando loginMethod = 'local', passwordHash deve ser
-   * preenchido; quando loginMethod refere-se a OAuth/externo, pode ser nulo.
-   */
-  passwordHash:     varchar("passwordHash", { length: 255 }),
-  /**
-   * Indica que o usuário deve alterar a senha no primeiro acesso. Útil
-   * quando um administrador cria uma senha temporária.
-   */
-  mustChangePassword: boolean("mustChangePassword").default(true),
   // Roles: PLATFORM_ADMIN | CANARIL_MANAGER | CANARIL_MEMBER | VIEWER
   role:             varchar("role", { length: 30 }).default("CANARIL_MANAGER").notNull(),
   tenantId:         integer("tenantId"),
@@ -60,10 +48,6 @@ export const users = pgTable("users", {
   disabledBy:       integer("disabledBy"),
   disabledReason:   text("disabledReason"),
   accessExpiresAt:  timestamp("accessExpiresAt"),
-  /**
-   * Observação interna, visível apenas aos administradores da plataforma.
-   */
-  internalNote:     text("internalNote"),
   createdAt:        timestamp("createdAt").defaultNow().notNull(),
   updatedAt:        timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   lastSignedIn:     timestamp("lastSignedIn").defaultNow().notNull(),
@@ -159,6 +143,7 @@ export const ring_batches = pgTable("ring_batches", {
   currentNumber: integer("currentNumber").default(1).notNull(),
   formatPattern: varchar("formatPattern", { length: 100 }).default("{breederCode}-{year}-{seq}").notNull(),
   notes: text("notes"),
+  tenantId: integer("tenantId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
@@ -199,6 +184,7 @@ export const birds = pgTable("birds", {
   isPublic: boolean("isPublic").default(false).notNull(),
   // Código público único para QR Code — gerado pelo backend, nullable até ser ativado.
   publicCode: varchar("publicCode", { length: 20 }).unique(),
+  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   deleteReason: text("deleteReason"),
@@ -230,6 +216,7 @@ export const couples = pgTable("couples", {
   // antes desta tabela existir.
   cageId: integer("cageId"),
   formationDate: timestamp("formationDate").notNull(),
+  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
@@ -253,6 +240,7 @@ export const clutches = pgTable("clutches", {
   infertileEggs: integer("infertileEggs").default(0).notNull(),
   lostEggs: integer("lostEggs").default(0).notNull(),
   hatchedChicks: integer("hatchedChicks").default(0).notNull(),
+  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   notes: text("notes"),
@@ -283,6 +271,7 @@ export const chicks = pgTable("chicks", {
   // criadouro ficavam fora da árvore genealógica (fatherId/motherId só
   // existe em "birds").
   birdId: integer("birdId"),
+  tenantId: integer("tenantId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -350,6 +339,7 @@ export const rings = pgTable("rings", {
   ringSource: varchar("ringSource", { length: 20 }).default("BATCH").notNull(),
   // BATCH | MANUAL
   reservedAt: timestamp("reservedAt"),
+  tenantId: integer("tenantId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
@@ -417,6 +407,7 @@ export const cages = pgTable("cages", {
   status: varchar("status", { length: 20 }).default("free").notNull(), // free | occupied | maintenance
   // Código público único para QR Code — nullable até ser ativado.
   publicCode: varchar("publicCode", { length: 20 }).unique(),
+  tenantId: integer("tenantId"),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   notes: text("notes"),
@@ -437,6 +428,7 @@ export const championships = pgTable("championships", {
   startDate: timestamp("startDate").notNull(),
   endDate: timestamp("endDate"),
   status: varchar("status", { length: 20 }).default("upcoming").notNull(), // upcoming | ongoing | finished
+  tenantId: integer("tenantId"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 

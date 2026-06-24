@@ -26,6 +26,7 @@ import {
   ring_gauge_rules,
 } from "../../drizzle/schema";
 import { and, eq, desc, asc, isNull, or, ilike, sql } from "drizzle-orm";
+import { getQueryTenantId, assertSameTenant } from "../_core/tenant";
 import {
   getNextAvailableRing,
   assignRingToBird,
@@ -61,14 +62,14 @@ export const ringsRouter = router({
 
   // ── Lotes ─────────────────────────────────────────────────────────────────
   batches: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db
-          .select()
-          .from(ring_batches)
-          .orderBy(desc(ring_batches.year), desc(ring_batches.createdAt));
+        const tenantId = getQueryTenantId(ctx);
+        let q = db.select().from(ring_batches).orderBy(desc(ring_batches.year), desc(ring_batches.createdAt));
+        if (tenantId !== null) q = q.where(eq(ring_batches.tenantId, tenantId)) as any;
+        return q;
       } catch (e) {
         console.error("[rings.batches.list]", e);
         return [];
@@ -90,9 +91,10 @@ export const ringsRouter = router({
 
     create: protectedProcedure
       .input(createBatchSchema)
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        const tenantId = getQueryTenantId(ctx);
 
         const quantity_total = input.endNumber - input.startNumber + 1;
         if (quantity_total <= 0) {
@@ -122,6 +124,7 @@ export const ringsRouter = router({
             currentNumber:   input.startNumber,
             formatPattern:   input.formatPattern,
             notes:           input.notes,
+            tenantId:        tenantId ?? null,
           })
           .returning();
 
@@ -135,6 +138,7 @@ export const ringsRouter = router({
           formatPattern: batch.formatPattern,
           startNumber:   batch.startNumber,
           endNumber:     batch.endNumber,
+          tenantId:      tenantId ?? null,
         });
 
         return { success: true, batch, generated };
@@ -554,17 +558,21 @@ export const ringsRouter = router({
   }),
 
   // ── Estatísticas ───────────────────────────────────────────────────────────
-  stats: protectedProcedure.query(async () => {
+  stats: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { total: 0, available: 0, inUse: 0, batches: 0, exhaustedBatches: 0 };
 
     try {
+      const tenantId = getQueryTenantId(ctx);
+      const tenantFilter = tenantId !== null ? eq(rings.tenantId, tenantId) : undefined;
+      const batchTenantFilter = tenantId !== null ? eq(ring_batches.tenantId, tenantId) : undefined;
+
       const [totalRows, availableRows, inUseRows, batchRows, exhaustedRows] = await Promise.all([
-        db.select({ count: sql<number>`count(*)::int` }).from(rings),
-        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(eq(rings.status, "available")),
-        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(eq(rings.status, "in_use")),
-        db.select({ count: sql<number>`count(*)::int` }).from(ring_batches),
-        db.select({ count: sql<number>`count(*)::int` }).from(ring_batches).where(eq(ring_batches.status, "exhausted")),
+        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(tenantFilter),
+        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(tenantFilter ? and(tenantFilter, eq(rings.status, "available")) : eq(rings.status, "available")),
+        db.select({ count: sql<number>`count(*)::int` }).from(rings).where(tenantFilter ? and(tenantFilter, eq(rings.status, "in_use")) : eq(rings.status, "in_use")),
+        db.select({ count: sql<number>`count(*)::int` }).from(ring_batches).where(batchTenantFilter),
+        db.select({ count: sql<number>`count(*)::int` }).from(ring_batches).where(batchTenantFilter ? and(batchTenantFilter, eq(ring_batches.status, "exhausted")) : eq(ring_batches.status, "exhausted")),
       ]);
 
       return {

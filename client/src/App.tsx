@@ -9,9 +9,6 @@ import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
-// Importa helper de verificação de administrador da plataforma
-import { isPlatformAdmin as isPlatformAdminHelper } from "@shared/permissions";
-
 // Páginas leves — carregadas imediatamente
 import Home from "@/pages/Home";
 import Dashboard from "@/pages/Dashboard";
@@ -88,8 +85,8 @@ function PlatformAdminRoute({ component: Component, ...props }: any) {
   if (!user) return <LoginPage />;
 
   const role = (user as any)?.role;
-  // Usa helper centralizado para verificar se é administrador da plataforma
-  const isPlatformAdmin = isPlatformAdminHelper(role);
+  const isPlatformAdmin =
+    role === "PLATFORM_ADMIN" || role === "admin" || role === "OWNER" || role === "SUPER_ADMIN";
 
   if (!isPlatformAdmin) {
     return (

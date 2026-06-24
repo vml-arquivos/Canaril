@@ -2,10 +2,11 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { bird_genetic_inference_logs, bird_genetic_profiles, birds, official_bird_classes, rings } from "../../drizzle/schema";
-import { eq, desc, and, or } from "drizzle-orm";
+import { eq, desc, and, or, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { generateBirdDisplayTitle, deriveLegacyColorCode, deriveLegacySpecialtyCode } from "../_core/birdIdentity";
 import { interpretOfficialClass } from "../_core/officialClassInterpreter";
+import { getQueryTenantId, assertSameTenant } from "../_core/tenant";
 
 // Schema reutilizável para birthDate: aceita Date (superjson) ou string 'YYYY-MM-DD'
 const birthDateSchema = z
@@ -122,13 +123,17 @@ export const birdsRouter = router({
       status: z.string().optional(),
       search: z.string().optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
 
       try {
-        const results = await db.select().from(birds).orderBy(desc(birds.createdAt));
-        return results;
+        const tenantId = getQueryTenantId(ctx);
+        let query = db.select().from(birds).orderBy(desc(birds.createdAt));
+        if (tenantId !== null) {
+          query = query.where(eq(birds.tenantId, tenantId)) as any;
+        }
+        return query;
       } catch (error) {
         console.error("Error listing birds:", error);
         return [];
@@ -138,14 +143,17 @@ export const birdsRouter = router({
   // Obter pássaro por ID
   getById: protectedProcedure
     .input(z.number())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
 
       try {
         const result = await db.select().from(birds).where(eq(birds.id, input));
-        return result[0] || null;
+        const bird = result[0] || null;
+        if (bird) assertSameTenant(ctx, bird.tenantId);
+        return bird;
       } catch (error) {
+        if (error instanceof TRPCError) throw error;
         console.error("Error getting bird:", error);
         return null;
       }
@@ -180,9 +188,10 @@ export const birdsRouter = router({
       notes: z.string().optional().nullable(),
       ...birdIdentitySchema,
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
+      const tenantId = getQueryTenantId(ctx);
 
       // Verifica unicidade da anilha na tabela birds
       const existing = await db
@@ -235,6 +244,7 @@ export const birdsRouter = router({
           motherId: input.motherId ?? null,
           notes: input.notes || null,
           status: "active",
+          tenantId: tenantId ?? null,
         }).returning();
 
         if (createdBird && officialClass) {

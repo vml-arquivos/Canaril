@@ -259,6 +259,7 @@ export async function generateRingsForBatch(
     formatPattern: string;
     startNumber: number;
     endNumber: number;
+    tenantId?: number | null;
   }
 ): Promise<number> {
   const codes = generateBatchCodes({
@@ -287,6 +288,7 @@ export async function generateRingsForBatch(
       sequence: c.sequence,
       status: "available" as const,
       ringSource: "BATCH" as const,
+      tenantId: batch.tenantId ?? null,
     }));
 
     await db.insert(rings).values(values).onConflictDoNothing();

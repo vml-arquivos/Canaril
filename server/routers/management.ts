@@ -4,6 +4,7 @@ import { getDb, getPool } from "../db";
 import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
+import { getQueryTenantId, assertSameTenant } from "../_core/tenant";
 
 async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, year: number, startNumber: number, endNumber: number) {
   const now = new Date();
@@ -169,11 +170,14 @@ export const managementRouter = router({
 
   // ===== CRUZAMENTOS/CASAIS =====
   couples: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(couples).orderBy(desc(couples.createdAt));
+        const tenantId = getQueryTenantId(ctx);
+        let q = db.select().from(couples).orderBy(desc(couples.createdAt));
+        if (tenantId !== null) q = q.where(eq(couples.tenantId, tenantId)) as any;
+        return q;
       } catch (error) {
         console.error("Error listing couples:", error);
         return [];
@@ -182,12 +186,14 @@ export const managementRouter = router({
 
     getById: protectedProcedure
       .input(z.number())
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) return null;
         try {
           const result = await db.select().from(couples).where(eq(couples.id, input)).limit(1);
-          return result.length > 0 ? result[0] : null;
+          const couple = result.length > 0 ? result[0] : null;
+          if (couple) assertSameTenant(ctx, couple.tenantId);
+          return couple;
         } catch (error) {
           console.error("Error getting couple:", error);
           return null;
@@ -201,9 +207,10 @@ export const managementRouter = router({
         cageNumber: z.string(),
         formationDate: z.date(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        const tenantId = getQueryTenantId(ctx);
         try {
           // Regra de integridade: um pássaro não pode estar em dois casais
           // ativos ao mesmo tempo. Validado aqui no servidor (não só no
@@ -225,6 +232,7 @@ export const managementRouter = router({
             cageNumber: input.cageNumber,
             formationDate: input.formationDate,
             status: "active",
+            tenantId: tenantId ?? null,
           });
 
           // Planejador de Acasalamento: gera automaticamente os 6 lembretes
@@ -313,11 +321,14 @@ export const managementRouter = router({
 
   // ===== POSTURAS =====
   clutches: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(clutches).orderBy(desc(clutches.createdAt));
+        const tenantId = getQueryTenantId(ctx);
+        let q = db.select().from(clutches).orderBy(desc(clutches.createdAt));
+        if (tenantId !== null) q = q.where(eq(clutches.tenantId, tenantId)) as any;
+        return q;
       } catch (error) {
         console.error("Error listing clutches:", error);
         return [];
@@ -347,9 +358,10 @@ export const managementRouter = router({
         lostEggs: z.number().optional(),
         hatchedChicks: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        const tenantId = getQueryTenantId(ctx);
         try {
           await db.insert(clutches).values({
             coupleId: input.coupleId,
@@ -359,6 +371,7 @@ export const managementRouter = router({
             infertileEggs: input.infertileEggs || 0,
             lostEggs: input.lostEggs || 0,
             hatchedChicks: input.hatchedChicks || 0,
+            tenantId: tenantId ?? null,
           });
           return { success: true };
         } catch (error) {
@@ -370,11 +383,14 @@ export const managementRouter = router({
 
   // ===== FILHOTES =====
   chicks: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       try {
-        return await db.select().from(chicks).orderBy(desc(chicks.createdAt));
+        const tenantId = getQueryTenantId(ctx);
+        let q = db.select().from(chicks).orderBy(desc(chicks.createdAt));
+        if (tenantId !== null) q = q.where(eq(chicks.tenantId, tenantId)) as any;
+        return q;
       } catch (error) {
         console.error("Error listing chicks:", error);
         return [];
@@ -404,9 +420,10 @@ export const managementRouter = router({
         ringDate: z.date().optional(),
         weanDate: z.date().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        const tenantId = getQueryTenantId(ctx);
         try {
           const [createdChick] = await db.insert(chicks).values({
             clutchId: input.clutchId,
@@ -417,6 +434,7 @@ export const managementRouter = router({
             ringDate: input.ringDate,
             weanDate: input.weanDate,
             status: "active",
+            tenantId: tenantId ?? null,
           }).returning();
 
           if (createdChick) {
@@ -433,16 +451,21 @@ export const managementRouter = router({
 
   // ===== ESTATÍSTICAS =====
   dashboard: router({
-    stats: protectedProcedure.query(async () => {
+    stats: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return { birds: 0, couples: 0, chicks: 0, rings: 0 };
 
       try {
-        const birdsList = await db.select().from(birds);
-        const couplesList = await db.select().from(couples);
-        const chicksList = await db.select().from(chicks);
-        const individualRings = await db.select().from(rings);
-        const ringBatches = await db.select().from(ring_batches);
+        const tenantId = getQueryTenantId(ctx);
+        const tf = tenantId !== null;
+
+        const [birdsList, couplesList, chicksList, individualRings, ringBatches] = await Promise.all([
+          tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId!)) : db.select().from(birds),
+          tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId!)) : db.select().from(couples),
+          tf ? db.select().from(chicks).where(eq(chicks.tenantId, tenantId!)) : db.select().from(chicks),
+          tf ? db.select().from(rings).where(eq(rings.tenantId, tenantId!)) : db.select().from(rings),
+          tf ? db.select().from(ring_batches).where(eq(ring_batches.tenantId, tenantId!)) : db.select().from(ring_batches),
+        ]);
 
         const availableIndividualRings = individualRings.filter((r) => r.status === "available").length;
         const legacyAvailableRings = ringBatches.reduce((sum, r) => sum + Math.max(0, r.quantity_total - r.quantity_used), 0);
