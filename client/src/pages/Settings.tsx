@@ -81,7 +81,7 @@ export default function Settings() {
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ex: Canário Lima"
+                  placeholder="Ex: Canaril Lima"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">

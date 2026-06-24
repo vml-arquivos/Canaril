@@ -8,10 +8,6 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { birdsRouter } from "./routers/birds";
-// Drizzle helper for equality
-// Import equality helper and users table definition for login queries
-import { eq } from "drizzle-orm";
-import { users } from "../drizzle/schema";
 import { managementRouter } from "./routers/management";
 import { aiJudgeRouter } from "./routers/aiJudge";
 import { cagesRouter } from "./routers/cages";
@@ -50,13 +46,11 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        // Normaliza variáveis de ambiente do administrador principal
         const adminEmail = normalize(process.env.ADMIN_EMAIL).toLowerCase();
         const adminPassword = normalize(process.env.ADMIN_PASSWORD);
         const adminName = normalize(process.env.ADMIN_NAME) || normalize(process.env.OWNER_NAME) || "Administrador";
         const adminOpenId = normalize(ENV.ownerOpenId) || "local-admin";
 
-        // Se credenciais de admin não estiverem configuradas, falha
         if (!adminEmail || !adminPassword) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -64,75 +58,42 @@ export const appRouter = router({
           });
         }
 
-        // Fluxo legacy: se email e senha batem com admin principal, efetua login como PLATFORM_ADMIN
-        if (input.email.trim().toLowerCase() === adminEmail && input.password === adminPassword) {
-          await db.upsertUser({
-            openId: adminOpenId,
-            name: adminName,
-            email: adminEmail,
-            loginMethod: "local-admin",
-            role: "PLATFORM_ADMIN",
-            lastSignedIn: new Date(),
+        if (input.email.trim().toLowerCase() !== adminEmail || input.password !== adminPassword) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "E-mail ou senha inválidos.",
           });
-          const createdUser = await db.getUserByOpenId(adminOpenId);
-          if (!createdUser) {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Login validado, mas não foi possível criar/carregar o usuário no banco. Verifique DATABASE_URL e migrations.",
-            });
-          }
-          const sessionToken = await sdk.createSessionToken(adminOpenId, {
-            name: adminName,
-            expiresInMs: ONE_YEAR_MS,
-          });
-          const cookieOptions = getSessionCookieOptions(ctx.req);
-          ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-          return { success: true, user: createdUser } as const;
         }
 
-        // Novo fluxo: buscar usuário no banco
-        const dbConn = await db.getDb?.();
-        if (!dbConn) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco não disponível." });
-        }
-        const found = await dbConn.select().from(users).where(eq(users.email, input.email)).limit(1);
-        const user = found?.[0];
-        if (!user) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
-        }
-        // Verificar se possui senha cadastrada
-        if (!user.passwordHash) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
-        }
-        // Verificar se está ativo
-        if (user.isActive === false) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Seu acesso está suspenso. Entre em contato com o administrador." });
-        }
-        // Verificar expiração
-        if (user.accessExpiresAt && new Date(user.accessExpiresAt) < new Date()) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Seu acesso expirou. Entre em contato com o administrador." });
-        }
-        // Verificar senha: scrypt com o mesmo sal
-        const crypto = await import("crypto");
-        const derived: string = await new Promise((resolve, reject) => {
-          crypto.scrypt(input.password, "canaril-salt", 64, (err: any, derivedKey: Buffer) => {
-            if (err) return reject(err);
-            resolve(derivedKey.toString("hex"));
-          });
+        await db.upsertUser({
+          openId: adminOpenId,
+          name: adminName,
+          email: adminEmail,
+          loginMethod: "local-admin",
+          role: "PLATFORM_ADMIN",
+          lastSignedIn: new Date(),
         });
-        if (derived !== user.passwordHash) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
+
+        const createdUser = await db.getUserByOpenId(adminOpenId);
+        if (!createdUser) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Login validado, mas não foi possível criar/carregar o usuário no banco. Verifique DATABASE_URL e migrations.",
+          });
         }
-        // Atualizar lastLoginAt
-        await dbConn.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
-        // Criar token de sessão
-        const sessionToken = await sdk.createSessionToken(user.openId ?? "", {
-          name: user.name || "",
+
+        const sessionToken = await sdk.createSessionToken(adminOpenId, {
+          name: adminName,
           expiresInMs: ONE_YEAR_MS,
         });
+
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-        return { success: true, user } as const;
+
+        return {
+          success: true,
+          user: createdUser,
+        } as const;
       }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);

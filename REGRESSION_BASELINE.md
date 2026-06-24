@@ -1,68 +1,48 @@
-# Baseline de Regressão — Canaril
+# REGRESSION BASELINE
 
-Este arquivo documenta o estado do repositório **Canaril** antes da aplicação de qualquer correção, conforme exigido pela política de **Regressão Zero**. Todas as informações abaixo refletem o resultado obtido no ambiente de auditoria atual e servem como referência para garantir que alterações futuras não introduzam novas quebras.
+Este documento registra o estado de base do repositório **Canaril/Canário Gestão Pro** antes das alterações realizadas para a reformulação da página pública institucional. As informações aqui coletadas servem para diferenciar falhas pré‑existentes de possíveis regressões introduzidas durante a missão.
+
+## Data da coleta
+
+Data: 24/06/2026
 
 ## Branch e commit atuais
 
-Este pacote zipado não contém um repositório Git inicializado. Portanto, os comandos `git status`, `git diff` e `git log` não retornam informações de branch ou histórico. O repositório deve ser inicializado ou conectado a um controle de versão externo para prover esse contexto.
+Este repositório foi fornecido em forma de arquivo ZIP e **não contém um repositório git**. Portanto, não é possível obter branch ou hash de commit. Todas as modificações serão realizadas diretamente sobre este snapshot.
 
-## Scripts disponíveis (`package.json`)
+## Scripts disponíveis
 
-Os scripts definidos no arquivo `package.json` são os seguintes:
+O arquivo `package.json` lista os seguintes scripts principais:
 
-```
-"dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-"build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --external:./viteDevServer --bundle --format=esm --outdir=dist",
-"start": "NODE_ENV=production node dist/index.js",
-"check": "tsc --noEmit",
-"format": "prettier --write .",
-"test": "vitest run",
-"db:push": "drizzle-kit generate && drizzle-kit migrate",
-"seed:knowledge": "tsx server/_core/canarilIntelligence/seeds/canaryKnowledgeSeed.ts"
-```
+| Script        | Descrição                                                    |
+|---------------|--------------------------------------------------------------|
+| `dev`         | Usa `tsx` para subir o servidor em ambiente de desenvolvimento. |
+| `build`       | Gera o bundle com Vite e esbuild para o backend.            |
+| `start`       | Executa o servidor construído em produção.                  |
+| `check`       | Roda o TypeScript para verificação de tipos (sem emitir código). |
+| `test`        | Executa os testes com Vitest.                               |
+| `db:push`     | Gera e aplica migrations com `drizzle-kit`.                 |
+| `seed:knowledge` | Popula a base de conhecimento do módulo de IA.             |
 
-## Resultado do `pnpm install --frozen-lockfile`
+## Resultado das ferramentas de build antes das alterações
 
-A tentativa de executar `pnpm install --frozen-lockfile` falhou porque o binário `pnpm` não está disponível globalmente no ambiente de auditoria e o `npx pnpm` retornou erro **403 Forbidden** ao tentar baixar o pacote. Essa falha impede a instalação das dependências e é considerada uma **FALHA PRÉ‑EXISTENTE** no ambiente de testes.
+Devido a limitações de rede e permissões neste ambiente de execução, não é possível instalar todas as dependências (o comando `pnpm install` ou equivalente não está disponível). Os comandos de checagem, teste e build foram executados com a configuração atual e retornaram as seguintes falhas pré‑existentes:
 
-## Resultado do `npm run check`
+| Comando               | Resultado                                                                                                                                                     |
+|-----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `pnpm install`        | **Falhou** – o gerenciador `pnpm` não está instalado globalmente neste ambiente e não há acesso à internet para baixar dependências.                             |
+| `npm run check`       | **Falhou** – TypeScript não encontrou definições de tipos de `vite/client` (`TS2688`).                                                                        |
+| `npm test`            | **Falhou** – o executável `vitest` não foi encontrado porque as dependências não estão instaladas.                                                            |
+| `npm run build`       | **Falhou** – o executável `vite` não foi encontrado porque as dependências não estão instaladas.                                                              |
 
-O comando `npm run check` (que executa o TypeScript Compiler) falhou imediatamente com o seguinte erro:
+Esses erros são considerados **falhas pré‑existentes** e serão usados como referência. O objetivo da reformulação da página pública não inclui resolver problemas de instalação ou infraestrutura, apenas garantir que as novas alterações não introduzam regressões adicionais no código fonte que afetem outras áreas do sistema.
 
-```
-error TS2688: Cannot find type definition file for 'vite/client'.
-  The file is in the program because:
-    Entry point of type library 'vite/client' specified in compilerOptions
-```
+## Erros e avisos existentes
 
-Esta falha decorre da ausência de dependências instaladas e configurações de tipo, portanto é registrada como **FALHA PRÉ‑EXISTENTE**.
+* O projeto não é um repositório Git; portanto, comandos `git status` e `git log` não funcionam.
+* Falta de dependências causa falhas de verificação, teste e build. Estes problemas já estavam presentes antes de qualquer modificação.
+* O valor do criadouro em `shared/constants.ts` ainda utiliza **"Canário Lima"**, que precisará ser atualizado para **"Canaril Lima"** durante esta missão.
 
-## Resultado do `npm test`
+## Conclusão
 
-O comando `npm test` (que executa `vitest run`) falhou porque o binário `vitest` não foi encontrado. A mensagem exibida foi:
-
-```
-sh: 1: vitest: not found
-```
-
-Essa falha ocorre antes de qualquer modificação e é anotada como **FALHA PRÉ‑EXISTENTE**.
-
-## Resultado do `npm run build`
-
-O comando `npm run build` (que executa `vite build` e `esbuild`) falhou com o erro:
-
-```
-sh: 1: vite: not found
-```
-
-Tal como as outras falhas, a ausência do binário `vite` se deve à não instalação das dependências. Esta é outra **FALHA PRÉ‑EXISTENTE**.
-
-## Erros e warnings existentes antes da alteração
-
-- Repositório não é um repositório Git; não há controle de versão local.
-- `pnpm` não está instalado no ambiente, e tentativa de instalá-lo via `npx` é bloqueada pelo registro npm (Erro 403).
-- O check TypeScript (`npm run check`) falha por dependências ausentes (`vite/client`).
-- Os scripts de testes e build (`vitest`, `vite`) não estão disponíveis.
-- Sem essas dependências, não é possível executar a compilação ou os testes.
-
-Todos esses erros ocorrem antes de qualquer modificação; portanto, qualquer falha semelhante após as alterações deve ser comparada a esta baseline para avaliar regressões.
+O estado de base apresenta falhas relacionadas à configuração do ambiente de desenvolvimento (dependências ausentes). Nenhuma funcionalidade interna foi alterada neste momento. As alterações a seguir focarão apenas na reformulação da página pública conforme orientações, mantendo o restante do sistema intocado.
