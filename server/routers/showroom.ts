@@ -1,13 +1,19 @@
 import { publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { birds, photos } from "../../drizzle/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { birds, photos, tenants } from "../../drizzle/schema";
+import { eq, and, desc, isNull, asc } from "drizzle-orm";
 
 /**
- * Router público (sem autenticação) usado pela Home institucional. Expõe
- * estritamente o subconjunto de dados que o criador marcou como público
- * (birds.isPublic = true) — nunca a lista completa do plantel, dados de
- * contato de outros criadores, ou qualquer informação operacional.
+ * showroom.ts — Site público do Canaril Lima
+ *
+ * O site público é EXCLUSIVO do Canaril Lima (tenant principal — menor id).
+ * Usuários de outros canaris que têm acesso ao sistema (ex.: Tiveron) NÃO
+ * aparecem no site público. Seus pássaros, nome e dados ficam exclusivamente
+ * na área interna do sistema — nunca no site.
+ *
+ * Regra: featuredBirds filtra por tenantId = tenant principal (id mínimo).
+ * Se não houver tenant cadastrado, mostra apenas pássaros sem tenantId
+ * (dados legados, que pertencem ao Canaril Lima).
  */
 export const showroomRouter = router({
   featuredBirds: publicProcedure.query(async () => {
@@ -15,10 +21,23 @@ export const showroomRouter = router({
     if (!db) return [];
 
     try {
+      // Descobrir o tenant principal (Canaril Lima = menor id não deletado)
+      const [principalTenant] = await db
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(isNull(tenants.deletedAt))
+        .orderBy(asc(tenants.id))
+        .limit(1);
+
+      // Filtro: somente pássaros do tenant principal (ou legados sem tenant)
+      const tenantFilter = principalTenant
+        ? and(eq(birds.isPublic, true), eq(birds.status, "active"), eq(birds.tenantId, principalTenant.id))
+        : and(eq(birds.isPublic, true), eq(birds.status, "active"), isNull(birds.tenantId));
+
       const publicBirds = await db
         .select()
         .from(birds)
-        .where(and(eq(birds.isPublic, true), eq(birds.status, "active")))
+        .where(tenantFilter)
         .orderBy(desc(birds.createdAt))
         .limit(12);
 

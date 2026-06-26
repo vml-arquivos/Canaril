@@ -36,12 +36,50 @@ import { adminRouter } from "./routers/admin";
 import { intelligenceRouter } from "./routers/intelligence";
 import { adminResetRouter } from "./routers/adminReset";
 
+// Sanitiza o objeto de usuário antes de enviar ao cliente
+// NUNCA expor: passwordHash, internalNote, disabledReason, disabledBy, disabledAt, accessExpiresAt
+function sanitizeUser(u: any) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    openId: u.openId,
+    name: u.name,
+    email: u.email,
+    loginMethod: u.loginMethod,
+    role: u.role,
+    tenantId: u.tenantId ?? null,
+    isActive: u.isActive ?? true,
+    mustChangePassword: u.mustChangePassword ?? false,
+    lastLoginAt: u.lastLoginAt ?? null,
+    createdAt: u.createdAt ?? null,
+  };
+}
+
+
+
 const normalize = (value: string | undefined | null) => (value ?? "").trim();
 
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    // auth.me retorna somente campos seguros — NUNCA passwordHash, disabledReason, internalNote
+    me: publicProcedure.query(opts => {
+      const u = opts.ctx.user as any;
+      if (!u) return null;
+      return {
+        id:               u.id,
+        openId:           u.openId,
+        name:             u.name,
+        email:            u.email,
+        loginMethod:      u.loginMethod,
+        role:             u.role,
+        tenantId:         u.tenantId ?? null,
+        isActive:         u.isActive ?? true,
+        mustChangePassword: u.mustChangePassword ?? false,
+        lastLoginAt:      u.lastLoginAt ?? null,
+        createdAt:        u.createdAt ?? null,
+      };
+    }),
     login: publicProcedure
       .input(
         z.object({
@@ -87,7 +125,7 @@ export const appRouter = router({
           });
           const cookieOptions = getSessionCookieOptions(ctx.req);
           ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-          return { success: true, user: createdUser } as const;
+          return { success: true, user: sanitizeUser(createdUser) } as const;
         }
 
         // Novo fluxo: buscar usuário no banco
@@ -132,7 +170,7 @@ export const appRouter = router({
         });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-        return { success: true, user } as const;
+        return { success: true, user: sanitizeUser(user) } as const;
       }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);

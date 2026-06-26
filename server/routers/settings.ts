@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, publicProcedure, platformAdminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { breeder_settings } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -33,7 +33,10 @@ export const settingsRouter = router({
     }
   }),
 
-  update: protectedProcedure
+  // Atualização restrita ao PLATFORM_ADMIN — somente o dono do Canaril Lima
+  // pode alterar o nome, descrição e dados de contato do site público.
+  // CANARIL_MANAGER (Tiveron, etc.) NÃO pode alterar as configurações do site.
+  update: platformAdminProcedure
     .input(z.object({
       name: z.string().trim().min(1, "Informe o nome do criadouro"),
       city: z.string().trim().optional(),

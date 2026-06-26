@@ -6,10 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Settings as SettingsIcon, Save } from "lucide-react";
+import { Settings as SettingsIcon, Save, Lock } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { isPlatformAdmin } from "@shared/permissions";
 
 export default function Settings() {
+  const { user } = useAuth();
+  const isAdmin = isPlatformAdmin((user as any)?.role);
   const { data: settings, refetch } = trpc.settings.get.useQuery();
   const [formData, setFormData] = useState({
     name: "",
@@ -68,6 +72,27 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* CANARIL_MANAGER vê somente leitura — não pode alterar dados do Canaril Lima */}
+        {!isAdmin && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 flex items-start gap-3">
+            <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-amber-900 text-sm">Configurações do site público</p>
+              <p className="text-amber-700 text-xs mt-1">
+                As configurações do site público (nome, descrição, contato) são exclusivas do administrador da plataforma.
+                Você pode visualizar os dados abaixo, mas não editá-los.
+              </p>
+              <div className="mt-3 space-y-1 text-sm text-amber-900">
+                <p><strong>Nome:</strong> {settings?.name ?? "—"}</p>
+                {settings?.city && <p><strong>Cidade:</strong> {settings.city}{settings.state ? `, ${settings.state}` : ""}</p>}
+                {settings?.email && <p><strong>E-mail:</strong> {settings.email}</p>}
+                {settings?.phone && <p><strong>Telefone:</strong> {settings.phone}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isAdmin && (
         <Card>
           <CardHeader>
             <CardTitle>Dados do Criadouro</CardTitle>
@@ -142,6 +167,7 @@ export default function Settings() {
             </form>
           </CardContent>
         </Card>
+        )}
       </div>
     </DashboardLayout>
   );
