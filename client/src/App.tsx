@@ -10,8 +10,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
 // Importa helper de verificação de administrador da plataforma
+import PWAInstallBanner from "@/components/PWAInstallBanner";
 import { isPlatformAdmin as isPlatformAdminHelper } from "@shared/permissions";
-
 // Páginas leves — carregadas imediatamente
 import Home from "@/pages/Home";
 import Dashboard from "@/pages/Dashboard";
@@ -31,7 +31,7 @@ const Settings = lazy(() => import("@/pages/Settings"));
 const PedigreeTree = lazy(() => import("@/pages/PedigreeTree"));
 const GeneticsCalculator = lazy(() => import("@/pages/GeneticsCalculator"));
 const RingBatches = lazy(() => import("@/pages/RingBatches"));
-const Temporada = lazy(() => import("@/pages/Temporada"));
+const Temporada = lazy(() => import("@/pages/MapaTemporada"));
 const CriadouroMapa = lazy(() => import("@/pages/CriadouroMapa"));
 const BirdFichaPage = lazy(() => import("@/pages/BirdFichaPage"));
 const GuiasIndex = lazy(() => import("@/pages/GuiasPublico").then(m => ({ default: m.GuiasIndex })));
@@ -40,7 +40,7 @@ const FAQPublico = lazy(() => import("@/pages/GuiasPublico").then(m => ({ defaul
 const GlossarioPublico = lazy(() => import("@/pages/GuiasPublico").then(m => ({ default: m.GlossarioPublico })));
 const PublicBirdPage = lazy(() => import("@/pages/PublicBirdPage"));
 const Linhagem = lazy(() => import("@/pages/Linhagem"));
-const RotinaDiaria = lazy(() => import("@/pages/RotinaDiaria"));
+const RotinaDiaria = lazy(() => import("@/pages/RotinaDiariaPWA"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const SecurityZone = lazy(() => import("@/pages/admin/SecurityZone"));
 const ResetCanaril = lazy(() => import("@/pages/admin/ResetCanaril"));
@@ -246,6 +246,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          <PWAInstallBanner />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

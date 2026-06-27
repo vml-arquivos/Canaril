@@ -17,7 +17,7 @@ import {
   couples, birds, cages, clutches, breeding_daily_logs,
   breeding_species_rules, breeding_reminders,
 } from "../../drizzle/schema";
-import { eq, and, desc, gte, isNull } from "drizzle-orm";
+import { eq, and, desc, gte, isNull, sql } from "drizzle-orm";
 import { EVENT_TYPES, computeTotalsFromLogs, recalculateClutchFromLogs, generateBreedingAlerts } from "../_core/breedingDailyAggregator";
 
 const TODAY = () => new Date().toISOString().slice(0, 10);
@@ -192,6 +192,20 @@ export const dailyCareRouter = router({
         createdBy: (ctx as any)?.userId ?? null,
       }).returning();
 
+      // ── Ciclo fechado: CHICK_HATCHED → lembrete de anilhamento ──────────
+      // Canários: anilhamento ideal = 6 dias após eclosão
+      // Cria um breeding_reminder automaticamente para não perder a janela
+      if (input.eventType === "CHICK_HATCHED" && clutchId) {
+        const ringDate = new Date();
+        ringDate.setDate(ringDate.getDate() + 6);
+        await db.insert(breeding_reminders).values({
+          coupleId: input.coupleId,
+          eventType: "ringing",
+          expectedDate: ringDate,
+          notes: `Anilhar ${input.quantity} filhote(s) — janela ideal: ${ringDate.toLocaleDateString("pt-BR")}`,
+        }).catch(() => {}); // silencia se já existir
+      }
+
       // Recalculate clutch totals
       if (clutchId && pool) {
         await recalculateClutchFromLogs(pool, clutchId);
@@ -282,4 +296,52 @@ export const dailyCareRouter = router({
 
       return { deleted: true };
     }),
+
+  // ── Próximos anilhamentos — filhotes para anilhar nos próximos 7 dias ──
+  nextRingReminders: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const tenantId = (ctx.user as any)?.tenantId ?? null;
+
+    const upcoming = new Date();
+    upcoming.setDate(upcoming.getDate() + 7);
+
+    const reminders = await db.select().from(breeding_reminders)
+      .where(
+        and(
+          eq(breeding_reminders.eventType, "ringing"),
+          eq(breeding_reminders.completed, false),
+          gte(breeding_reminders.expectedDate, new Date()),
+        )
+      )
+      .orderBy(breeding_reminders.expectedDate)
+      .limit(20);
+
+    // Enriquecer com dados do casal
+    const coupleIds = Array.from(new Set(reminders.map((r) => r.coupleId)));
+    const coupleData = coupleIds.length
+      ? await db.select().from(couples).where(
+          and(
+            sql`${couples.id} = ANY(ARRAY[${sql.join(coupleIds.map((id) => sql`${id}`), sql`, `)}])`,
+            tenantId !== null ? eq(couples.tenantId, tenantId) : sql`1=1`
+          )
+        )
+      : [];
+
+    return reminders
+      .filter((r) => coupleData.some((c) => c.id === r.coupleId))
+      .map((r) => {
+        const couple = coupleData.find((c) => c.id === r.coupleId);
+        const daysLeft = Math.ceil((new Date(r.expectedDate).getTime() - Date.now()) / 86400000);
+        return {
+          id: r.id,
+          coupleId: r.coupleId,
+          cageNumber: couple?.cageNumber ?? "—",
+          expectedDate: r.expectedDate,
+          daysLeft,
+          notes: r.notes,
+          isUrgent: daysLeft <= 1,
+        };
+      });
+  }),
 });

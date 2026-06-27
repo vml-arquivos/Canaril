@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,13 +7,100 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS } from "@shared/constants";
-import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle, Dna } from "lucide-react";
+import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle, Dna, CheckCircle, ShieldAlert, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
 const emptyForm = { maleId: "", femaleId: "", cageNumber: "", formationDate: "", status: "active" };
+
+// ── Preview genético inline no modal de criação de casal ──────────────────────
+function GeneticPreview({ maleId, femaleId }: { maleId: string; femaleId: string }) {
+  const enabled = !!maleId && !!femaleId && maleId !== femaleId;
+  const { data, isLoading } = trpc.genetics.buildCrossReport.useQuery(
+    { maleId: Number(maleId), femaleId: Number(femaleId) },
+    { enabled }
+  );
+
+  if (!enabled) return null;
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-blue-100 bg-blue-50/40 px-4 py-3 text-sm text-blue-600 animate-pulse">
+        Calculando genética do casal…
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const statusColors = {
+    IDEAL:          "border-emerald-300 bg-emerald-50",
+    APROVADO:       "border-blue-200 bg-blue-50",
+    ATENCAO:        "border-amber-300 bg-amber-50",
+    NAO_RECOMENDADO:"border-red-300 bg-red-50",
+  } as Record<string, string>;
+
+  const statusIcons: Record<string, React.ReactNode> = {
+    IDEAL:           <CheckCircle className="w-4 h-4 text-emerald-600" />,
+    APROVADO:        <CheckCircle className="w-4 h-4 text-blue-600" />,
+    ATENCAO:         <AlertTriangle className="w-4 h-4 text-amber-600" />,
+    NAO_RECOMENDADO: <ShieldAlert className="w-4 h-4 text-red-600" />,
+  };
+
+  const statusLabels = {
+    IDEAL: "Par ideal", APROVADO: "Aprovado", ATENCAO: "Atenção", NAO_RECOMENDADO: "Não recomendado",
+  } as Record<string, string>;
+
+  const status = (data as any).status ?? "APROVADO";
+  const coiPct = `${(((data as any).coi ?? 0) * 100).toFixed(1)}%`;
+  const confidence = (data as any).confidenceLabel ?? "—";
+  const warnings = (data as any).warnings ?? [];
+  const missingData = (data as any).missingData ?? [];
+
+  return (
+    <div className={`rounded-xl border-2 px-4 py-3 space-y-2 ${statusColors[status] ?? statusColors.APROVADO}`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Dna className="w-4 h-4 text-gray-500" />
+          <span className="font-semibold text-sm text-gray-800">Análise genética do par</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {statusIcons[status]}
+          <span className="text-sm font-bold">{statusLabels[status] ?? status}</span>
+        </div>
+      </div>
+
+      <div className="flex gap-4 text-xs text-gray-600 flex-wrap">
+        <span className="flex items-center gap-1">
+          <TrendingUp className="w-3.5 h-3.5" />
+          <strong>COI:</strong> {coiPct}
+          {(data as any).coiRisk === "high" && <span className="text-red-600 font-bold ml-1">⚠️ Alto</span>}
+          {(data as any).coiRisk === "moderate" && <span className="text-amber-600 font-bold ml-1">Moderado</span>}
+        </span>
+        <span><strong>Confiança:</strong> {confidence}</span>
+      </div>
+
+      {warnings.length > 0 && (
+        <div className="space-y-1">
+          {warnings.slice(0, 2).map((w: string, i: number) => (
+            <p key={i} className="text-xs text-amber-800 flex items-start gap-1">
+              <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />{w}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {missingData.length > 0 && (
+        <p className="text-xs text-gray-400">
+          Genótipo incompleto: {missingData.join(", ")} — resultado aproximado
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function Couples() {
   const [open, setOpen] = useState(false);
@@ -217,6 +304,11 @@ export default function Couples() {
                 </div>
 
                 <CoiWarning maleId={formData.maleId} femaleId={formData.femaleId} />
+
+                {/* Preview genético completo — só aparece ao criar novo casal */}
+                {!editingId && (
+                  <GeneticPreview maleId={formData.maleId} femaleId={formData.femaleId} />
+                )}
 
                 <div className="flex gap-2 justify-end">
                   <Button type="button" variant="outline" onClick={closeDialog}>

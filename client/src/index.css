@@ -238,3 +238,31 @@
     padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* ── PWA Mobile Optimizations ─────────────────────────────────────── */
+
+/* Safe area insets para notch/Dynamic Island */
+.safe-top    { padding-top:    env(safe-area-inset-top,    0px); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+
+/* Previne seleção de texto ao tocar em botões */
+.touch-manipulation { touch-action: manipulation; }
+
+/* Botões touch — feedback visual responsivo */
+@media (hover: none) and (pointer: coarse) {
+  button:active { opacity: 0.75; transform: scale(0.97); }
+}
+
+/* Remove highlight azul em tap no mobile */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Scroll suave */
+html { scroll-behavior: smooth; }
+
+/* Evita zoom duplo toque em inputs */
+input, select, textarea { font-size: max(16px, 1em); }
+
+/* DashboardLayout no mobile: remove padding lateral excessivo */
+@media (max-width: 640px) {
+  main { padding-left: 1rem !important; padding-right: 1rem !important; }
+}
