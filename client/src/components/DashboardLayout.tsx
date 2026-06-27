@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map, TrendingUp, ClipboardList, Shield, History } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map, TrendingUp, ClipboardList, Shield, History, DollarSign } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -42,7 +42,9 @@ const menuItems = [
   { icon: DoorOpen,        label: "Gaiolas",              path: "/cages" },
   { icon: Trophy,          label: "Campeonatos",          path: "/championships" },
   { icon: BarChart3,       label: "Relatórios",           path: "/reports" },
-  { icon: Settings,        label: "Configurações",        path: "/settings" },
+  { icon: TrendingUp,      label: "Plantel (Mov.)",        path: "/plantel" },
+  { icon: DollarSign,      label: "Financeiro",            path: "/financeiro" },
+  { icon: Settings,        label: "Configurações",         path: "/settings" },
   // Auditoria do Canaril — disponível para qualquer usuário autenticado
   { icon: History,         label: "Auditoria do Canaril", path: "/meu-canaril/auditoria", managerOnly: true },
 ];

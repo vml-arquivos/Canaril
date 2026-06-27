@@ -19,7 +19,9 @@ import { photosRouter } from "./routers/photos";
 import { championshipsRouter } from "./routers/championships";
 import { reportsRouter } from "./routers/reports";
 import { showroomRouter } from "./routers/showroom";
-import { settingsRouter } from "./routers/settings";
+import { movementsRouter } from "./routers/movements";
+import { suppliesRouter }  from "./routers/supplies";
+import { settingsRouter }  from "./routers/settings";
 import { remindersRouter } from "./routers/reminders";
 import { geneticsRouter } from "./routers/genetics";
 import { healthRouter } from "./routers/health";
@@ -188,7 +190,9 @@ export const appRouter = router({
   championships: championshipsRouter,
   reports: reportsRouter,
   showroom: showroomRouter,
-  settings: settingsRouter,
+  settings:  settingsRouter,
+  movements: movementsRouter,
+  supplies:  suppliesRouter,
   reminders: remindersRouter,
   genetics: geneticsRouter,
   health: healthRouter,

@@ -1,190 +1,262 @@
 /**
  * RotinaDiariaPWA.tsx — Interface tátil para registrar rotina do criadouro
- * Rota: /rotina
  *
- * Design:
- *  • Ícones SVG desenhados (ovo, ovo quebrado, filhote, ninho) — sem emojis
- *  • Tap/toque em ícones incrementa contadores visuais
- *  • Feedback háptico (vibration API) em cada toque
- *  • Zero digitação obrigatória — tudo por cliques
- *  • Safe area insets para iPhone/Android com notch
+ * Correções v2:
+ *  - Cada evento tem ícone SVG único e inconfundível
+ *  - NEST_PHOTO abre câmera nativa via input[type=file capture=environment]
+ *  - Ovo infértil ≠ Ovo perdido (ícones distintos)
+ *  - Filhote nasceu ≠ Anilhado ≠ Filhote morreu (ícones distintos)
+ *  - Ninho limpo com ícone real de ninho + vassoura
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { CheckCircle2, ChevronDown, ChevronUp, RefreshCw, Info, Feather } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCw, Info } from "lucide-react";
 import { Link } from "wouter";
 
-// ─── Haptic feedback ──────────────────────────────────────────────────────────
+function haptic(ms = 30) { try { navigator.vibrate?.(ms); } catch {} }
 
-function haptic(pattern: number | number[] = 30) {
-  try { navigator.vibrate?.(pattern); } catch {}
-}
+// ─── SVG Icons — cada um único e semanticamente claro ────────────────────────
 
-// ─── SVG Icons desenhados ─────────────────────────────────────────────────────
-
-function EggIcon({ broken = false, size = 44 }: { broken?: boolean; size?: number }) {
-  if (broken) {
-    return (
-      <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-        {/* Metade inferior */}
-        <path d="M8 28 Q8 42 22 42 Q36 42 36 28" stroke="#ef4444" strokeWidth="2.5" fill="#fee2e2" />
-        {/* Racha em ziguezague */}
-        <path d="M16 28 L20 22 L24 26 L28 20" stroke="#ef4444" strokeWidth="2" fill="none" strokeLinecap="round" />
-        {/* Metade superior esquerda */}
-        <path d="M8 28 Q8 12 22 8" stroke="#ef4444" strokeWidth="2.5" fill="none" />
-        {/* Metade superior direita */}
-        <path d="M36 28 Q36 12 22 8" stroke="#ef4444" strokeWidth="2.5" fill="none" />
-        {/* Gota amarela (gema) */}
-        <circle cx="22" cy="33" r="4.5" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.5" />
-      </svg>
-    );
-  }
+/** Ovo intacto — amarelo, brilho */
+function SvgOvoAdicionado({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M22 6 C10 6 8 18 8 26 C8 36 14 42 22 42 C30 42 36 36 36 26 C36 18 34 6 22 6Z"
-        fill="#fef9c3" stroke="#d97706" strokeWidth="2.5" strokeLinejoin="round" />
-      {/* Brilho */}
-      <ellipse cx="17" cy="18" rx="3" ry="5" fill="white" opacity="0.35" transform="rotate(-20 17 18)" />
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      <path d="M22 5C10 5 8 18 8 26C8 36.5 14 42 22 42C30 42 36 36.5 36 26C36 18 34 5 22 5Z"
+        fill="#fef9c3" stroke="#d97706" strokeWidth="2.5"/>
+      <ellipse cx="16" cy="17" rx="3" ry="5" fill="white" opacity="0.4" transform="rotate(-20 16 17)"/>
+      <text x="30" y="16" fontSize="12" textAnchor="middle">+</text>
     </svg>
   );
 }
 
-function ChickIcon({ size = 44 }: { size?: number }) {
+/** Ovo quebrado — rachado com gema visível */
+function SvgOvoQuebrado({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Corpo */}
-      <ellipse cx="22" cy="28" rx="13" ry="10" fill="#fde68a" stroke="#d97706" strokeWidth="2" />
-      {/* Cabeça */}
-      <circle cx="22" cy="16" r="8" fill="#fde68a" stroke="#d97706" strokeWidth="2" />
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Metade inferior */}
+      <path d="M8 27Q8 42 22 42Q36 42 36 27" fill="#fee2e2" stroke="#ef4444" strokeWidth="2"/>
+      {/* Racha ziguezague */}
+      <path d="M15 27L19 21L23 25L27 19" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round"/>
+      {/* Casca esquerda */}
+      <path d="M8 27Q8 12 22 7" stroke="#ef4444" strokeWidth="2" fill="none"/>
+      {/* Casca direita */}
+      <path d="M36 27Q36 12 22 7" stroke="#ef4444" strokeWidth="2" fill="none"/>
+      {/* Gema */}
+      <circle cx="22" cy="35" r="5" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1.5"/>
+    </svg>
+  );
+}
+
+/** Ovo infértil — ovo cinza com lupa/ponto de interrogação */
+function SvgOvoInfertil({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      <path d="M22 6C10 6 8 18 8 26C8 36 14 42 22 42C30 42 36 36 36 26C36 18 34 6 22 6Z"
+        fill="#f1f5f9" stroke="#94a3b8" strokeWidth="2.5"/>
+      {/* Ponto de interrogação dentro */}
+      <text x="22" y="28" fontSize="16" textAnchor="middle" fill="#64748b" fontWeight="bold">?</text>
+      {/* Pequena lupa no canto superior direito */}
+      <circle cx="33" cy="12" r="5.5" fill="#e2e8f0" stroke="#94a3b8" strokeWidth="1.5"/>
+      <line x1="37" y1="16" x2="40" y2="19" stroke="#94a3b8" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+/** Ovo perdido — ovo saindo do ninho com seta indicando queda */
+function SvgOvoPerdido({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Ovo inclinado */}
+      <path d="M18 4C8 4 6 15 6 22C6 31 11 36 18 36C25 36 30 31 30 22C30 15 28 4 18 4Z"
+        fill="#fef3c7" stroke="#f59e0b" strokeWidth="2" transform="rotate(-20 18 20)"/>
+      {/* Seta de queda */}
+      <path d="M32 22L36 30L40 22" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <line x1="36" y1="16" x2="36" y2="30" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+/** Filhote nasceu — pintinho saindo do ovo */
+function SvgFilhoteNasceu({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Casca inferior do ovo */}
+      <path d="M8 32Q8 42 22 42Q36 42 36 32Z" fill="#fef9c3" stroke="#d97706" strokeWidth="2"/>
+      {/* Racha */}
+      <path d="M14 32L18 26L22 30L26 24L30 28" stroke="#d97706" strokeWidth="2" strokeLinecap="round"/>
+      {/* Cabeça do pintinho emergindo */}
+      <circle cx="22" cy="20" r="9" fill="#fde68a" stroke="#d97706" strokeWidth="2"/>
       {/* Olho */}
-      <circle cx="24.5" cy="14.5" r="1.8" fill="#1e293b" />
-      <circle cx="25.2" cy="13.8" r="0.6" fill="white" />
+      <circle cx="25" cy="18" r="2" fill="#1e293b"/>
+      <circle cx="25.7" cy="17.3" r="0.7" fill="white"/>
+      {/* Bico aberto */}
+      <path d="M27 20L31 19.5M27 20L31 21" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
+      {/* Peninha */}
+      <path d="M22 11Q20 7 22 4Q24 7 22 11Z" fill="#f97316"/>
+    </svg>
+  );
+}
+
+/** Anilhado — pintinho com anilha metálica visível na pata */
+function SvgAnilhado({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Corpo */}
+      <ellipse cx="22" cy="29" rx="13" ry="10" fill="#fde68a" stroke="#d97706" strokeWidth="2"/>
+      {/* Cabeça */}
+      <circle cx="22" cy="17" r="8" fill="#fde68a" stroke="#d97706" strokeWidth="2"/>
+      {/* Olho */}
+      <circle cx="24.5" cy="15.5" r="1.8" fill="#1e293b"/>
       {/* Bico */}
-      <path d="M27 16.5 L31 17 L27 17.8Z" fill="#f97316" stroke="#ea580c" strokeWidth="0.8" />
-      {/* Asa esquerda */}
-      <path d="M10 27 Q7 24 10 21 Q13 25 10 27Z" fill="#fcd34d" stroke="#d97706" strokeWidth="1.5" />
-      {/* Asa direita */}
-      <path d="M34 27 Q37 24 34 21 Q31 25 34 27Z" fill="#fcd34d" stroke="#d97706" strokeWidth="1.5" />
-      {/* Peninha de topete */}
-      <path d="M22 8 Q20 4 22 2 Q24 4 22 8Z" fill="#f97316" stroke="#ea580c" strokeWidth="1" />
-      {/* Pé esquerdo */}
-      <path d="M17 38 L15 42 M17 38 L17 42 M17 38 L19 42" stroke="#d97706" strokeWidth="1.5" strokeLinecap="round" />
-      {/* Pé direito */}
-      <path d="M27 38 L25 42 M27 38 L27 42 M27 38 L29 42" stroke="#d97706" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M27 17L30.5 17.5L27 18Z" fill="#f97316" stroke="#ea580c" strokeWidth="0.8"/>
+      {/* Asas */}
+      <path d="M10 28Q7 25 10 22Q13 26 10 28Z" fill="#fcd34d" stroke="#d97706" strokeWidth="1.5"/>
+      <path d="M34 28Q37 25 34 22Q31 26 34 28Z" fill="#fcd34d" stroke="#d97706" strokeWidth="1.5"/>
+      {/* Pata esquerda com ANILHA */}
+      <line x1="17" y1="39" x2="15" y2="43" stroke="#d97706" strokeWidth="1.5" strokeLinecap="round"/>
+      {/* Anilha metálica — anel azul brilhante */}
+      <rect x="13.5" y="37" width="7" height="4" rx="2" fill="#3b82f6" stroke="#1d4ed8" strokeWidth="1.5"/>
+      <text x="17" y="40.5" fontSize="4" textAnchor="middle" fill="white" fontWeight="bold">ID</text>
+      {/* Pata direita */}
+      <line x1="27" y1="39" x2="29" y2="43" stroke="#d97706" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   );
 }
 
-function NestIcon({ size = 44 }: { size?: number }) {
+/** Filhote morreu — pintinho com X vermelho, escurecido */
+function SvgFilhoteMorreu({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Ninho — ramos entrelaçados */}
-      <path d="M4 32 Q8 22 22 20 Q36 22 40 32" stroke="#92400e" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-      <path d="M6 36 Q10 26 22 24 Q34 26 38 36" stroke="#a16207" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-      <path d="M8 38 Q12 30 22 28 Q32 30 36 38" stroke="#78350f" strokeWidth="2" fill="none" strokeLinecap="round" />
-      {/* Base arredondada */}
-      <path d="M8 38 Q8 42 22 42 Q36 42 36 38" fill="#fef3c7" stroke="#d97706" strokeWidth="1.5" />
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Corpo apagado */}
+      <ellipse cx="22" cy="29" rx="13" ry="10" fill="#f8d7da" stroke="#ef4444" strokeWidth="2"/>
+      <circle cx="22" cy="17" r="8" fill="#f8d7da" stroke="#ef4444" strokeWidth="2"/>
+      {/* X vermelho grande */}
+      <line x1="15" y1="10" x2="29" y2="38" stroke="#ef4444" strokeWidth="3" strokeLinecap="round"/>
+      <line x1="29" y1="10" x2="15" y2="38" stroke="#ef4444" strokeWidth="3" strokeLinecap="round"/>
+      {/* Contorno do pintinho */}
+      <ellipse cx="22" cy="29" rx="13" ry="10" fill="none" stroke="#ef4444" strokeWidth="2"/>
+      <circle cx="22" cy="17" r="8" fill="none" stroke="#ef4444" strokeWidth="2"/>
+    </svg>
+  );
+}
+
+/** Ninho limpo — ninho de palha com estrela de limpeza */
+function SvgNinhoLimpo({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Ninho palha */}
+      <path d="M5 30Q5 44 22 44Q39 44 39 30" fill="#fef3c7" stroke="#a16207" strokeWidth="2"/>
+      <path d="M5 30Q9 20 22 18Q35 20 39 30" stroke="#a16207" strokeWidth="2" fill="none"/>
+      <path d="M7 34Q11 26 22 24Q33 26 37 34" stroke="#d97706" strokeWidth="1.5" fill="none"/>
       {/* Palha */}
-      <path d="M10 33 L13 29" stroke="#a16207" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M30 33 L27 29" stroke="#a16207" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M18 30 L19 26" stroke="#a16207" strokeWidth="1" strokeLinecap="round" />
-      <path d="M25 30 L26 26" stroke="#a16207" strokeWidth="1" strokeLinecap="round" />
-      {/* Ovinho dentro */}
-      <ellipse cx="22" cy="36" rx="5" ry="4" fill="#fef9c3" stroke="#d97706" strokeWidth="1.5" />
+      <line x1="11" y1="29" x2="13" y2="24" stroke="#92400e" strokeWidth="1.2" strokeLinecap="round"/>
+      <line x1="29" y1="29" x2="27" y2="24" stroke="#92400e" strokeWidth="1.2" strokeLinecap="round"/>
+      {/* Estrela de limpeza / brilho no canto */}
+      <g transform="translate(31,8)">
+        <path d="M0,-7 L1.5,-1.5 L7,0 L1.5,1.5 L0,7 L-1.5,1.5 L-7,0 L-1.5,-1.5Z"
+          fill="#fbbf24" stroke="#f59e0b" strokeWidth="1"/>
+      </g>
+      {/* Vassoura pequena */}
+      <line x1="34" y1="20" x2="28" y2="30" stroke="#92400e" strokeWidth="2" strokeLinecap="round"/>
+      <path d="M25 32L28 30L31 33Z" fill="#92400e"/>
     </svg>
   );
 }
 
-function FeedingOkIcon({ size = 44 }: { size?: number }) {
+/** Alimentação OK — tigela cheia com check */
+function SvgAlimentacaoOk({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
       {/* Tigela */}
-      <path d="M8 24 Q8 38 22 38 Q36 38 36 24Z" fill="#dbeafe" stroke="#3b82f6" strokeWidth="2" />
-      {/* Borda */}
-      <path d="M6 24 L38 24" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" />
-      {/* Sementes */}
-      <circle cx="16" cy="30" r="2.5" fill="#d97706" />
-      <circle cx="22" cy="32" r="2.5" fill="#65a30d" />
-      <circle cx="28" cy="30" r="2.5" fill="#d97706" />
-      <circle cx="19" cy="26" r="2" fill="#a16207" />
-      <circle cx="25" cy="26" r="2" fill="#65a30d" />
-      {/* Check verde */}
-      <circle cx="34" cy="12" r="8" fill="#22c55e" />
-      <path d="M30 12 L33 15 L38 9" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 22Q7 38 22 38Q37 38 37 22Z" fill="#dbeafe" stroke="#3b82f6" strokeWidth="2.5"/>
+      <line x1="5" y1="22" x2="39" y2="22" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round"/>
+      {/* Sementes variadas */}
+      <ellipse cx="14" cy="29" rx="3" ry="2" fill="#d97706" transform="rotate(-15 14 29)"/>
+      <ellipse cx="22" cy="31" rx="3" ry="2" fill="#65a30d" transform="rotate(10 22 31)"/>
+      <ellipse cx="30" cy="29" rx="3" ry="2" fill="#d97706" transform="rotate(-10 30 29)"/>
+      <circle cx="18" cy="26" r="2" fill="#a16207"/>
+      <circle cx="26" cy="26" r="2" fill="#65a30d"/>
+      {/* Check verde no canto */}
+      <circle cx="35" cy="10" r="7" fill="#22c55e"/>
+      <path d="M31 10L34 13L39 7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
 
-function MedicationIcon({ size = 44 }: { size?: number }) {
+/** Medicação — seringa específica */
+function SvgMedicacao({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Cápsula */}
-      <rect x="8" y="18" width="28" height="14" rx="7" fill="#e0e7ff" stroke="#6366f1" strokeWidth="2.5" />
-      <path d="M8 25 L36 25" stroke="#6366f1" strokeWidth="2" />
-      {/* Metade colorida */}
-      <path d="M22 18 L36 18 Q43 18 43 25 L22 25Z" fill="#6366f1" opacity="0.4" />
-      {/* Cruz */}
-      <path d="M20 10 L24 10 M22 8 L22 12" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Seringa corpo */}
+      <rect x="8" y="19" width="24" height="9" rx="3" fill="#e0e7ff" stroke="#6366f1" strokeWidth="2"/>
+      {/* Êmbolo */}
+      <rect x="9" y="21" width="10" height="5" rx="1" fill="#a5b4fc"/>
+      <line x1="14" y1="19" x2="14" y2="28" stroke="#6366f1" strokeWidth="1.5"/>
+      {/* Ponta/agulha */}
+      <path d="M32 22L40 23.5L32 25Z" fill="#6366f1"/>
+      {/* Cabo */}
+      <rect x="4" y="21" width="5" height="5" rx="1" fill="#6366f1"/>
+      {/* Cruz vermelha */}
+      <circle cx="36" cy="10" r="7" fill="#ef4444"/>
+      <line x1="36" y1="6.5" x2="36" y2="13.5" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+      <line x1="32.5" y1="10" x2="39.5" y2="10" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
     </svg>
   );
 }
 
-function CameraIcon({ size = 44 }: { size?: number }) {
+/** Foto — câmera real com obturador visível */
+function SvgFotoNinho({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="4" y="12" width="36" height="26" rx="5" fill="#f0fdf4" stroke="#22c55e" strokeWidth="2.5" />
-      <circle cx="22" cy="25" r="8" fill="none" stroke="#22c55e" strokeWidth="2.5" />
-      <circle cx="22" cy="25" r="4" fill="#bbf7d0" />
-      <path d="M14 12 L17 6 L27 6 L30 12" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" />
-      <circle cx="34" cy="18" r="2.5" fill="#22c55e" />
+    <svg width={size} height={size} viewBox="0 0 44 44" fill="none">
+      {/* Corpo câmera */}
+      <rect x="4" y="13" width="36" height="25" rx="5" fill="#1e293b" stroke="#334155" strokeWidth="1.5"/>
+      {/* Lente */}
+      <circle cx="22" cy="25" r="9" fill="#0f172a" stroke="#64748b" strokeWidth="2"/>
+      <circle cx="22" cy="25" r="6.5" fill="#1e293b" stroke="#94a3b8" strokeWidth="1.5"/>
+      <circle cx="22" cy="25" r="3.5" fill="#3b82f6" opacity="0.6"/>
+      <circle cx="20" cy="23" r="1.2" fill="white" opacity="0.5"/>
+      {/* Flash */}
+      <rect x="30" y="16" width="6" height="4" rx="1" fill="#fbbf24" stroke="#f59e0b" strokeWidth="1"/>
+      {/* Botão obturador */}
+      <circle cx="8" cy="13" r="3" fill="#475569" stroke="#64748b" strokeWidth="1"/>
+      {/* Visor */}
+      <rect x="27" y="8" width="10" height="6" rx="2" fill="#334155" stroke="#64748b" strokeWidth="1"/>
     </svg>
   );
 }
 
-function EggClearIcon({ size = 44 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Ovo claro (infértil) */}
-      <path d="M22 6 C10 6 8 18 8 26 C8 36 14 42 22 42 C30 42 36 36 36 26 C36 18 34 6 22 6Z"
-        fill="#f8fafc" stroke="#94a3b8" strokeWidth="2.5" strokeDasharray="4 2" />
-      {/* X dentro */}
-      <path d="M17 21 L27 31 M27 21 L17 31" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// ─── Configuração dos botões de evento ───────────────────────────────────────
+// ─── Configuração dos botões ──────────────────────────────────────────────────
 
 const EVENT_BUTTONS = [
   {
     group: "ovos",
     title: "Ovos",
     events: [
-      { type: "EGG_ADDED",    label: "Ovo adicionado",  icon: EggIcon,      color: "from-amber-50 to-yellow-50", border: "border-amber-300", accent: "bg-amber-600" },
-      { type: "EGG_BROKEN",   label: "Ovo quebrado",    icon: (p: any) => <EggIcon broken size={p.size} />, color: "from-red-50 to-rose-50", border: "border-red-300", accent: "bg-red-500" },
-      { type: "EGG_INFERTILE",label: "Ovo infértil",    icon: EggClearIcon, color: "from-gray-50 to-slate-50", border: "border-gray-300", accent: "bg-gray-500" },
-      { type: "EGG_LOST",     label: "Ovo perdido",     icon: EggClearIcon, color: "from-orange-50 to-red-50",  border: "border-orange-300", accent: "bg-orange-500" },
+      { type: "EGG_ADDED",     label: "Ovo adicionado", Icon: SvgOvoAdicionado, bg: "bg-amber-50",   border: "border-amber-300",  badge: "bg-amber-600" },
+      { type: "EGG_BROKEN",    label: "Ovo quebrado",   Icon: SvgOvoQuebrado,   bg: "bg-red-50",    border: "border-red-300",    badge: "bg-red-600" },
+      { type: "EGG_INFERTILE", label: "Ovo infértil",   Icon: SvgOvoInfertil,   bg: "bg-slate-50",  border: "border-slate-300",  badge: "bg-slate-500" },
+      { type: "EGG_LOST",      label: "Ovo perdido",    Icon: SvgOvoPerdido,    bg: "bg-orange-50", border: "border-orange-300", badge: "bg-orange-600" },
     ],
   },
   {
     group: "filhotes",
     title: "Filhotes",
     events: [
-      { type: "CHICK_HATCHED",label: "Filhote nasceu",  icon: ChickIcon,    color: "from-green-50 to-emerald-50",  border: "border-green-300",  accent: "bg-green-600" },
-      { type: "CHICK_RINGED", label: "Anilhado",        icon: ChickIcon,    color: "from-blue-50 to-sky-50",    border: "border-blue-300",   accent: "bg-blue-600" },
-      { type: "CHICK_DIED",   label: "Filhote morreu",  icon: ChickIcon,    color: "from-red-50 to-rose-50",    border: "border-red-300",    accent: "bg-red-500" },
+      { type: "CHICK_HATCHED", label: "Filhote nasceu", Icon: SvgFilhoteNasceu, bg: "bg-green-50",  border: "border-green-400",  badge: "bg-green-600" },
+      { type: "CHICK_RINGED",  label: "Anilhado",       Icon: SvgAnilhado,      bg: "bg-blue-50",   border: "border-blue-400",   badge: "bg-blue-700" },
+      { type: "CHICK_DIED",    label: "Filhote morreu", Icon: SvgFilhoteMorreu, bg: "bg-red-50",    border: "border-red-400",    badge: "bg-red-700" },
     ],
   },
   {
-    group: "ninho",
+    group: "manejo",
     title: "Ninho e Manejo",
     events: [
-      { type: "NEST_CLEANED", label: "Ninho limpo",     icon: NestIcon,     color: "from-lime-50 to-green-50",  border: "border-lime-300",   accent: "bg-lime-600" },
-      { type: "FEEDING_OK",   label: "Alimentação OK",  icon: FeedingOkIcon,color: "from-blue-50 to-indigo-50", border: "border-blue-300",   accent: "bg-blue-600" },
-      { type: "MEDICATION_GIVEN", label: "Medicação",   icon: MedicationIcon,color: "from-purple-50 to-indigo-50",border: "border-purple-300",accent: "bg-purple-600" },
-      { type: "NEST_PHOTO",   label: "Foto do ninho",   icon: CameraIcon,   color: "from-green-50 to-teal-50",  border: "border-green-300",  accent: "bg-green-600" },
+      { type: "NEST_CLEANED",     label: "Ninho limpo",    Icon: SvgNinhoLimpo,    bg: "bg-lime-50",   border: "border-lime-400",   badge: "bg-lime-700" },
+      { type: "FEEDING_OK",       label: "Alimentação OK", Icon: SvgAlimentacaoOk, bg: "bg-sky-50",    border: "border-sky-400",    badge: "bg-sky-700" },
+      { type: "MEDICATION_GIVEN", label: "Medicação",      Icon: SvgMedicacao,     bg: "bg-indigo-50", border: "border-indigo-400", badge: "bg-indigo-700" },
+      { type: "NEST_PHOTO",       label: "Foto do ninho",  Icon: SvgFotoNinho,     bg: "bg-gray-50",   border: "border-gray-400",   badge: "bg-gray-700", isCamera: true },
     ],
   },
 ] as const;
@@ -195,26 +267,65 @@ export default function RotinaDiariaPWA() {
   const { data: couples, isLoading, refetch } = trpc.dailyCare.listActiveCouples.useQuery();
   const { data: ringReminders } = trpc.dailyCare.nextRingReminders.useQuery();
   const logEvent = trpc.dailyCare.logEvent.useMutation({
-    onSuccess: () => { refetch(); },
+    onSuccess: () => refetch(),
     onError: (e) => toast.error(e.message),
   });
 
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [counts, setCounts] = useState<Record<string, Record<string, number>>>({});
+  const [counts, setCounts]   = useState<Record<string, Record<string, number>>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
+  // Ref para o input de câmera — um por sessão, reutilizado
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const cameraContext  = useRef<{ coupleId: number; clutchId: number | null } | null>(null);
+
+  // ── Câmera nativa ────────────────────────────────────────────────────────────
+  const openCamera = useCallback((coupleId: number, clutchId: number | null) => {
+    haptic(40);
+    cameraContext.current = { coupleId, clutchId };
+    cameraInputRef.current?.click();
+  }, []);
+
+  const handlePhotoCapture = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !cameraContext.current) return;
+    const { coupleId, clutchId } = cameraContext.current;
+
+    // Converter para base64 para envio (ou usar URL.createObjectURL para preview)
+    const url = URL.createObjectURL(file);
+
+    const key = `${coupleId}-NEST_PHOTO`;
+    setPending((p) => ({ ...p, [key]: true }));
+    setCounts((p) => ({
+      ...p,
+      [coupleId]: { ...p[coupleId], NEST_PHOTO: (p[coupleId]?.NEST_PHOTO ?? 0) + 1 },
+    }));
+
+    logEvent.mutate({
+      coupleId,
+      clutchId: clutchId ?? undefined,
+      eventType: "NEST_PHOTO",
+      quantity: 1,
+      photoUrl: url,
+    }, {
+      onSettled: () => setPending((p) => ({ ...p, [key]: false })),
+      onSuccess: () => toast.success("Foto do ninho registrada!"),
+    });
+
+    // Limpar input para permitir nova foto
+    e.target.value = "";
+  }, [logEvent]);
+
+  // ── Evento comum ─────────────────────────────────────────────────────────────
   const handleEvent = useCallback(
     (coupleId: number, clutchId: number | null, eventType: string) => {
       haptic(40);
       const key = `${coupleId}-${eventType}`;
-      setCounts((prev) => ({
-        ...prev,
-        [coupleId]: {
-          ...prev[coupleId],
-          [eventType]: ((prev[coupleId]?.[eventType]) ?? 0) + 1,
-        },
+      setCounts((p) => ({
+        ...p,
+        [coupleId]: { ...p[coupleId], [eventType]: (p[coupleId]?.[eventType] ?? 0) + 1 },
       }));
-      setPending((prev) => ({ ...prev, [key]: true }));
+      setPending((p) => ({ ...p, [key]: true }));
       logEvent.mutate({
         coupleId,
         clutchId: clutchId ?? undefined,
@@ -222,75 +333,72 @@ export default function RotinaDiariaPWA() {
         quantity: 1,
         autoCreateClutch: true,
       }, {
-        onSettled: () => setPending((prev) => ({ ...prev, [key]: false })),
+        onSettled: () => setPending((p) => ({ ...p, [key]: false })),
       });
     },
     [logEvent]
   );
 
   const today = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
-  const totalCouples = couples?.length ?? 0;
-  const doneToday = couples?.filter((c: any) => (c.todayEvents?.length ?? 0) > 0).length ?? 0;
-  const progress = totalCouples > 0 ? Math.round((doneToday / totalCouples) * 100) : 0;
+  const total = couples?.length ?? 0;
+  const done  = (couples as any[])?.filter((c: any) => (c.todayEvents?.length ?? 0) > 0).length ?? 0;
+  const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
     <DashboardLayout>
-      {/* Header fixo mobile */}
-      <div className="sticky top-0 z-20 bg-amber-700 text-white shadow-lg -mx-4 px-4 pt-3 pb-3 mb-4 safe-top">
+      {/* Input câmera oculto */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handlePhotoCapture}
+      />
+
+      {/* Header fixo */}
+      <div className="sticky top-0 z-20 bg-amber-700 text-white shadow-lg -mx-4 px-4 pt-3 pb-3 mb-4">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h1 className="text-lg font-bold tracking-tight">Rotina Diária</h1>
+            <h1 className="text-lg font-bold">Rotina Diária</h1>
             <p className="text-amber-200 text-xs capitalize">{today}</p>
           </div>
-          <button
-            onClick={() => { haptic(); refetch(); }}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-amber-600/60 active:bg-amber-500"
-          >
+          <button onClick={() => { haptic(); refetch(); }}
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-amber-600/60 active:bg-amber-500">
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
-
-        {/* Barra de progresso */}
         <div className="flex items-center gap-2">
           <div className="flex-1 h-2 bg-amber-900/40 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-amber-200 rounded-full transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            />
+            <div className="h-full bg-amber-200 rounded-full transition-all duration-500" style={{ width: `${pct}%` }}/>
           </div>
-          <span className="text-xs text-amber-200 shrink-0">{doneToday}/{totalCouples} casais</span>
+          <span className="text-xs text-amber-200 shrink-0">{done}/{total} casais</span>
         </div>
       </div>
 
-      {/* Alertas urgentes de anilhamento */}
-      {(ringReminders ?? []).length > 0 && (
-        <div className="space-y-1.5 mb-2">
-          {(ringReminders as any[]).filter((r) => r.daysLeft <= 2).map((r: any) => (
-            <div key={r.id} className={`flex items-center gap-3 rounded-2xl px-4 py-3 border-2 ${r.isUrgent ? "bg-red-50 border-red-300 animate-pulse" : "bg-amber-50 border-amber-300"}`}>
-              <span className="text-2xl shrink-0">💍</span>
-              <div className="flex-1 min-w-0">
-                <p className={`font-bold text-sm ${r.isUrgent ? "text-red-700" : "text-amber-800"}`}>
-                  {r.isUrgent ? "⚡ ANILHAR HOJE!" : `Anilhar em ${r.daysLeft} dia${r.daysLeft !== 1 ? "s" : ""}`}
-                </p>
-                <p className="text-xs text-gray-500">Gaiola {r.cageNumber} — {new Date(r.expectedDate).toLocaleDateString("pt-BR")}</p>
-              </div>
-            </div>
-          ))}
+      {/* Alertas de anilhamento urgente */}
+      {(ringReminders as any[])?.filter((r: any) => r.daysLeft <= 2).map((r: any) => (
+        <div key={r.id} className={`flex items-center gap-3 rounded-2xl px-4 py-3 mb-3 border-2 ${r.isUrgent ? "bg-red-50 border-red-300 animate-pulse" : "bg-amber-50 border-amber-300"}`}>
+          <SvgAnilhado size={36} />
+          <div className="flex-1 min-w-0">
+            <p className={`font-bold text-sm ${r.isUrgent ? "text-red-700" : "text-amber-800"}`}>
+              {r.isUrgent ? "⚡ Anilhar HOJE!" : `Anilhar em ${r.daysLeft} dia${r.daysLeft !== 1 ? "s" : ""}`}
+            </p>
+            <p className="text-xs text-gray-500">Gaiola {r.cageNumber} — {new Date(r.expectedDate).toLocaleDateString("pt-BR")}</p>
+          </div>
         </div>
-      )}
+      ))}
 
       {isLoading && (
         <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse" />
-          ))}
+          {[1, 2, 3].map((i) => <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse"/>)}
         </div>
       )}
 
-      {!isLoading && totalCouples === 0 && (
+      {!isLoading && total === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <NestIcon size={72} />
-          <p className="text-gray-500 text-center text-sm">Nenhum casal ativo encontrado.<br />Cadastre casais primeiro.</p>
+          <SvgNinhoLimpo size={72}/>
+          <p className="text-gray-500 text-center text-sm">Nenhum casal ativo.<br/>Cadastre casais primeiro.</p>
           <Link href="/couples">
             <button className="bg-amber-600 text-white px-6 py-3 rounded-xl font-semibold text-sm active:bg-amber-700">
               Ir para Casais →
@@ -301,101 +409,97 @@ export default function RotinaDiariaPWA() {
 
       <div className="space-y-3 pb-24">
         {(couples as any[])?.map((couple: any) => {
-          const isOpen = expanded === couple.coupleId;
-          const todayEvents: string[] = couple.todayEvents ?? [];
-          const done = todayEvents.length > 0;
-          const localCounts = counts[couple.coupleId] ?? {};
-          const activeClutch = couple.clutches?.find((c: any) => c.status === "active");
+          const isOpen   = expanded === couple.coupleId;
+          const todayEvt = couple.todayEvents ?? [];
+          const done     = todayEvt.length > 0;
+          const localCnt = counts[couple.coupleId] ?? {};
+          const clutch   = couple.clutches?.find((c: any) => c.status === "active");
 
           return (
-            <div
-              key={couple.coupleId}
-              className={`rounded-2xl border-2 overflow-hidden transition-all duration-200 ${
-                done ? "border-emerald-300 bg-emerald-50/40" : "border-gray-200 bg-white"
-              }`}
-            >
-              {/* Header do casal — toque para expandir */}
-              <button
-                className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50 transition-colors"
-                onClick={() => { haptic(20); setExpanded(isOpen ? null : couple.coupleId); }}
-              >
+            <div key={couple.coupleId}
+              className={`rounded-2xl border-2 overflow-hidden transition-all ${done ? "border-emerald-300 bg-emerald-50/40" : "border-gray-200 bg-white"}`}>
+
+              {/* Header do casal */}
+              <button className="w-full px-4 py-3.5 flex items-center gap-3 active:bg-gray-50"
+                onClick={() => { haptic(20); setExpanded(isOpen ? null : couple.coupleId); }}>
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${done ? "bg-emerald-100" : "bg-amber-50"}`}>
                   {done
-                    ? <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    : <NestIcon size={28} />
+                    ? <svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10l5 5 7-8" stroke="#16a34a" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    : <SvgNinhoLimpo size={28}/>
                   }
                 </div>
                 <div className="flex-1 min-w-0 text-left">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-gray-900 text-sm">Gaiola {couple.cageNumber ?? "—"}</span>
-                    {couple.alertLevel === "high" && (
-                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">⚠️ Alerta</span>
-                    )}
+                    {couple.alertLevel === "high" && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">⚠️</span>}
                   </div>
-                  <p className="text-xs text-gray-500 truncate">
-                    ♂ {couple.maleRing} · ♀ {couple.femaleRing}
-                  </p>
-                  {/* Mini indicadores de hoje */}
-                  {todayEvents.length > 0 && (
+                  <p className="text-xs text-gray-500 truncate">♂ {couple.maleRing} · ♀ {couple.femaleRing}</p>
+                  {todayEvt.length > 0 && (
                     <div className="flex gap-1 mt-1 flex-wrap">
-                      {todayEvents.slice(0, 4).map((ev, i) => (
+                      {todayEvt.slice(0, 5).map((ev: string, i: number) => (
                         <span key={i} className="text-xs bg-amber-100 text-amber-700 px-1.5 rounded-full">
-                          {ev === "EGG_ADDED" ? "🥚" : ev === "CHICK_HATCHED" ? "🐥" : ev === "EGG_BROKEN" ? "💥" : ev === "FEEDING_OK" ? "✅" : "•"}
+                          {ev === "EGG_ADDED" ? "🥚" : ev === "CHICK_HATCHED" ? "🐣" : ev === "CHICK_RINGED" ? "💍" : ev === "EGG_BROKEN" ? "💥" : ev === "NEST_PHOTO" ? "📷" : "•"}
                         </span>
                       ))}
-                      {todayEvents.length > 4 && <span className="text-xs text-gray-400">+{todayEvents.length - 4}</span>}
+                      {todayEvt.length > 5 && <span className="text-xs text-gray-400">+{todayEvt.length - 5}</span>}
                     </div>
                   )}
                 </div>
-                {isOpen ? <ChevronUp className="w-5 h-5 text-gray-400 shrink-0" /> : <ChevronDown className="w-5 h-5 text-gray-400 shrink-0" />}
+                {isOpen ? <ChevronUp className="w-5 h-5 text-gray-400 shrink-0"/> : <ChevronDown className="w-5 h-5 text-gray-400 shrink-0"/>}
               </button>
 
-              {/* Painel de eventos — expande ao toque */}
+              {/* Painel expandido */}
               {isOpen && (
-                <div className="border-t border-gray-100 bg-gray-50/60 px-3 pt-3 pb-4">
+                <div className="border-t border-gray-100 bg-gray-50/40 px-3 pt-3 pb-4">
 
                   {/* Status da postura ativa */}
-                  {activeClutch && (
-                    <div className="flex items-center gap-3 mb-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                      <div className="flex gap-1">
-                        {Array.from({ length: Math.min(activeClutch.totalEggs ?? 0, 8) }).map((_, i) => (
-                          <EggIcon key={i} size={20} />
+                  {clutch && (
+                    <div className="flex items-center gap-2 mb-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                      <div className="flex gap-0.5 flex-wrap">
+                        {Array.from({ length: Math.min(clutch.totalEggs ?? 0, 8) }).map((_, i) => (
+                          <SvgOvoAdicionado key={i} size={18}/>
                         ))}
                       </div>
-                      <div className="text-xs text-amber-800">
-                        <span className="font-bold">{activeClutch.totalEggs ?? 0} ovos</span>
-                        {activeClutch.hatchedChicks > 0 && <span className="ml-2 font-bold text-green-700">{activeClutch.hatchedChicks} filhotes</span>}
+                      <div className="text-xs text-amber-800 ml-1">
+                        <span className="font-bold">{clutch.totalEggs ?? 0} ovos</span>
+                        {clutch.hatchedChicks > 0 && (
+                          <span className="ml-2 font-bold text-green-700">{clutch.hatchedChicks} filhotes</span>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  {/* Grupos de botões de evento */}
+                  {/* Botões por grupo */}
                   {EVENT_BUTTONS.map((group) => (
-                    <div key={group.group} className="mb-3">
-                      <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2 px-1">{group.title}</p>
+                    <div key={group.group} className="mb-4">
+                      <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2 px-0.5">{group.title}</p>
                       <div className="grid grid-cols-4 gap-2">
                         {group.events.map((ev) => {
-                          const count = localCounts[ev.type] ?? 0;
-                          const key = `${couple.coupleId}-${ev.type}`;
-                          const isLoading = pending[key];
-                          const IconComp = ev.icon as any;
+                          const cnt   = localCnt[ev.type] ?? 0;
+                          const key   = `${couple.coupleId}-${ev.type}`;
+                          const busy  = pending[key];
+                          const { Icon, isCamera } = ev as any;
 
                           return (
                             <button
                               key={ev.type}
-                              className={`relative flex flex-col items-center gap-1 p-2.5 rounded-xl border-2 bg-gradient-to-b ${ev.color} ${ev.border} active:scale-95 active:brightness-95 transition-all duration-100 touch-manipulation select-none`}
-                              onClick={() => handleEvent(couple.coupleId, activeClutch?.id ?? null, ev.type)}
-                              disabled={isLoading}
+                              disabled={busy}
+                              className={`relative flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 ${ev.bg} ${ev.border} active:scale-95 active:brightness-90 transition-all duration-100 touch-manipulation select-none ${busy ? "opacity-50" : ""}`}
+                              onClick={() => {
+                                if (isCamera) {
+                                  openCamera(couple.coupleId, clutch?.id ?? null);
+                                } else {
+                                  handleEvent(couple.coupleId, clutch?.id ?? null, ev.type);
+                                }
+                              }}
                             >
-                              <div className={isLoading ? "opacity-50" : ""}>
-                                <IconComp size={38} />
-                              </div>
+                              <Icon size={38}/>
                               <span className="text-center text-gray-700 leading-tight" style={{ fontSize: "10px" }}>
                                 {ev.label}
                               </span>
-                              {count > 0 && (
-                                <span className={`absolute -top-1.5 -right-1.5 w-5 h-5 ${ev.accent} text-white text-xs font-bold rounded-full flex items-center justify-center shadow`}>
-                                  {count}
+                              {cnt > 0 && (
+                                <span className={`absolute -top-1.5 -right-1.5 w-5 h-5 ${ev.badge} text-white text-xs font-bold rounded-full flex items-center justify-center shadow-sm`}>
+                                  {cnt}
                                 </span>
                               )}
                             </button>
@@ -407,11 +511,10 @@ export default function RotinaDiariaPWA() {
 
                   {/* Alertas do casal */}
                   {couple.alerts?.length > 0 && (
-                    <div className="mt-2 space-y-1">
+                    <div className="space-y-1 mt-1">
                       {couple.alerts.map((a: any, i: number) => (
                         <div key={i} className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 ${a.severity === "high" ? "bg-red-100 text-red-700" : a.severity === "medium" ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-700"}`}>
-                          <Info className="w-3.5 h-3.5 shrink-0" />
-                          {a.message}
+                          <Info className="w-3.5 h-3.5 shrink-0"/>{a.message}
                         </div>
                       ))}
                     </div>
@@ -423,8 +526,7 @@ export default function RotinaDiariaPWA() {
         })}
       </div>
 
-      {/* Bottom safe area para iPhone */}
-      <div className="h-6 safe-bottom" />
+      <div className="h-6"/>
     </DashboardLayout>
   );
 }

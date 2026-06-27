@@ -4,7 +4,7 @@
 // primary key, and `integer` represents standard integer columns. Other
 // helpers (varchar, text, timestamp, index) remain the same API across
 // dialects.
-import { serial, integer, varchar, text, timestamp, date, pgTable, index, jsonb, boolean, real } from "drizzle-orm/pg-core";
+import { serial, integer, varchar, text, timestamp, date, pgTable, index, jsonb, boolean, real, numeric } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -194,7 +194,18 @@ export const birds = pgTable("birds", {
   color_code: varchar("color_code", { length: 50 }).notNull(),
   birthDate: timestamp("birthDate"),
   procedence: varchar("procedence", { length: 200 }),
+  // Status: active | sold | dead | escaped | donated | transferred
   status: varchar("status", { length: 20 }).default("active").notNull(),
+  // Campos de saída — preenchidos quando o pássaro deixa o plantel
+  exitDate:         timestamp("exitDate"),
+  exitReason:       varchar("exitReason",   { length: 20 }),  // sold|dead|escaped|donated|transferred
+  salePrice:        numeric("salePrice",    { precision: 10, scale: 2 }),
+  buyerName:        varchar("buyerName",    { length: 200 }),
+  // Campos de aquisição — origem do pássaro
+  acquisitionType:  varchar("acquisitionType", { length: 20 }), // bred|bought|donated|transferred
+  acquisitionDate:  timestamp("acquisitionDate"),
+  purchasePrice:    numeric("purchasePrice",  { precision: 10, scale: 2 }),
+  supplierName:     varchar("supplierName",   { length: 200 }),
   fatherId: integer("fatherId"),
   motherId: integer("motherId"),
   // Gaiola atual do pássaro (mapeamento espacial do criadouro). Mantido
@@ -360,9 +371,66 @@ export const specialty_colors = pgTable("specialty_colors", {
  * "in_use" e seta birdId/chickId — sem precisar de controle manual de
  * numeração.
  */
+
+/**
+ * Movimentações do plantel — entradas e saídas de pássaros
+ *
+ * Tipo ENTRADA: bought | bred | donated_in | transferred_in
+ * Tipo SAÍDA:   sold | died | escaped | donated_out | transferred_out | culled
+ *
+ * O status do pássaro (birds.status) é atualizado automaticamente
+ * quando uma saída é registrada. O histórico completo fica aqui.
+ */
+export const bird_movements = pgTable("bird_movements", {
+  id:          serial("id").primaryKey(),
+  birdId:      integer("birdId").notNull(),
+  type:        varchar("type", { length: 30 }).notNull(),
+  // Entradas: bought | bred | donated_in | transferred_in
+  // Saídas:   sold | died | escaped | donated_out | transferred_out | culled
+  date:        timestamp("date").notNull().defaultNow(),
+  price:       numeric("price", { precision: 10, scale: 2 }),      // compra ou venda
+  counterpart: varchar("counterpart", { length: 200 }),             // comprador/vendedor/criadouro
+  notes:       text("notes"),
+  tenantId:    integer("tenantId"),
+  createdAt:   timestamp("createdAt").defaultNow().notNull(),
+  createdBy:   integer("createdBy"),
+}, (t) => ({
+  birdIdx:    index("bird_movements_bird_idx").on(t.birdId),
+  typeIdx:    index("bird_movements_type_idx").on(t.type),
+  tenantIdx:  index("bird_movements_tenant_idx").on(t.tenantId),
+  dateIdx:    index("bird_movements_date_idx").on(t.date),
+}));
+
+/**
+ * Insumos e suprimentos — controle de gastos operacionais
+ *
+ * Categorias: racao | semente | folhagem | fruta | suplemento |
+ *             medicamento | material_ninho | equipamento | outro
+ */
+export const supply_records = pgTable("supply_records", {
+  id:        serial("id").primaryKey(),
+  category:  varchar("category", { length: 30 }).notNull(),
+  name:      varchar("name", { length: 200 }).notNull(),      // ex: "Ração Versele-Laga"
+  quantity:  numeric("quantity", { precision: 10, scale: 3 }).notNull(),
+  unit:      varchar("unit", { length: 10 }).notNull(),        // kg|g|L|ml|un|sc
+  unitCost:  numeric("unitCost", { precision: 10, scale: 2 }),
+  totalCost: numeric("totalCost", { precision: 10, scale: 2 }),
+  supplier:  varchar("supplier", { length: 200 }),
+  date:      timestamp("date").notNull().defaultNow(),
+  notes:     text("notes"),
+  tenantId:  integer("tenantId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  createdBy: integer("createdBy"),
+}, (t) => ({
+  categoryIdx: index("supply_records_cat_idx").on(t.category),
+  tenantIdx:   index("supply_records_tenant_idx").on(t.tenantId),
+  dateIdx:     index("supply_records_date_idx").on(t.date),
+}));
+
 export const rings = pgTable("rings", {
   id: serial("id").primaryKey(),
   batchId: integer("batchId").notNull(),
+
   number: varchar("number", { length: 50 }).notNull().unique(),
   sequence: integer("sequence").notNull(),
   status: varchar("status", { length: 20 }).default("available").notNull(),
