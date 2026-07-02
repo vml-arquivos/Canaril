@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { Sparkles, Loader2, AlertTriangle, CheckCircle2, ImageOff, Eye } from "lucide-react";
 import { toast } from "sonner";
+import { extractLocalImageTraitsFromUrl } from "@/lib/localImageTraits";
 
 /**
  * Reconhecimento do pássaro por foto — usa as fotos JÁ cadastradas na
@@ -17,6 +18,7 @@ import { toast } from "sonner";
  */
 export function BirdPhotoRecognition({ birdId }: { birdId: number }) {
   const [analysisId, setAnalysisId] = useState<number | null>(null);
+  const [isExtractingLocalTraits, setIsExtractingLocalTraits] = useState(false);
 
   const { data: photos } = trpc.photos.listByEntity.useQuery({ entityType: "bird", entityId: birdId });
   const { data: pastAnalyses, refetch: refetchHistory } = trpc.photoAnalysis.listByBird.useQuery(birdId);
@@ -50,9 +52,30 @@ export function BirdPhotoRecognition({ birdId }: { birdId: number }) {
   const currentResult = analyze.data;
   const hasPhotos = (photos?.length ?? 0) > 0;
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!photos || photos.length === 0) return;
-    analyze.mutate({ birdId, photoUrls: photos.slice(0, 6).map((p) => p.url) });
+
+    const selectedPhotos = photos.slice(0, 6);
+    const photoUrls = selectedPhotos.map((p) => p.url);
+
+    setIsExtractingLocalTraits(true);
+    let localVisualTraits: Awaited<ReturnType<typeof extractLocalImageTraitsFromUrl>>[] = [];
+    try {
+      localVisualTraits = await Promise.all(
+        photoUrls.map((url) => extractLocalImageTraitsFromUrl(url))
+      );
+    } catch (error) {
+      console.warn("[photoAnalysis.localTraits] Não foi possível extrair todos os traços locais:", error);
+      toast.warning("Não foi possível ler a imagem localmente. A análise continuará com os dados disponíveis.");
+    } finally {
+      setIsExtractingLocalTraits(false);
+    }
+
+    analyze.mutate({
+      birdId,
+      photoUrls,
+      localVisualTraits,
+    });
   };
 
   return (
@@ -63,9 +86,9 @@ export function BirdPhotoRecognition({ birdId }: { birdId: number }) {
           Adicione pelo menos uma foto na seção "Fotos" acima para poder reconhecer o pássaro.
         </div>
       ) : (
-        <Button type="button" size="sm" variant="outline" disabled={analyze.isPending} onClick={handleAnalyze}>
-          {analyze.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
-          {analyze.isPending ? "Analisando foto(s)..." : `Reconhecer pássaro por foto (${Math.min(photos!.length, 6)} foto${photos!.length > 1 ? "s" : ""})`}
+        <Button type="button" size="sm" variant="outline" disabled={analyze.isPending || isExtractingLocalTraits} onClick={handleAnalyze}>
+          {analyze.isPending || isExtractingLocalTraits ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
+          {isExtractingLocalTraits ? "Lendo foto localmente..." : analyze.isPending ? "Analisando foto(s)..." : `Reconhecer pássaro por foto (${Math.min(photos!.length, 6)} foto${photos!.length > 1 ? "s" : ""})`}
         </Button>
       )}
 
@@ -74,10 +97,9 @@ export function BirdPhotoRecognition({ birdId }: { birdId: number }) {
         <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 rounded-lg p-3 border border-amber-200">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
           <div>
-            <p className="font-medium">Análise por IA indisponível no momento.</p>
+            <p className="font-medium">Análise por IA externa indisponível.</p>
             <p className="text-xs mt-0.5 text-amber-600">
-              Não foi possível analisar a foto agora. Você pode continuar o cadastro manualmente
-              e tentar novamente depois. A foto já foi salva.
+              Se a API externa falhar, o sistema tenta usar a análise interna local. Você também pode continuar o cadastro manualmente. A foto já foi salva.
             </p>
           </div>
         </div>

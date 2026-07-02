@@ -39,6 +39,18 @@ export const photoAnalysisRouter = router({
         photoUrls: z.array(z.string()).min(1).max(6),
         birdSex: z.enum(["macho", "fêmea", "indeterminado"]).optional(),
         additionalContext: z.string().optional(),
+        localVisualTraits: z.array(z.object({
+          source: z.string().optional(),
+          dominantColor: z.string().optional(),
+          yellowRatio: z.number().optional(),
+          orangeRatio: z.number().optional(),
+          redRatio: z.number().optional(),
+          whiteRatio: z.number().optional(),
+          darkRatio: z.number().optional(),
+          saturationAverage: z.number().optional(),
+          brightnessAverage: z.number().optional(),
+          sampleCount: z.number().optional(),
+        })).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -53,6 +65,7 @@ export const photoAnalysisRouter = router({
         photoUrls: input.photoUrls,
         birdSex: input.birdSex,
         additionalContext: input.additionalContext,
+        localVisualTraits: input.localVisualTraits,
       });
 
       // Cruza cada sugestão da IA contra o catálogo oficial REAL — a IA
@@ -104,7 +117,7 @@ export const photoAnalysisRouter = router({
         .values({
           birdId: input.birdId,
           photos: input.photoUrls,
-          aiProvider: getActiveProvider() ?? "desconhecido",
+          aiProvider: result.modelUsed.startsWith("internal-local") ? "internal-local" : getActiveProvider() ?? "desconhecido",
           modelUsed: result.modelUsed,
           rawResponseJson: result.analysis,
           visualTraitsJson: {
