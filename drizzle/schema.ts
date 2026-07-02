@@ -1114,3 +1114,23 @@ export const dynamic_field_rules = pgTable("dynamic_field_rules", {
   helpText: text("helpText"),
   active: boolean("active").notNull().default(true),
 });
+
+// ============================================================================
+// AI Conversations — histórico do assistente por sessão/usuário
+// ============================================================================
+export const ai_conversations = pgTable("ai_conversations", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenantId").notNull(),
+  userId: integer("userId").notNull(),
+  sessionId: varchar("sessionId", { length: 64 }).notNull(),
+  role: varchar("role", { length: 16 }).notNull(), // "user" | "assistant" | "system"
+  content: text("content").notNull(),
+  context: jsonb("context"),           // snapshot do contexto usado nessa mensagem
+  tokensUsed: integer("tokensUsed"),
+  provider: varchar("provider", { length: 20 }), // "gemini" | "anthropic"
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index("ai_conv_tenant_idx").on(table.tenantId),
+  sessionIdx: index("ai_conv_session_idx").on(table.sessionId),
+  userIdx: index("ai_conv_user_idx").on(table.userId),
+}));

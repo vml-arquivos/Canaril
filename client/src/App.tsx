@@ -50,6 +50,7 @@ const OrphanDataRepair = lazy(() => import("@/pages/admin/OrphanDataRepair"));
 const TenantAudit = lazy(() => import("@/pages/admin/TenantAudit"));
 const Plantel     = lazy(() => import("@/pages/Plantel"));
 const Financeiro  = lazy(() => import("@/pages/Financeiro"));
+const Assistente  = lazy(() => import("@/pages/Assistente"));
 
 // Fallback de loading para lazy pages
 function PageLoader() {
@@ -237,6 +238,9 @@ function Router() {
       </Route>
       <Route path={"/financeiro"}>
         {(params) => <ProtectedRoute component={Financeiro} {...params} />}
+      </Route>
+      <Route path={"/assistente"}>
+        {(params) => <ProtectedRoute component={Assistente} {...params} />}
       </Route>
 
       {/* Fallback */}

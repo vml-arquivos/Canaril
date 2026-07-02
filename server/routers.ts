@@ -36,6 +36,7 @@ import { qrcodeRouter } from "./routers/qrcode";
 import { dailyCareRouter } from "./routers/dailyCare";
 import { adminRouter } from "./routers/admin";
 import { intelligenceRouter } from "./routers/intelligence";
+import { aiAssistantRouter } from "./routers/aiAssistant";
 import { adminResetRouter } from "./routers/adminReset";
 
 // Sanitiza o objeto de usuário antes de enviar ao cliente
@@ -207,6 +208,7 @@ export const appRouter = router({
   dailyCare: dailyCareRouter,
   admin: adminRouter,
   intelligence: intelligenceRouter,
+  aiAssistant: aiAssistantRouter,
   adminReset: adminResetRouter,
 });
 

@@ -1,296 +1,319 @@
+/**
+ * DashboardLayout.tsx — Layout principal com navegação lateral colapsável
+ *
+ * Filosofia de navegação:
+ *   7 grupos principais (não 17 itens soltos)
+ *   Sidebar colapsável → apenas ícones em tela pequena
+ *   Mobile: ver MobileBottomNav (bottom bar com drawer)
+ */
+import { useState, ReactNode } from "react";
+import { Link, useLocation } from "wouter";
+import {
+  LayoutDashboard, Bird, Heart, ClipboardList, Dna,
+  BarChart3, Settings, Shield, LogOut,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
+  Egg, Tag, Trophy, DollarSign, TrendingUp, Search, Bot,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-  useSidebar,
-} from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
-import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Bird, Heart, Feather, Egg, DoorOpen, Trophy, BarChart3, Settings, Calculator, Tag, Calendar, Map, TrendingUp, ClipboardList, Shield, History, DollarSign } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
-import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
-import { MobileBottomNav } from './MobileBottomNav';
-import { Button } from "./ui/button";
+import { MobileBottomNav } from "./MobileBottomNav";
+import { isPlatformAdmin } from "@shared/permissions";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard",            path: "/dashboard" },
-  { icon: Bird,            label: "Pássaros",             path: "/birds" },
-  { icon: Heart,           label: "Casais",               path: "/couples" },
-  { icon: ClipboardList,   label: "Rotina Diária",        path: "/rotina" },
-  { icon: Calendar,        label: "Temporada",            path: "/temporada" },
-  { icon: Map,             label: "Mapa do Criadouro",    path: "/criadouro-mapa" },
-  { icon: TrendingUp,      label: "Linhagem & Genética",  path: "/linhagem" },
-  { icon: Calculator,      label: "Calculadora Genética", path: "/genetics-calculator" },
-  { icon: Egg,             label: "Posturas",             path: "/clutches" },
-  { icon: Feather,         label: "Anilhas",              path: "/rings" },
-  { icon: DoorOpen,        label: "Gaiolas",              path: "/cages" },
-  { icon: Trophy,          label: "Campeonatos",          path: "/championships" },
-  { icon: BarChart3,       label: "Relatórios",           path: "/reports" },
-  { icon: TrendingUp,      label: "Plantel (Mov.)",        path: "/plantel" },
-  { icon: DollarSign,      label: "Financeiro",            path: "/financeiro" },
-  { icon: Settings,        label: "Configurações",         path: "/settings" },
-  // Auditoria do Canaril — disponível para qualquer usuário autenticado
-  { icon: History,         label: "Auditoria do Canaril", path: "/meu-canaril/auditoria", managerOnly: true },
+// ─── Estrutura de menu em grupos ────────────────────────────────────────────
+
+type NavItem = { icon: React.ElementType; label: string; path: string; };
+type NavGroup = { label: string; items: NavItem[]; defaultOpen?: boolean; };
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Principal",
+    defaultOpen: true,
+    items: [
+      { icon: LayoutDashboard, label: "Dashboard",   path: "/dashboard" },
+      { icon: ClipboardList,   label: "Rotina Diária", path: "/rotina" },
+    ],
+  },
+  {
+    label: "Plantel",
+    defaultOpen: true,
+    items: [
+      { icon: Bird,      label: "Pássaros",   path: "/birds" },
+      { icon: Heart,     label: "Casais",     path: "/couples" },
+      { icon: Egg,       label: "Posturas",   path: "/clutches" },
+      { icon: TrendingUp,label: "Movimentos", path: "/plantel" },
+    ],
+  },
+  {
+    label: "Genética",
+    defaultOpen: false,
+    items: [
+      { icon: Dna,       label: "Linhagem & Genética",  path: "/linhagem" },
+      { icon: Dna,       label: "Calculadora",          path: "/genetics-calculator" },
+      { icon: ClipboardList, label: "Mapa da Temporada",path: "/temporada" },
+    ],
+  },
+  {
+    label: "Infraestrutura",
+    defaultOpen: false,
+    items: [
+      { icon: Tag,       label: "Anilhas",     path: "/rings" },
+      { icon: Bird,      label: "Gaiolas",     path: "/cages" },
+      { icon: Trophy,    label: "Campeonatos", path: "/championships" },
+    ],
+  },
+  {
+    label: "Gestão",
+    defaultOpen: false,
+    items: [
+      { icon: Bot,        label: "Assistente IA", path: "/assistente" },
+      { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
+      { icon: BarChart3,  label: "Relatórios", path: "/reports" },
+    ],
+  },
+  {
+    label: "Sistema",
+    defaultOpen: false,
+    items: [
+      { icon: Settings, label: "Configurações", path: "/settings" },
+    ],
+  },
 ];
 
-// Itens exclusivos do PLATFORM_ADMIN — nunca exibidos para CANARIL_MANAGER
-const adminMenuItems = [
-  { icon: Shield, label: "Administração", path: "/admin" },
-];
+const ADMIN_GROUP: NavGroup = {
+  label: "Admin",
+  defaultOpen: false,
+  items: [
+    { icon: Shield, label: "Administração", path: "/admin" },
+  ],
+};
 
-const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 280;
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 480;
+// ─── Busca global ────────────────────────────────────────────────────────────
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
-  });
-  const { loading, user } = useAuth();
+function GlobalSearch() {
+  const [, setLocation] = useLocation();
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const { data: birds } = (trpc as any).birds?.list?.useQuery?.({}, { enabled: open && q.length >= 2 }) ?? { data: [] };
 
-  useEffect(() => {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
-  }, [sidebarWidth]);
+  const results = q.length >= 2
+    ? (birds ?? []).filter((b: any) =>
+        b.ring?.toLowerCase().includes(q.toLowerCase()) ||
+        b.displayTitle?.toLowerCase().includes(q.toLowerCase()) ||
+        b.nickname?.toLowerCase().includes(q.toLowerCase())
+      ).slice(0, 6)
+    : [];
 
-  if (loading) {
-    return <DashboardLayoutSkeleton />
-  }
-
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
-            </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
-          </Button>
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
+        <Search className="w-4 h-4 text-gray-400 shrink-0" />
+        <input
+          className="bg-transparent text-sm outline-none w-full placeholder-gray-400"
+          placeholder="Buscar pássaro, anilha..."
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 200)}
+        />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden">
+          {results.map((b: any) => (
+            <button
+              key={b.id}
+              className="w-full px-4 py-2.5 text-left hover:bg-amber-50 flex items-center gap-3 border-b border-gray-50 last:border-0"
+              onClick={() => { setLocation(`/birds/${b.id}/ficha`); setQ(""); setOpen(false); }}
+            >
+              <Bird className="w-4 h-4 text-amber-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-mono font-bold text-sm text-amber-700">{b.ring}</p>
+                {b.displayTitle && <p className="text-xs text-gray-500 truncate">{b.displayTitle}</p>}
+              </div>
+            </button>
+          ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Grupo de menu colapsável ─────────────────────────────────────────────────
+
+function NavGroupSection({
+  group, collapsed, location,
+}: {
+  group: NavGroup;
+  collapsed: boolean;
+  location: string;
+}) {
+  const [open, setOpen] = useState(group.defaultOpen ?? false);
+  const hasActive = group.items.some((i) => location === i.path);
+
+  if (collapsed) {
+    // Sidebar em modo ícone — mostra apenas os ícones dos itens, sem grupo
+    return (
+      <div className="space-y-1">
+        {group.items.map(({ icon: Icon, label, path }) => {
+          const active = location === path;
+          return (
+            <Link key={path} href={path}>
+              <div title={label} className={cn(
+                "flex items-center justify-center w-9 h-9 rounded-xl mx-auto transition-colors cursor-pointer",
+                active ? "bg-amber-100 text-amber-700" : "text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+              )}>
+                <Icon className="w-5 h-5" />
+              </div>
+            </Link>
+          );
+        })}
       </div>
     );
   }
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": `${sidebarWidth}px`,
-        } as CSSProperties
-      }
-    >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
-        {children}
-      </DashboardLayoutContent>
-    </SidebarProvider>
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors"
+      >
+        {group.label}
+        {hasActive && !open
+          ? <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+          : open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
+        }
+      </button>
+      {open && (
+        <div className="space-y-0.5 mt-1">
+          {group.items.map(({ icon: Icon, label, path }) => {
+            const active = location === path;
+            return (
+              <Link key={path} href={path}>
+                <div className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium cursor-pointer transition-colors",
+                  active
+                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                )}>
+                  <Icon className={cn("w-4 h-4 shrink-0", active ? "text-amber-700" : "text-gray-400")} />
+                  {label}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
-type DashboardLayoutContentProps = {
-  children: React.ReactNode;
-  setSidebarWidth: (width: number) => void;
-};
+// ─── Layout principal ─────────────────────────────────────────────────────────
 
-function DashboardLayoutContent({
-  children,
-  setSidebarWidth,
-}: DashboardLayoutContentProps) {
+// Importação lazy do trpc para busca global
+import { trpc } from "@/lib/trpc";
+import { useLocation as useWouterLocation } from "wouter";
+
+export default function DashboardLayout({ children }: { children: ReactNode }) {
+  const [location] = useWouterLocation();
+  const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuth();
-  const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === "collapsed";
-  const [isResizing, setIsResizing] = useState(false);
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
-  const isMobile = useIsMobile();
+  const isAdmin = isPlatformAdmin((user as any)?.role);
 
-  useEffect(() => {
-    if (isCollapsed) {
-      setIsResizing(false);
-    }
-  }, [isCollapsed]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-
-      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
-      const newWidth = e.clientX - sidebarLeft;
-      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
-        setSidebarWidth(newWidth);
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [isResizing, setSidebarWidth]);
+  const groups = isAdmin ? [...NAV_GROUPS, ADMIN_GROUP] : NAV_GROUPS;
 
   return (
-    <>
-      <div className="relative" ref={sidebarRef}>
-        <Sidebar
-          collapsible="icon"
-          className="border-r-0"
-          disableTransition={isResizing}
-        >
-          <SidebarHeader className="h-16 justify-center">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
-              <button
-                onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
-              </button>
-              {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    Canário Gestão Pro
-                  </span>
-                </div>
-              ) : null}
+    <div className="min-h-screen bg-gray-50 flex">
+
+      {/* Sidebar — desktop only */}
+      <aside className={cn(
+        "hidden md:flex flex-col bg-white border-r border-gray-100 transition-all duration-200 shrink-0",
+        collapsed ? "w-16" : "w-56"
+      )}>
+        {/* Logo */}
+        <div className={cn(
+          "flex items-center gap-2.5 px-4 py-4 border-b border-gray-100",
+          collapsed && "justify-center px-2"
+        )}>
+          <div className="w-8 h-8 rounded-xl bg-amber-600 flex items-center justify-center shrink-0">
+            <span className="text-white font-bold text-sm">C</span>
+          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="font-bold text-gray-900 text-sm leading-tight truncate">Canaril</p>
+              <p className="text-xs text-gray-400 truncate">Gestão Pro</p>
             </div>
-          </SidebarHeader>
+          )}
+        </div>
 
-          <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
-              {(() => {
-                const isPlatformAdmin = (user as any)?.role === "PLATFORM_ADMIN"
-                  || (user as any)?.role === "admin"
-                  || (user as any)?.role === "OWNER"
-                  || (user as any)?.role === "SUPER_ADMIN";
-                const visibleItems = [
-                  ...menuItems,
-                  ...(isPlatformAdmin ? adminMenuItems : []),
-                ];
-                return visibleItems.map(item => {
-                  const isActive = location === item.path;
-                  return (
-                    <SidebarMenuItem key={item.path}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        onClick={() => setLocation(item.path)}
-                        tooltip={(item as any).label}
-                        className={`h-10 transition-all font-normal`}
-                      >
-                        <item.icon
-                          className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                        />
-                        <span>{(item as any).label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                });
-              })()}
-            </SidebarMenu>
-          </SidebarContent>
-
-          <SidebarFooter className="p-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-9 w-9 border shrink-0">
-                    <AvatarFallback className="text-xs font-medium">
-                      {user?.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                    <p className="text-sm font-medium truncate leading-none">
-                      {user?.name || "-"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate mt-1.5">
-                      {user?.email || "-"}
-                    </p>
-                  </div>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarFooter>
-        </Sidebar>
-        <div
-          className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors ${isCollapsed ? "hidden" : ""}`}
-          onMouseDown={() => {
-            if (isCollapsed) return;
-            setIsResizing(true);
-          }}
-          style={{ zIndex: 50 }}
-        />
-      </div>
-
-      <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 px-3 sticky top-0 z-40 shadow-sm">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg" />
-              <div className="flex items-center gap-2">
-                <Bird className="w-5 h-5 text-amber-600" />
-                <span className="font-semibold text-gray-900 text-sm truncate max-w-[160px]">
-                  {activeMenuItem?.label ?? "Canaril"}
-                </span>
-              </div>
-            </div>
+        {/* Busca — apenas expandido */}
+        {!collapsed && (
+          <div className="px-3 py-3 border-b border-gray-50">
+            <GlobalSearch />
           </div>
         )}
-        <main className="flex-1 p-4 pb-6">{children}</main>
-        <MobileBottomNav />
-      </SidebarInset>
-    </>
+
+        {/* Navegação */}
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+          {groups.map((group) => (
+            <NavGroupSection
+              key={group.label}
+              group={group}
+              collapsed={collapsed}
+              location={location}
+            />
+          ))}
+        </nav>
+
+        {/* Footer — usuário + logout */}
+        <div className={cn(
+          "border-t border-gray-100 px-3 py-3 flex items-center gap-2",
+          collapsed && "justify-center"
+        )}>
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-gray-700 truncate">{user?.name ?? "Usuário"}</p>
+              <p className="text-xs text-gray-400 truncate">{(user as any)?.role ?? ""}</p>
+            </div>
+          )}
+          <button
+            onClick={() => logout()}
+            title="Sair"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Botão colapsar */}
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          className="absolute left-full top-6 -ml-3 w-6 h-6 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm hover:shadow-md transition-shadow text-gray-400 hover:text-gray-600 z-10"
+          style={{ position: "sticky" }}
+          title={collapsed ? "Expandir menu" : "Colapsar menu"}
+        >
+          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+        </button>
+      </aside>
+
+      {/* Conteúdo principal */}
+      <main className="flex-1 min-w-0 overflow-x-hidden">
+        {/* Topbar mobile */}
+        <header className="md:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-gray-100 px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-amber-600 flex items-center justify-center">
+              <span className="text-white font-bold text-xs">C</span>
+            </div>
+            <span className="font-bold text-gray-900 text-sm">Canaril</span>
+          </div>
+          <GlobalSearch />
+        </header>
+
+        <div className="px-4 py-5 md:px-6 md:py-6 pb-24 md:pb-6 max-w-6xl mx-auto">
+          {children}
+        </div>
+      </main>
+
+      {/* Bottom nav mobile */}
+      <MobileBottomNav />
+    </div>
   );
 }
