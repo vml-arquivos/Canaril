@@ -4,21 +4,34 @@ import { trpc } from "@/lib/trpc";
 import { Camera, Loader2, Sparkles, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { SPECIALTIES, COLORS } from "@shared/constants";
+import { extractLocalImageTraitsFromUrl } from "@/lib/localImageTraits";
 
 /**
- * Tira/seleciona uma foto e usa o Juiz Virtual (IA) para sugerir
- * especialidade e cor automaticamente. A confiança baixa é sinalizada na
- * própria interface — a sugestão sempre pode (e deve) ser conferida pelo
- * criador antes de salvar.
+ * Tira/seleciona uma foto e usa a IA para sugerir especialidade e cor
+ * automaticamente. Extrai traits locais no browser antes de chamar o backend.
+ * Se a API externa (Gemini/Anthropic) falhar com 429/403/billing, o backend
+ * usa esses traits como fallback local — o cadastro nunca quebra.
  */
 export function BirdPhotoIdentifier({
   onIdentified,
 }: {
-  onIdentified: (result: { specialty_code: string; color_code: string; confidence: number; reasoning: string; dataUrl: string }) => void;
+  onIdentified: (result: {
+    specialty_code: string;
+    color_code: string;
+    confidence: number;
+    reasoning: string;
+    dataUrl: string;
+  }) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [lastResult, setLastResult] = useState<{ specialty: string; color: string; confidence: number; reasoning: string } | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    specialty: string;
+    color: string;
+    confidence: number;
+    reasoning: string;
+  } | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   const identify = trpc.aiJudge.identifyFromPhoto.useMutation({
     onSuccess: (data, variables) => {
@@ -26,12 +39,16 @@ export function BirdPhotoIdentifier({
       const colorName = COLORS.find((c) => c.id === data.color_code)?.name ?? data.color_code;
       setLastResult({ specialty: specialtyName, color: colorName, confidence: data.confidence, reasoning: data.reasoning });
       onIdentified({ ...data, dataUrl: variables.dataUrl });
-      toast.success("Identificação concluída — confira os campos preenchidos.");
+      if (data.confidence < 0.4) {
+        toast.warning("Análise local usada (IA externa indisponível). Confira os campos manualmente.");
+      } else {
+        toast.success("Identificação concluída — confira os campos preenchidos.");
+      }
     },
     onError: (error) => toast.error(error.message),
   });
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) {
@@ -39,19 +56,42 @@ export function BirdPhotoIdentifier({
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result as string;
       setPreview(dataUrl);
       setLastResult(null);
-      identify.mutate({ dataUrl });
+
+      // Extrai traits locais no browser antes de chamar o backend.
+      // Se o Gemini falhar (429/403/billing), o backend usa esses traits
+      // para retornar uma sugestão local sem quebrar o cadastro.
+      setIsExtracting(true);
+      let localVisualTraits: Awaited<ReturnType<typeof extractLocalImageTraitsFromUrl>> | undefined;
+      try {
+        localVisualTraits = await extractLocalImageTraitsFromUrl(dataUrl);
+      } catch {
+        // Não bloqueia — o backend tem fallback sem traits também
+      } finally {
+        setIsExtracting(false);
+      }
+
+      identify.mutate({ dataUrl, localVisualTraits });
     };
     reader.readAsDataURL(file);
     e.target.value = "";
   };
 
+  const isPending = identify.isPending || isExtracting;
+
   return (
     <div className="rounded-lg border-2 border-dashed border-blue-200 bg-blue-50/40 p-4 space-y-3">
-      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileSelect} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleFileSelect}
+      />
 
       <div className="flex items-center gap-3">
         {preview ? (
@@ -63,25 +103,41 @@ export function BirdPhotoIdentifier({
         )}
         <div className="flex-1">
           <p className="font-medium text-gray-800 text-sm">Identificação automática por foto</p>
-          <p className="text-xs text-gray-500">Tire ou envie uma foto — a IA sugere espécie e cor</p>
+          <p className="text-xs text-gray-500">
+            {isExtracting
+              ? "Lendo foto localmente..."
+              : "Tire ou envie uma foto — a IA sugere espécie e cor"}
+          </p>
         </div>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          disabled={identify.isPending}
+          disabled={isPending}
           onClick={() => fileInputRef.current?.click()}
         >
-          {identify.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
-          {identify.isPending ? "Identificando..." : "Identificar foto"}
+          {isPending ? (
+            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+          ) : (
+            <Sparkles className="w-4 h-4 mr-1" />
+          )}
+          {isPending ? "Identificando..." : "Identificar foto"}
         </Button>
       </div>
 
       {lastResult && (
-        <div className={`text-sm rounded-lg p-2 ${lastResult.confidence < 0.5 ? "bg-yellow-50 border border-yellow-200" : "bg-green-50 border border-green-200"}`}>
+        <div
+          className={`text-sm rounded-lg p-2 ${
+            lastResult.confidence < 0.5
+              ? "bg-yellow-50 border border-yellow-200"
+              : "bg-green-50 border border-green-200"
+          }`}
+        >
           <p className="font-medium">
             Sugestão: {lastResult.specialty} · {lastResult.color}{" "}
-            <span className="text-xs text-gray-500">({Math.round(lastResult.confidence * 100)}% de confiança)</span>
+            <span className="text-xs text-gray-500">
+              ({Math.round(lastResult.confidence * 100)}% de confiança)
+            </span>
           </p>
           <p className="text-xs text-gray-600 mt-0.5">{lastResult.reasoning}</p>
           {lastResult.confidence < 0.5 && (

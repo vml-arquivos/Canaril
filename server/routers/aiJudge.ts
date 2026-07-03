@@ -178,19 +178,81 @@ export const aiJudgeRouter = router({
    * Identificação de Espécie/Cor por Foto
    *
    * Usado no cadastro de um pássaro novo: o criador tira uma foto e o
-   * sistema sugere especialidade e cor automaticamente, pra não precisar
-   * digitar/escolher tudo na mão. É IMPORTANTE deixar claro: a IA escolhe
-   * entre as opções REALMENTE cadastradas no sistema (enum fechado no
-   * schema), nunca inventa uma raça/cor que não exista no catálogo — e
-   * sempre retorna uma confiança, pra interface poder avisar quando a
-   * sugestão for incerta e pedir conferência manual do criador.
+   * sistema sugere especialidade e cor automaticamente. Suporta dois modos:
+   * - EXTERNO: Gemini/Anthropic quando configurado
+   * - LOCAL: usa localVisualTraits extraídos no browser como fallback
+   *   automático quando a API externa falha (429/403/billing/quota/chave)
    */
   identifyFromPhoto: protectedProcedure
-    .input(z.object({ dataUrl: z.string() }))
+    .input(z.object({
+      dataUrl: z.string(),
+      localVisualTraits: z.object({
+        dominantColor: z.string().optional(),
+        yellowRatio: z.number().optional(),
+        orangeRatio: z.number().optional(),
+        redRatio: z.number().optional(),
+        whiteRatio: z.number().optional(),
+        darkRatio: z.number().optional(),
+        saturationAverage: z.number().optional(),
+      }).optional(),
+    }))
     .mutation(async ({ input }) => {
       const specialtyIds = SPECIALTIES.map((s) => s.id);
       const colorIds = COLORS.map((c) => c.id);
 
+      // ── Fallback local ────────────────────────────────────────────────────
+      // Se PHOTO_ANALYSIS_MODE=local ou DISABLE_EXTERNAL_PHOTO_AI=true,
+      // usa os traits locais diretamente sem chamar nenhuma API externa.
+      const photoMode = (process.env.PHOTO_ANALYSIS_MODE ?? "").trim().toLowerCase();
+      const disableExternal = (process.env.DISABLE_EXTERNAL_PHOTO_AI ?? "").trim().toLowerCase() === "true";
+      const forceLocal = photoMode === "local" || photoMode === "internal" || disableExternal;
+
+      function buildLocalIdentification(traits: typeof input.localVisualTraits, reason?: string) {
+        const t = traits ?? {};
+        const yellow = t.yellowRatio ?? 0;
+        const red = t.redRatio ?? 0;
+        const orange = t.orangeRatio ?? 0;
+        const white = t.whiteRatio ?? 0;
+        const dominant = t.dominantColor ?? "unknown";
+
+        // Inferir cor
+        let color_code = colorIds[0] ?? "amarelo_intenso";
+        let colorReason = "Cor não identificada com certeza pela análise local.";
+
+        if (dominant === "white" || white > 0.45) {
+          const whiteCode = colorIds.find((id) => id.includes("branco") || id.includes("white") || id.includes("albino"));
+          if (whiteCode) { color_code = whiteCode; colorReason = "Predominância de branco detectada."; }
+        } else if (dominant === "red" || red > 0.25) {
+          const redCode = colorIds.find((id) => id.includes("vermelho") || id.includes("red") || id.includes("rubino"));
+          if (redCode) { color_code = redCode; colorReason = "Predominância de vermelho detectada."; }
+        } else if (dominant === "orange" || orange > 0.2) {
+          const orangeCode = colorIds.find((id) => id.includes("laranja") || id.includes("orange") || id.includes("vermelho"));
+          if (orangeCode) { color_code = orangeCode; colorReason = "Tom alaranjado detectado."; }
+        } else if (dominant === "yellow" || yellow > 0.2) {
+          const yellowCode = colorIds.find((id) => id.includes("amarelo") || id.includes("yellow"));
+          if (yellowCode) { color_code = yellowCode; colorReason = "Predominância de amarelo detectada."; }
+        }
+
+        // Especialidade: sem visão computacional real, usar canário de cor padrão
+        const specialty_code = specialtyIds.find((id) => id.includes("cor") || id.includes("color")) ?? specialtyIds[0] ?? "canario_cor";
+
+        const confidence = Object.values(t).some(Boolean) ? 0.35 : 0.15;
+        const fallbackMsg = reason ? ` (motivo: ${reason.slice(0, 120)})` : "";
+
+        return {
+          specialty_code,
+          color_code,
+          sex_guess: "indeterminado" as const,
+          confidence,
+          reasoning: `Análise local sem API externa${fallbackMsg}. ${colorReason} Confirme manualmente os campos antes de salvar.`,
+        };
+      }
+
+      if (forceLocal) {
+        return buildLocalIdentification(input.localVisualTraits);
+      }
+
+      // ── Tentativa com API externa ─────────────────────────────────────────
       const schema = {
         name: "bird_identification",
         strict: true,
@@ -209,8 +271,6 @@ export const aiJudgeRouter = router({
       } as const;
 
       try {
-        // Modelo escolhido automaticamente por server/_core/llm.ts conforme
-        // o provedor ativo (Gemini ou Anthropic).
         const result = await invokeLLM({
           messages: [
             {
@@ -233,7 +293,7 @@ export const aiJudgeRouter = router({
         });
 
         const raw = result.choices[0]?.message?.content;
-        const text = typeof raw === "string" ? raw : raw?.find((c) => c.type === "text")?.text;
+        const text = typeof raw === "string" ? raw : (raw as any)?.find?.((c: any) => c.type === "text")?.text;
         if (!text) throw new Error("Resposta vazia do modelo");
 
         return JSON.parse(text) as {
@@ -246,12 +306,23 @@ export const aiJudgeRouter = router({
       } catch (error) {
         console.error("[AI Identify] Falha na identificação:", error);
         const message = error instanceof Error ? error.message : String(error);
+
+        // 429, 403, billing, quota, chave inválida, modelo inválido
+        const isBillingOrPermission =
+          message.includes("429") || message.includes("403") ||
+          message.includes("RESOURCE_EXHAUSTED") || message.includes("PERMISSION_DENIED") ||
+          message.includes("billing") || message.includes("quota") ||
+          message.includes("api key") || message.includes("chave") ||
+          message.includes("model") || message.includes("modelo");
+
+        if (isBillingOrPermission || (input.localVisualTraits != null)) {
+          // Fallback silencioso — não quebra o cadastro
+          return buildLocalIdentification(input.localVisualTraits, message);
+        }
+
         if (message.includes("Nenhuma chave de IA configurada")) {
           throw new Error("Identificação automática não está disponível: configure GEMINI_API_KEY ou ANTHROPIC_API_KEY nas variáveis de ambiente.");
         }
-        // Mostra o erro real (truncado) em vez de uma mensagem genérica —
-        // sem isso, fica impossível diagnosticar se é chave inválida,
-        // modelo não encontrado, schema rejeitado, rede bloqueada, etc.
         throw new Error(`Falha ao identificar a foto: ${message.slice(0, 300)}`);
       }
     }),
