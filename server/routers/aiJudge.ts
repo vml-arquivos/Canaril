@@ -209,42 +209,82 @@ export const aiJudgeRouter = router({
 
       function buildLocalIdentification(traits: typeof input.localVisualTraits, reason?: string) {
         const t = traits ?? {};
-        const yellow = t.yellowRatio ?? 0;
-        const red = t.redRatio ?? 0;
-        const orange = t.orangeRatio ?? 0;
-        const white = t.whiteRatio ?? 0;
-        const dominant = t.dominantColor ?? "unknown";
+        const yellow      = (t as any).yellowRatio    ?? 0;
+        const orangeRed   = (t as any).orangeRedRatio ?? (t as any).orangeRatio ?? 0;
+        const red         = (t as any).redRatio        ?? 0;
+        const white       = (t as any).whiteRatio      ?? 0;
+        const dominant    = (t as any).dominantColor   ?? "unknown";
+        const mosaicIdx   = (t as any).mosaicIndex     ?? 0; // > 0.08 = mosaico provável
+        const melaninIdx  = (t as any).melaninIndex    ?? (t as any).darkRatio ?? 0;
 
-        // Inferir cor
-        let color_code = colorIds[0] ?? "amarelo_intenso";
+        // "Vermelho de canário" é orangeRed (H 10–42) no espaço HSV —
+        // NÃO é vermelho puro. Tratamos orange_red como vermelho.
+        const effectiveRed = orangeRed + red;
+
+        // ── Inferir cor (COLORS IDs: vermelho_intenso, vermelho_nevado, etc.) ─
+        let color_code = colorIds.find((id) => id.includes("amarelo_intenso")) ?? colorIds[0] ?? "amarelo_intenso";
         let colorReason = "Cor não identificada com certeza pela análise local.";
+        let confidence = 0.20;
 
-        if (dominant === "white" || white > 0.45) {
-          const whiteCode = colorIds.find((id) => id.includes("branco") || id.includes("white") || id.includes("albino"));
-          if (whiteCode) { color_code = whiteCode; colorReason = "Predominância de branco detectada."; }
-        } else if (dominant === "red" || red > 0.25) {
-          const redCode = colorIds.find((id) => id.includes("vermelho") || id.includes("red") || id.includes("rubino"));
-          if (redCode) { color_code = redCode; colorReason = "Predominância de vermelho detectada."; }
-        } else if (dominant === "orange" || orange > 0.2) {
-          const orangeCode = colorIds.find((id) => id.includes("laranja") || id.includes("orange") || id.includes("vermelho"));
-          if (orangeCode) { color_code = orangeCode; colorReason = "Tom alaranjado detectado."; }
-        } else if (dominant === "yellow" || yellow > 0.2) {
-          const yellowCode = colorIds.find((id) => id.includes("amarelo") || id.includes("yellow"));
-          if (yellowCode) { color_code = yellowCode; colorReason = "Predominância de amarelo detectada."; }
+        if (dominant === "white" || white > 0.48) {
+          const code = colorIds.find((id) => id === "branco" || id.includes("branco"));
+          if (code) { color_code = code; colorReason = "Predominância de branco detectada."; confidence = 0.50; }
+        } else if (dominant === "orange_red" || effectiveRed > 0.28) {
+          // Canário vermelho: mosaico tem distribuição diferente de intenso/nevado
+          let redSubtype: string;
+          if (mosaicIdx > 0.08) {
+            redSubtype = "vermelho_mosaico";
+            colorReason = "Tom vermelho com padrão de saturação assimétrico (centro mais claro) — provável MOSAICO.";
+          } else if (effectiveRed > 0.45) {
+            redSubtype = "vermelho_intenso";
+            colorReason = "Tom vermelho intenso e uniforme detectado.";
+          } else {
+            redSubtype = "vermelho_nevado";
+            colorReason = "Tom vermelho com saturação moderada — provável NEVADO.";
+          }
+          const code = colorIds.find((id) => id === redSubtype) ?? colorIds.find((id) => id.includes("vermelho"));
+          if (code) { color_code = code; confidence = effectiveRed > 0.4 ? 0.60 : 0.45; }
+        } else if (dominant === "yellow" || yellow > 0.28) {
+          let yellowSubtype: string;
+          if (mosaicIdx > 0.08) {
+            yellowSubtype = "amarelo_mosaico";
+            colorReason = "Tom amarelo com padrão de saturação assimétrico — provável MOSAICO.";
+          } else if (yellow > 0.42) {
+            yellowSubtype = "amarelo_intenso";
+            colorReason = "Tom amarelo intenso e saturado detectado.";
+          } else {
+            yellowSubtype = "amarelo_nevado";
+            colorReason = "Tom amarelo com saturação moderada — provável NEVADO.";
+          }
+          const code = colorIds.find((id) => id === yellowSubtype) ?? colorIds.find((id) => id.includes("amarelo"));
+          if (code) { color_code = code; confidence = yellow > 0.38 ? 0.58 : 0.42; }
         }
 
-        // Especialidade: sem visão computacional real, usar canário de cor padrão
-        const specialty_code = specialtyIds.find((id) => id.includes("cor") || id.includes("color")) ?? specialtyIds[0] ?? "canario_cor";
+        // ── Inferir especialidade ───────────────────────────────────────────
+        // Sem dados morfológicos, só sabemos que é canário de cor.
+        // Gloster, Yorkshire etc. precisam de análise de forma/topete.
+        // specialtyIds vem de SPECIALTIES (shared/constants) que usa IDs como
+        // "gloster_corona", "fife" etc — não tem "canario_cor" nessa lista.
+        // Para fins de identificação local, usamos o primeiro ID disponível
+        // que pareça um canário de cor, ou o primeiro da lista como fallback.
+        const specialty_code = (specialtyIds as readonly string[]).find((id) => id.includes("fife") || id.includes("border") || id.includes("gloster_consort"))
+          ?? specialtyIds[0]
+          ?? "gloster_consort";
 
-        const confidence = Object.values(t).some(Boolean) ? 0.35 : 0.15;
         const fallbackMsg = reason ? ` (motivo: ${reason.slice(0, 120)})` : "";
+        const mosaicNote = mosaicIdx > 0.08
+          ? " Padrão de saturação sugere pena MOSAICO (cor concentrada nas extremidades)."
+          : "";
+        const melaninNote = melaninIdx > 0.30
+          ? " Presença de melanina detectada (pixel escuro > 30%)."
+          : "";
 
         return {
           specialty_code,
           color_code,
           sex_guess: "indeterminado" as const,
           confidence,
-          reasoning: `Análise local sem API externa${fallbackMsg}. ${colorReason} Confirme manualmente os campos antes de salvar.`,
+          reasoning: `Análise local sem API externa${fallbackMsg}. ${colorReason}${mosaicNote}${melaninNote} Confirme manualmente os campos antes de salvar.`,
         };
       }
 

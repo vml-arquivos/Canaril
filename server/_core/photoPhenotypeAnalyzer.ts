@@ -192,47 +192,74 @@ function buildLocalAnalysis(input: PhotoAnalysisInput, startTime: number, fallba
   const traits = input.localVisualTraits ?? [];
   const context = normalizeContext(input.additionalContext);
 
-  const yellowRatio = avg(traits.map((t) => t.yellowRatio));
-  const orangeRatio = avg(traits.map((t) => t.orangeRatio));
-  const redRatio = avg(traits.map((t) => t.redRatio));
-  const whiteRatio = avg(traits.map((t) => t.whiteRatio));
-  const darkRatio = avg(traits.map((t) => t.darkRatio));
+  const yellowRatio     = avg(traits.map((t) => t.yellowRatio));
+  // orangeRedRatio é o novo campo; orangeRatio mantido para compatibilidade com traits antigos
+  const orangeRedRatio  = avg(traits.map((t) => (t as any).orangeRedRatio ?? t.orangeRatio));
+  const redRatio        = avg(traits.map((t) => t.redRatio));
+  const whiteRatio      = avg(traits.map((t) => t.whiteRatio));
+  const darkRatio       = avg(traits.map((t) => t.darkRatio));
   const saturationAverage = avg(traits.map((t) => t.saturationAverage));
+  const mosaicIndex     = avg(traits.map((t) => (t as any).mosaicIndex ?? 0));
+  const melaninIndex    = avg(traits.map((t) => (t as any).melaninIndex ?? t.darkRatio ?? 0));
+  const dominantColors  = traits.map((t) => (t as any).dominantColor ?? t.dominantColor ?? "unknown");
+  const dominantColor   = dominantColors[0] ?? "unknown";
+
+  // "Vermelho de canário" cai em orangeRed (H 10–42) no espaço HSV
+  const effectiveRed = orangeRedRatio + redRatio;
 
   let lipochromeBase: PhotoAnalysisResponse["lipochromeBase"] = "desconhecido";
-  if (context.includes("branco dominante")) lipochromeBase = "branco_dominante";
+
+  // Contexto do criador tem prioridade máxima
+  if (context.includes("branco dominante"))    lipochromeBase = "branco_dominante";
   else if (context.includes("branco recessivo")) lipochromeBase = "branco_recessivo";
-  else if (context.includes("vermelho")) lipochromeBase = "vermelho";
-  else if (context.includes("amarelo")) lipochromeBase = "amarelo";
-  else if (context.includes("marfim") && yellowRatio > 0.08) lipochromeBase = "amarelo_marfim";
-  else if (whiteRatio > 0.48 && yellowRatio < 0.12 && redRatio < 0.12) lipochromeBase = "branco_dominante";
-  else if (redRatio > 0.16) lipochromeBase = "vermelho";
-  else if (orangeRatio > 0.18) lipochromeBase = "laranja_intermediario";
-  else if (yellowRatio > 0.14) lipochromeBase = "amarelo";
+  else if (context.includes("vermelho marfim")) lipochromeBase = "vermelho_marfim";
+  else if (context.includes("vermelho"))        lipochromeBase = "vermelho";
+  else if (context.includes("amarelo marfim"))  lipochromeBase = "amarelo_marfim";
+  else if (context.includes("amarelo"))         lipochromeBase = "amarelo";
+  else if (context.includes("marfim"))          lipochromeBase = "amarelo_marfim";
+  // Análise de imagem (calibrada para canários reais)
+  else if (dominantColor === "white" || whiteRatio > 0.48)           lipochromeBase = "branco_dominante";
+  else if (dominantColor === "orange_red" || effectiveRed > 0.28)     lipochromeBase = "vermelho";
+  else if (effectiveRed > 0.16)                                        lipochromeBase = "laranja_intermediario";
+  else if (dominantColor === "yellow" || yellowRatio > 0.22)           lipochromeBase = "amarelo";
+
+  // Categoria de pena: usar mosaicIndex para detecção automática
+  let featherCategory = inferFeatherCategory(context, input.birdSex);
+  if (featherCategory === "desconhecido" && mosaicIndex > 0.08) {
+    featherCategory = input.birdSex === "fêmea" ? "mosaico_femea" : "mosaico_macho";
+  }
 
   let melaninSeries: PhotoAnalysisResponse["melaninSeries"] = "desconhecido";
-  if (context.includes("agata") || context.includes("agata")) melaninSeries = "agata";
-  else if (context.includes("canela")) melaninSeries = "canela";
-  else if (context.includes("isabel")) melaninSeries = "isabel";
-  else if (darkRatio > 0.28 && saturationAverage < 0.55) melaninSeries = "negro";
+  if (context.includes("agata"))         melaninSeries = "agata";
+  else if (context.includes("canela"))   melaninSeries = "canela";
+  else if (context.includes("isabel"))   melaninSeries = "isabel";
+  else if (melaninIndex > 0.30 && saturationAverage < 0.55) melaninSeries = "negro";
   else if (lipochromeBase !== "desconhecido") melaninSeries = "sem_melanina";
 
-  const featherCategory = inferFeatherCategory(context, input.birdSex);
   const crestType = inferCrestType(context);
 
   const possibleName = classNameFor(lipochromeBase, featherCategory, melaninSeries);
   const confidence =
-    lipochromeBase === "desconhecido" ? 0.28 :
-    traits.length === 0 ? 0.35 :
-    featherCategory === "desconhecido" ? 0.48 :
-    0.62;
+    lipochromeBase === "desconhecido" ? 0.20 :
+    traits.length === 0               ? 0.25 :
+    featherCategory === "desconhecido" ? 0.42 :
+    mosaicIndex > 0.08                 ? 0.58 : // mosaico detectado pela imagem
+    0.52;
 
-  const warnings = [
+  const warnings: string[] = [
     "Análise interna local: não usa Gemini, Anthropic nem qualquer API externa.",
-    "A leitura local usa histograma de cor e contexto informado; confirme manualmente antes de aplicar.",
+    "Classificador local por cor e histograma — não é rede neural treinada.",
   ];
   if (fallbackReason) warnings.unshift(`Fallback interno acionado: ${fallbackReason}`);
-  if (featherCategory === "desconhecido") warnings.push("Categoria de pena não foi confirmada pela foto; informe intenso, nevado ou mosaico para melhorar a sugestão.");
+  if (featherCategory === "desconhecido") warnings.push("Categoria de pena não confirmada. Informe intenso, nevado ou mosaico para melhorar a sugestão.");
+  if (mosaicIndex > 0.08) warnings.push(`Padrão de saturação assimétrico detectado (índice mosaico: ${mosaicIndex.toFixed(2)}) — possível pena mosaico.`);
+
+  const visualDesc = lipochromeBase === "desconhecido"
+    ? "Análise local não conseguiu determinar o lipocromo. Informe cor/classe manualmente."
+    : `Análise local sugere lipocromo ${lipochromeBase.replace(/_/g, " ")}` +
+      (melaninSeries !== "desconhecido" && melaninSeries !== "sem_melanina" ? `, série ${melaninSeries}` : "") +
+      (featherCategory !== "desconhecido" ? `, categoria ${featherCategory.replace(/_/g, " ")}` : "") +
+      ".";
 
   const analysis: PhotoAnalysisResponse = {
     lipochromeBase,
@@ -244,19 +271,16 @@ function buildLocalAnalysis(input: PhotoAnalysisInput, startTime: number, fallba
       {
         name: possibleName,
         confidence,
-        reason: "Sugestão gerada por classificador interno local a partir de cor predominante, contexto informado e catálogo oficial.",
+        reason: "Sugestão gerada por classificador interno local a partir de cor predominante, contexto e catálogo oficial.",
       },
     ],
     confidenceOverall: confidence,
-    visualDescription:
-      lipochromeBase === "desconhecido"
-        ? "A análise local não conseguiu determinar com segurança o lipocromo visível. Informe cor/classe manualmente para aumentar a precisão."
-        : `Análise local sugere lipocromo ${lipochromeBase.replace(/_/g, " ")}${melaninSeries !== "desconhecido" ? `, série ${melaninSeries}` : ""}.`,
+    visualDescription: visualDesc,
     warnings,
     recommendations: [
-      "Use foto lateral nítida, bem iluminada e com fundo neutro.",
-      "Informe manualmente classe oficial, categoria de pena e sexo quando souber.",
-      "Informe pais, avós e resultados de ninhadas para melhorar a precisão genética real.",
+      "Use foto lateral nítida, bem iluminada e com fundo neutro, sem grade de gaiola à frente.",
+      "Informe classe oficial, categoria de pena e sexo quando souber — melhora a precisão.",
+      "Informe pais, avós e resultados de ninhadas para precisão genética real.",
     ],
     fieldsNotConfirmed: [
       "Portador de branco recessivo",
