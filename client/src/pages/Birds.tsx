@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SEXES } from "@shared/constants";
-import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag, Dna } from "lucide-react";
+import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag, Dna, ChevronsUpDown, Check } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
@@ -125,6 +127,7 @@ export default function Birds() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState(emptyForm);
   const [officialClassSearch, setOfficialClassSearch] = useState("");
+  const [officialClassPopoverOpen, setOfficialClassPopoverOpen] = useState(false);
   // isDirty: previne fechamento acidental quando o criador já alterou algo no formulário
   const [isDirty, setIsDirty] = useState(false);
 
@@ -404,8 +407,20 @@ export default function Birds() {
                 {!editingId && (
                   <BirdPhotoIdentifier
                     onIdentified={(result) => {
-                      setFormData((prev) => ({ ...prev, specialty: result.specialty_code, color: result.color_code })); setIsDirty(true);
+                      const colorName = colorsList.find((c) => c.code === result.color_code)?.name;
+                      setFormData((prev) => ({
+                        ...prev,
+                        specialty: result.specialty_code,
+                        color: result.color_code,
+                        modality: prev.modality || "COR",
+                      }));
+                      setIsDirty(true);
                       setPendingPhoto(result.dataUrl);
+                      // Pré-filtra o combobox de classe oficial com o nome da
+                      // cor que a IA identificou, para a nomenclatura já
+                      // aparecer sugerida quando o criador rolar até lá —
+                      // em vez de uma lista vazia/genérica para preencher do zero.
+                      if (colorName) setOfficialClassSearch(colorName);
                     }}
                   />
                 )}
@@ -467,30 +482,61 @@ export default function Birds() {
 
                   <div className="space-y-2">
                     <Label htmlFor="officialClassSearch">Classe oficial FOB/OBJO</Label>
-                    <Input
-                      id="officialClassSearch"
-                      value={officialClassSearch}
-                      onChange={(e) => setOfficialClassSearch(e.target.value)}
-                      placeholder="Busque para filtrar: ágata, gloster, branco, vermelho, mosaico..."
-                      disabled={formData.modality !== "COR" && formData.modality !== "PORTE"}
-                    />
-                    <Select
-                      value={formData.officialClassId}
-                      onValueChange={(value) => patchForm({ officialClassId: value })}
-                      disabled={formData.modality !== "COR" && formData.modality !== "PORTE"}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma classe oficial do catálogo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(officialClassResults?.items ?? []).map((cls) => (
-                          <SelectItem key={cls.id} value={String(cls.id)}>
-                            {cls.officialCode} — {cls.officialName}
-                            {cls.breedName ? ` · ${cls.breedName}` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={officialClassPopoverOpen} onOpenChange={setOfficialClassPopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          disabled={formData.modality !== "COR" && formData.modality !== "PORTE"}
+                          className="w-full justify-between font-normal"
+                        >
+                          <span className="truncate text-left">
+                            {selectedOfficialClass
+                              ? `${selectedOfficialClass.officialCode} — ${selectedOfficialClass.officialName}`
+                              : "Digite para buscar na nomenclatura oficial..."}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                        <Command shouldFilter={false}>
+                          <CommandInput
+                            placeholder="Busque: ágata, gloster, branco, vermelho, mosaico..."
+                            value={officialClassSearch}
+                            onValueChange={setOfficialClassSearch}
+                          />
+                          <p className="px-3 py-1.5 text-xs text-gray-400 border-b">
+                            {officialClassResults
+                              ? officialClassResults.total > (officialClassResults.items?.length ?? 0)
+                                ? `Mostrando ${officialClassResults.items.length} de ${officialClassResults.total} classes — refine a busca para achar a certa`
+                                : `${officialClassResults.total} classe${officialClassResults.total === 1 ? "" : "s"} encontrada${officialClassResults.total === 1 ? "" : "s"}`
+                              : "Carregando nomenclatura..."}
+                          </p>
+                          <CommandList>
+                            <CommandEmpty>Nenhuma classe encontrada para essa busca.</CommandEmpty>
+                            <CommandGroup>
+                              {(officialClassResults?.items ?? []).map((cls) => (
+                                <CommandItem
+                                  key={cls.id}
+                                  value={String(cls.id)}
+                                  onSelect={() => {
+                                    patchForm({ officialClassId: String(cls.id) });
+                                    setOfficialClassPopoverOpen(false);
+                                  }}
+                                >
+                                  <Check className={`mr-2 h-4 w-4 ${String(cls.id) === formData.officialClassId ? "opacity-100" : "opacity-0"}`} />
+                                  <span className="truncate">
+                                    {cls.officialCode} — {cls.officialName}
+                                    {cls.breedName ? ` · ${cls.breedName}` : ""}
+                                  </span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                     {selectedOfficialClass && (
                       <p className="text-xs text-green-700 bg-green-50 rounded p-2">
                         Selecionado: {selectedOfficialClass.officialCode} — {selectedOfficialClass.officialName}.

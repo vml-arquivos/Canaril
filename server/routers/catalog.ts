@@ -9,7 +9,7 @@ import { z } from "zod";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { official_bird_classes, specialties, colors } from "../../drizzle/schema";
-import { ilike, eq, and, or } from "drizzle-orm";
+import { ilike, eq, and, or, sql } from "drizzle-orm";
 import {
   GENE_DEFINITIONS,
   LIPOCHROME_BASE,
@@ -67,7 +67,7 @@ export const catalogRouter = router({
       z.object({
         query: z.string().optional(),
         modality: z.enum(["COR", "PORTE"]).optional(),
-        limit: z.number().min(1).max(100).default(30),
+        limit: z.number().min(1).max(150).default(50),
         offset: z.number().min(0).default(0),
       })
     )
@@ -94,27 +94,38 @@ export const catalogRouter = router({
         );
       }
 
-      const items = await db
-        .select({
-          id: official_bird_classes.id,
-          officialCode: official_bird_classes.officialCode,
-          officialName: official_bird_classes.officialName,
-          abbreviation: official_bird_classes.abbreviation,
-          modality: official_bird_classes.modality,
-          groupName: official_bird_classes.groupName,
-          subgroupName: official_bird_classes.subgroupName,
-          breedName: official_bird_classes.breedName,
-          bitola: official_bird_classes.bitola,
-          categoryName: official_bird_classes.categoryName,
-          interpretedTraits: official_bird_classes.interpretedTraits,
-        })
-        .from(official_bird_classes)
-        .where(and(...conditions))
-        .limit(input.limit)
-        .offset(input.offset)
-        .orderBy(official_bird_classes.officialCode);
+      const [items, [{ count }]] = await Promise.all([
+        db
+          .select({
+            id: official_bird_classes.id,
+            officialCode: official_bird_classes.officialCode,
+            officialName: official_bird_classes.officialName,
+            abbreviation: official_bird_classes.abbreviation,
+            modality: official_bird_classes.modality,
+            groupName: official_bird_classes.groupName,
+            subgroupName: official_bird_classes.subgroupName,
+            breedName: official_bird_classes.breedName,
+            bitola: official_bird_classes.bitola,
+            categoryName: official_bird_classes.categoryName,
+            interpretedTraits: official_bird_classes.interpretedTraits,
+          })
+          .from(official_bird_classes)
+          .where(and(...conditions))
+          .limit(input.limit)
+          .offset(input.offset)
+          .orderBy(official_bird_classes.officialCode),
+        // Contagem real do total de classes que batem com o filtro (não só
+        // da página atual) — antes o campo `total` retornava items.length,
+        // então a UI nunca sabia que existiam mais de ~30 classes além das
+        // exibidas. É isso que fazia parecer que a "nomenclatura completa"
+        // estava faltando.
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(official_bird_classes)
+          .where(and(...conditions)),
+      ]);
 
-      return { items, total: items.length };
+      return { items, total: count };
     }),
 
   /**
