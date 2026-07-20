@@ -6,7 +6,7 @@
  * Todos os endpoints são protectedProcedure (usuário autenticado).
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { official_bird_classes, specialties, colors } from "../../drizzle/schema";
 import { ilike, eq, and, or } from "drizzle-orm";
@@ -160,8 +160,10 @@ export const catalogRouter = router({
   // em vez de uma lista fixa no frontend, para não divergir do catálogo.
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** Lista especialidades/raças ativas, ordenadas por nome. */
-  specialtiesList: protectedProcedure.query(async () => {
+  /** Lista especialidades/raças ativas, ordenadas por nome. Pública: é
+   *  nomenclatura de referência, sem dado sensível, e é usada tanto no
+   *  formulário de cadastro (autenticado) quanto no site público /c/:slug. */
+  specialtiesList: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db
@@ -176,8 +178,8 @@ export const catalogRouter = router({
       .orderBy(specialties.name);
   }),
 
-  /** Lista cores/mutações ativas, ordenadas por nome. */
-  colorsList: protectedProcedure.query(async () => {
+  /** Lista cores/mutações ativas, ordenadas por nome. Pública (ver nota acima). */
+  colorsList: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db

@@ -981,6 +981,13 @@ export const tenants = pgTable("tenants", {
   logoUrl: text("logoUrl"),
   publicSiteEnabled: boolean("publicSiteEnabled").notNull().default(true),
   publicSlug: varchar("publicSlug", { length: 100 }).unique(),
+  // Personalização visual do site público (migration 0021) — todos
+  // opcionais/com default, não afetam nenhum tenant existente.
+  themePrimaryColor: varchar("themePrimaryColor", { length: 20 }).default("#D97706"),
+  themeSecondaryColor: varchar("themeSecondaryColor", { length: 20 }).default("#78350F"),
+  themeBackgroundImageUrl: text("themeBackgroundImageUrl"),
+  themeTagline: varchar("themeTagline", { length: 200 }),
+  themeBio: text("themeBio"),
   status: varchar("status", { length: 20 }).notNull().default("active"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),

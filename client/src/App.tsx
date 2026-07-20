@@ -39,6 +39,8 @@ const GuiaIndividual = lazy(() => import("@/pages/GuiasPublico").then(m => ({ de
 const FAQPublico = lazy(() => import("@/pages/GuiasPublico").then(m => ({ default: m.FAQPublico })));
 const GlossarioPublico = lazy(() => import("@/pages/GuiasPublico").then(m => ({ default: m.GlossarioPublico })));
 const PublicBirdPage = lazy(() => import("@/pages/PublicBirdPage"));
+const PublicSite = lazy(() => import("@/pages/PublicSite"));
+const MeuSite = lazy(() => import("@/pages/MeuSite"));
 const Linhagem = lazy(() => import("@/pages/Linhagem"));
 const RotinaDiaria = lazy(() => import("@/pages/RotinaDiariaPWA"));
 const Admin = lazy(() => import("@/pages/Admin"));
@@ -148,6 +150,9 @@ function Router() {
       <Route path={"/p/:code"} component={PublicBirdPage} />
       <Route path={"/g/:code"} component={PublicBirdPage} />
 
+      {/* Site institucional público de cada canaril (multi-tenant) */}
+      <Route path={"/c/:slug"} component={PublicSite} />
+
       {/* Páginas Protegidas */}
       <Route path={"/dashboard"}>
         {(params) => <ProtectedRoute component={Dashboard} {...params} />}
@@ -190,6 +195,9 @@ function Router() {
       </Route>
       <Route path={"/settings"}>
         {(params) => <ProtectedRoute component={Settings} {...params} />}
+      </Route>
+      <Route path={"/meu-site"}>
+        {(params) => <ProtectedRoute component={MeuSite} {...params} />}
       </Route>
       <Route path={"/pedigree/:birdId"}>
         {(params) => <ProtectedRoute component={PedigreeTree} {...params} />}
