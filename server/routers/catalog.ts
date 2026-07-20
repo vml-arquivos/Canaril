@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { official_bird_classes } from "../../drizzle/schema";
+import { official_bird_classes, specialties, colors } from "../../drizzle/schema";
 import { ilike, eq, and, or } from "drizzle-orm";
 import {
   GENE_DEFINITIONS,
@@ -151,5 +151,45 @@ export const catalogRouter = router({
     const porte = all.filter((r) => r.modality === "PORTE").length;
 
     return { total: all.length, cor, porte };
+  }),
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Especialidades (raças) e Cores/Mutações — alimentadas a partir do
+  // catálogo oficial por legacyCatalogSync.ts. Únicos endpoints que expõem
+  // essas tabelas; o formulário de cadastro de pássaro consome estes dados
+  // em vez de uma lista fixa no frontend, para não divergir do catálogo.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** Lista especialidades/raças ativas, ordenadas por nome. */
+  specialtiesList: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db
+      .select({
+        code: specialties.code,
+        name: specialties.name,
+        description: specialties.description,
+        official_body: specialties.official_body,
+      })
+      .from(specialties)
+      .where(eq(specialties.status, "active"))
+      .orderBy(specialties.name);
+  }),
+
+  /** Lista cores/mutações ativas, ordenadas por nome. */
+  colorsList: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db
+      .select({
+        code: colors.code,
+        name: colors.name,
+        category: colors.category,
+        genetics: colors.genetics,
+        official_body: colors.official_body,
+      })
+      .from(colors)
+      .where(eq(colors.status, "active"))
+      .orderBy(colors.name);
   }),
 });

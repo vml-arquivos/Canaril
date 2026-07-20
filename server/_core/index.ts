@@ -55,6 +55,18 @@ async function startServer() {
     console.warn(error);
   }
 
+  // Alinha as tabelas legadas `specialties` e `colors` (usadas nos campos
+  // specialty_code/color_code de birds) com o catálogo oficial FOB/OBJO,
+  // eliminando a divergência entre as 3 fontes de nomenclatura do sistema.
+  // Também idempotente e não-crítico.
+  try {
+    const { syncLegacyCatalogFromOfficial } = await import("./legacyCatalogSync");
+    await syncLegacyCatalogFromOfficial();
+  } catch (error) {
+    console.warn("[Startup] Aviso: não foi possível alinhar specialties/colors com o catálogo oficial (sistema continua funcionando normalmente).");
+    console.warn(error);
+  }
+
   const app = express();
   const server = createServer(app);
   // Health check endpoint

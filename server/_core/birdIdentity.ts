@@ -64,11 +64,40 @@ export function generateBirdDisplayTitle(input: BirdIdentityInput) {
   return [ring, breedOrMode, phenotype, sex].filter(Boolean).join(" — ");
 }
 
-export function deriveLegacyColorCode(officialName: string | null | undefined, fallback = "amarelo_intenso") {
+/**
+ * Chave de comparação tolerante a acentuação/maiúsculas/conectores — espelha
+ * server/_core/legacyCatalogSync.ts e client/src/pages/Birds.tsx, para casar
+ * "Frisado do Norte" (nome oficial) com "Frisado do Norte"/"FRISADO_NORTE"
+ * (id em SPECIALTIES) mesmo com grafias/formatos diferentes.
+ */
+const dedupeKey = (label: string) =>
+  label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean)
+    .filter((token) => !["DO", "DA", "DE", "DOS", "DAS", "E"].includes(token))
+    .join("");
+
+export function deriveLegacyColorCode(
+  officialName: string | null | undefined,
+  groupName: string | null | undefined,
+  fallback = "amarelo_intenso"
+) {
+  // 1) Correspondência exata pelo grupo oficial (mais confiável — é
+  //    exatamente o campo que gerou a lista de cores em SPECIALTIES/COLORS).
+  if (groupName) {
+    const key = dedupeKey(groupName);
+    const exact = COLORS.find((c) => dedupeKey(c.name) === key);
+    if (exact) return exact.id;
+  }
+  // 2) Fallback: heurística por palavra-chave no nome completo da classe
+  //    (cobre casos legados sem groupName estruturado no banco).
   const upper = normalize(officialName).toUpperCase();
   if (!upper) return fallback;
   if (upper.includes("RUBINO")) return "vermelho_intenso";
-  if (upper.includes("LUTINO")) return "amarelo_intenso";
+  if (upper.includes("LUTINO")) return "lutino";
   if (upper.includes("ALBINO")) return "albino";
   if (upper.includes("BRANCO")) return "branco";
   if (upper.includes("VERMELHO") && upper.includes("MOSAICO")) return "vermelho_mosaico";
@@ -79,28 +108,23 @@ export function deriveLegacyColorCode(officialName: string | null | undefined, f
   if (upper.includes("OPALINO")) return "opalino";
   if (upper.includes("FEO")) return "feo";
   if (upper.includes("TOPÁZIO") || upper.includes("TOPAZIO")) return "topázio";
-  if (upper.includes("LUTINO")) return "lutino";
   return fallback;
 }
 
-export function deriveLegacySpecialtyCode(breedName: string | null | undefined, modality: string | null | undefined, fallback = "belga_clássico") {
-  const breed = normalize(breedName).toLowerCase();
+export function deriveLegacySpecialtyCode(
+  breedName: string | null | undefined,
+  modality: string | null | undefined,
+  fallback = "belga_clássico"
+) {
+  const breed = normalize(breedName);
   if (breed) {
-    const exact = SPECIALTIES.find((s) => s.name.toLowerCase() === breed || s.id.toLowerCase() === breed);
+    // Correspondência exata pelo nome oficial da raça — SPECIALTIES agora
+    // cobre as 49 raças/portes oficiais, então isto normalmente resolve
+    // sem precisar de heurística nenhuma (e sem o risco de rotular
+    // silenciosamente qualquer raça não reconhecida como "Belga Clássico").
+    const key = dedupeKey(breed);
+    const exact = SPECIALTIES.find((s) => dedupeKey(s.name) === key || dedupeKey(s.id) === key);
     if (exact) return exact.id;
-    const partial = SPECIALTIES.find((s) => breed.includes(s.name.toLowerCase()) || s.name.toLowerCase().includes(breed));
-    if (partial) return partial.id;
-    if (breed.includes("gloster") && breed.includes("corona")) return "gloster_corona";
-    if (breed.includes("gloster")) return "gloster_consort";
-    if (breed.includes("frisado") && breed.includes("norte")) return "frisado_norte";
-    if (breed.includes("frisado") && breed.includes("sul")) return "frisado_sul";
-    if (breed.includes("fife")) return "fife";
-    if (breed.includes("border")) return "border";
-    if (breed.includes("norwich")) return "norwich";
-    if (breed.includes("yorkshire")) return "yorkshire";
-    if (breed.includes("lizard")) return "lizard";
-    if (breed.includes("crest")) return "crest";
-    if (breed.includes("lancashire")) return "lancashire";
   }
   return normalize(modality).toUpperCase() === "PORTE" ? fallback : "belga_clássico";
 }

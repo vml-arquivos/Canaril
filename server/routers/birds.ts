@@ -217,7 +217,7 @@ export const birdsRouter = router({
       const modality = input.modality?.trim() || officialClass?.modality || null;
       const breedName = input.breedName?.trim() || officialClass?.breedName || null;
       const specialtyCode = input.specialty_code?.trim() || deriveLegacySpecialtyCode(breedName, modality);
-      const colorCode = input.color_code?.trim() || deriveLegacyColorCode(officialClass?.officialName);
+      const colorCode = input.color_code?.trim() || deriveLegacyColorCode(officialClass?.officialName, officialClass?.groupName);
       const displayTitle = input.displayTitle?.trim() || generateBirdDisplayTitle({
         ring: input.ring,
         sex: input.sex,
@@ -338,7 +338,7 @@ export const birdsRouter = router({
         const nextModality = input.modality?.trim() || existingBird.modality || officialClass?.modality || null;
         const nextBreedName = input.breedName?.trim() || existingBird.breedName || officialClass?.breedName || null;
         const nextSpecialty = input.specialty_code?.trim() || existingBird.specialty_code || deriveLegacySpecialtyCode(nextBreedName, nextModality);
-        const nextColor = input.color_code?.trim() || existingBird.color_code || deriveLegacyColorCode(officialClass?.officialName);
+        const nextColor = input.color_code?.trim() || existingBird.color_code || deriveLegacyColorCode(officialClass?.officialName, officialClass?.groupName);
         const nextTitle = input.displayTitle?.trim() || generateBirdDisplayTitle({
           ring: nextRing,
           sex: nextSex,

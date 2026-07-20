@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import { SPECIALTIES, COLORS, SEXES } from "@shared/constants";
+import { SEXES } from "@shared/constants";
 import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag, Dna } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -52,51 +52,70 @@ const MODALITY_OPTIONS = [
   { id: "OUTRA", name: "Outra modalidade" },
 ];
 
-function deriveColorFromOfficialName(name?: string | null) {
-  const upper = (name ?? "").toUpperCase();
-  if (upper.includes("RUBINO")) return "vermelho_intenso";
-  if (upper.includes("LUTINO")) return "amarelo_intenso";
-  if (upper.includes("ALBINO")) return "albino";
-  if (upper.includes("BRANCO")) return "branco";
-  if (upper.includes("VERMELHO") && upper.includes("MOSAICO")) return "vermelho_mosaico";
-  if (upper.includes("VERMELHO") && upper.includes("NEVADO")) return "vermelho_nevado";
-  if (upper.includes("VERMELHO")) return "vermelho_intenso";
-  if (upper.includes("AMARELO") && upper.includes("MOSAICO")) return "amarelo_mosaico";
-  if (upper.includes("AMARELO") && upper.includes("NEVADO")) return "amarelo_nevado";
-  if (upper.includes("OPALINO")) return "opalino";
-  if (upper.includes("FEO")) return "feo";
-  if (upper.includes("TOPÁZIO") || upper.includes("TOPAZIO")) return "topázio";
-  return "";
+/**
+ * Chave de comparação tolerante a acentuação/maiúsculas/conectores — espelha
+ * server/_core/legacyCatalogSync.ts, para casar "Frisado do Norte" (oficial)
+ * com "FRISADO_DO_NORTE" (banco) mesmo com grafias diferentes.
+ */
+function dedupeKey(label: string): string {
+  const noAccents = label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  return noAccents
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean)
+    .filter((token) => !["DO", "DA", "DE", "DOS", "DAS", "E"].includes(token))
+    .join("");
 }
 
-function deriveSpecialtyFromOfficialClass(cls?: { breedName?: string | null; modality?: string | null }) {
-  const breed = (cls?.breedName ?? "").toLowerCase();
-  const exact = SPECIALTIES.find((s) => s.name.toLowerCase() === breed || s.id.toLowerCase() === breed);
-  if (exact) return exact.id;
-  const partial = SPECIALTIES.find((s) => breed && (breed.includes(s.name.toLowerCase()) || s.name.toLowerCase().includes(breed)));
-  if (partial) return partial.id;
-  if (breed.includes("gloster") && breed.includes("corona")) return "gloster_corona";
-  if (breed.includes("gloster")) return "gloster_consort";
-  if (breed.includes("frisado") && breed.includes("norte")) return "frisado_norte";
-  if (breed.includes("frisado") && breed.includes("sul")) return "frisado_sul";
-  if (breed.includes("fife")) return "fife";
-  if (breed.includes("border")) return "border";
-  if (breed.includes("norwich")) return "norwich";
-  if (breed.includes("yorkshire")) return "yorkshire";
-  if (breed.includes("lizard")) return "lizard";
-  if (breed.includes("crest")) return "crest";
-  if (breed.includes("lancashire")) return "lancashire";
-  return cls?.modality === "PORTE" ? "belga_clássico" : "belga_clássico";
+type CatalogOption = { code: string; name: string };
+
+/**
+ * Encontra a especialidade correspondente à raça (breedName) da classe
+ * oficial selecionada. Comparação exata por nome normalizado — a classe
+ * oficial já traz o nome correto da raça, então não há necessidade (nem
+ * espaço para erro) de adivinhar por palavras-chave como antes.
+ */
+function deriveSpecialtyFromOfficialClass(
+  specialtiesList: readonly CatalogOption[],
+  cls?: { breedName?: string | null }
+): string {
+  if (!cls?.breedName) return "";
+  const key = dedupeKey(cls.breedName);
+  return specialtiesList.find((s) => dedupeKey(s.name) === key)?.code ?? "";
+}
+
+/**
+ * Encontra a cor/mutação correspondente ao grupo oficial (groupName) da
+ * classe selecionada. Mesma lógica: comparação exata, não heurística.
+ */
+function deriveColorFromOfficialClass(
+  colorsList: readonly CatalogOption[],
+  cls?: { groupName?: string | null }
+): string {
+  if (!cls?.groupName) return "";
+  const key = dedupeKey(cls.groupName);
+  return colorsList.find((c) => dedupeKey(c.name) === key)?.code ?? "";
 }
 
 function labelFromId<T extends { id: string; name: string }>(items: readonly T[], id?: string | null) {
   return items.find((i) => i.id === id)?.name ?? id ?? "";
 }
 
-function previewTitle(form: typeof emptyForm, officialName?: string | null) {
+function labelFromCode(items: readonly CatalogOption[], code?: string | null) {
+  return items.find((i) => i.code === code)?.name ?? code ?? "";
+}
+
+function previewTitle(
+  form: typeof emptyForm,
+  officialName: string | null | undefined,
+  specialtiesList: readonly CatalogOption[],
+  colorsList: readonly CatalogOption[]
+) {
   const modalityName = MODALITY_OPTIONS.find((m) => m.id === form.modality)?.name ?? "Canário";
-  const breedOrMode = form.breedName || modalityName || labelFromId(SPECIALTIES, form.specialty) || "Canário";
-  const phenotype = officialName || labelFromId(COLORS, form.color) || "Classe não informada";
+  const breedOrMode = form.breedName || modalityName || labelFromCode(specialtiesList, form.specialty) || "Canário";
+  const phenotype = officialName || labelFromCode(colorsList, form.color) || "Classe não informada";
   const sex = labelFromId(SEXES, form.sex) || "Sexo não informado";
   return `${form.ring || "Sem anilha"} — ${breedOrMode} — ${phenotype} — ${sex}`;
 }
@@ -135,6 +154,16 @@ export default function Birds() {
     { entityType: "bird", entityId: editingId ?? 0 },
     { enabled: !!editingId }
   );
+
+  // Especialidades (raças) e Cores/Mutações — únicas fontes agora são estas
+  // duas queries, que leem diretamente specialties/colors no banco (mesmas
+  // tabelas populadas pelo catálogo oficial FOB/OBJO). Substituem as listas
+  // hardcoded que existiam em shared/constants.ts, que podiam divergir do
+  // catálogo real.
+  const { data: specialtiesData } = trpc.catalog.specialtiesList.useQuery();
+  const { data: colorsData } = trpc.catalog.colorsList.useQuery();
+  const specialtiesList = specialtiesData ?? [];
+  const colorsList = colorsData ?? [];
 
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const uploadPendingPhoto = trpc.photos.create.useMutation();
@@ -223,8 +252,8 @@ export default function Birds() {
   useEffect(() => {
     if (!selectedOfficialClass) return;
     setFormData((prev) => {
-      const nextSpecialty = prev.specialty || deriveSpecialtyFromOfficialClass(selectedOfficialClass);
-      const nextColor = prev.color || deriveColorFromOfficialName(selectedOfficialClass.officialName);
+      const nextSpecialty = prev.specialty || deriveSpecialtyFromOfficialClass(specialtiesList, selectedOfficialClass);
+      const nextColor = prev.color || deriveColorFromOfficialClass(colorsList, selectedOfficialClass);
       return {
         ...prev,
         modality: selectedOfficialClass.modality,
@@ -233,7 +262,7 @@ export default function Birds() {
         color: nextColor,
       };
     });
-  }, [selectedOfficialClass]);
+  }, [selectedOfficialClass, specialtiesList, colorsList]);
 
   const closeDialog = () => {
     setOpen(false);
@@ -507,7 +536,7 @@ export default function Birds() {
 
                   <div className="rounded-lg border bg-white p-2">
                     <p className="text-xs text-gray-400 uppercase">Título automático</p>
-                    <p className="text-sm font-medium text-gray-900">{previewTitle(formData, selectedOfficialClass?.officialName)}</p>
+                    <p className="text-sm font-medium text-gray-900">{previewTitle(formData, selectedOfficialClass?.officialName, specialtiesList, colorsList)}</p>
                   </div>
                 </div>
 
@@ -558,8 +587,8 @@ export default function Birds() {
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {SPECIALTIES.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
+                        {specialtiesList.map((s) => (
+                          <SelectItem key={s.code} value={s.code}>
                             {s.name}
                           </SelectItem>
                         ))}
@@ -588,8 +617,8 @@ export default function Birds() {
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {COLORS.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
+                        {colorsList.map((c) => (
+                          <SelectItem key={c.code} value={c.code}>
                             {c.name}
                           </SelectItem>
                         ))}
@@ -734,10 +763,10 @@ export default function Birds() {
                         <p className="font-bold text-sm text-gray-900 truncate">{bird.displayTitle || bird.ring}</p>
                         {bird.nickname && <p className="text-xs text-blue-600 truncate">{bird.nickname}</p>}
                         <p className="text-xs text-gray-500 truncate">
-                          {bird.breedName || SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name || bird.specialty_code}
+                          {bird.breedName || labelFromCode(specialtiesList, bird.specialty_code)}
                         </p>
                         <p className="text-xs text-gray-400 truncate">
-                          {COLORS.find((c) => c.id === bird.color_code)?.name ?? bird.color_code}
+                          {labelFromCode(colorsList, bird.color_code)}
                         </p>
                       </div>
                     </button>
@@ -787,12 +816,12 @@ export default function Birds() {
                         </TableCell>
                         <TableCell>
                           <div>
-                            <p>{bird.breedName || SPECIALTIES.find((s) => s.id === bird.specialty_code)?.name || bird.specialty_code}</p>
+                            <p>{bird.breedName || labelFromCode(specialtiesList, bird.specialty_code)}</p>
                             <p className="text-xs text-gray-400 font-mono">{bird.ring}</p>
                           </div>
                         </TableCell>
                         <TableCell>{SEXES.find((s) => s.id === bird.sex)?.name ?? bird.sex}</TableCell>
-                        <TableCell>{COLORS.find((c) => c.id === bird.color_code)?.name ?? bird.color_code}</TableCell>
+                        <TableCell>{labelFromCode(colorsList, bird.color_code)}</TableCell>
                         <TableCell>{bird.birthDate ? new Date(bird.birthDate).toLocaleDateString("pt-BR") : "-"}</TableCell>
                         <TableCell>
                           <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">

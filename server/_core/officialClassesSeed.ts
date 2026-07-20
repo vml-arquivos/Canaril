@@ -9,7 +9,7 @@ import { getDb } from "../db";
 import { official_bird_classes } from "../../drizzle/schema";
 import { interpretOfficialClass } from "./officialClassInterpreter";
 
-interface SeedClass {
+export interface SeedClass {
   officialCode: string;
   officialName: string;
   abbreviation?: string;
@@ -24,7 +24,7 @@ interface SeedClass {
 // ============================================================================
 // CANÁRIO DE COR — 771 classes
 // ============================================================================
-const COR_CLASSES: SeedClass[] = [
+export const COR_CLASSES: SeedClass[] = [
   { officialCode: "CC0101", officialName: "BRANCO", abbreviation: "BR", modality: "COR", groupName: "Lipocrômicos sem fator" },
   { officialCode: "CC0102", officialName: "BRANCO DOMINANTE", abbreviation: "BR DO", modality: "COR", groupName: "Lipocrômicos sem fator" },
   { officialCode: "CC0103", officialName: "AMARELO INTENSO", abbreviation: "AM IN", modality: "COR", groupName: "Lipocrômicos sem fator", subgroupName: "Amarelos", categoryName: "intenso" },
@@ -801,7 +801,7 @@ const COR_CLASSES: SeedClass[] = [
 // ============================================================================
 // CANÁRIO DE PORTE — 698 classes
 // ============================================================================
-const PORTE_CLASSES: SeedClass[] = [
+export const PORTE_CLASSES: SeedClass[] = [
   { officialCode: "CP0010", officialName: "FRISADO PARISIENSE BRANCO 100% LIPOCRÔMICO", abbreviation: "FR PR BR LI", modality: "PORTE", breedName: "FRISADO PARISIENSE", bitola: "3,4" },
   { officialCode: "CP0011", officialName: "FRISADO PARISIENSE BRANCO 100% MELÂNICO", abbreviation: "FR PR BR ME", modality: "PORTE", breedName: "FRISADO PARISIENSE", bitola: "3,4" },
   { officialCode: "CP0012", officialName: "FRISADO PARISIENSE BRANCO PINTADO LIPOCRÔMICO", abbreviation: "FR PR BR PI LI", modality: "PORTE", breedName: "FRISADO PARISIENSE", bitola: "3,4" },
