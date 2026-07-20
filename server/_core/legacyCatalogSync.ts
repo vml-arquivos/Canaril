@@ -137,7 +137,7 @@ export async function syncLegacyCatalogFromOfficial(): Promise<{
   let specialtiesInserted = 0;
   let specialtiesSkipped = 0;
   let specialtiesEnriched = 0;
-  for (const [code, breed] of breedByCode) {
+  for (const [code, breed] of Array.from(breedByCode.entries())) {
     const key = dedupeKey(breed.name);
     const already = existingSpecialtyByKey.get(key);
     if (already) {
@@ -178,7 +178,7 @@ export async function syncLegacyCatalogFromOfficial(): Promise<{
   }
 
   // ── Cores/mutações, derivadas dos grupos das classes COR ─────────────────
-  const groupNames = [...new Set(COR_CLASSES.map(c => c.groupName).filter((g): g is string => !!g))];
+  const groupNames = Array.from(new Set(COR_CLASSES.map(c => c.groupName).filter((g): g is string => !!g)));
 
   let colorsInserted = 0;
   let colorsSkipped = 0;

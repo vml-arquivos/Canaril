@@ -581,7 +581,7 @@ export default function Birds() {
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="specialty">Especialidade / resumo <span className="text-xs font-normal text-gray-400">({specialtiesList.length} disponíveis)</span></Label>
+                    <Label htmlFor="specialty">Especialidade / resumo</Label>
                     <Select value={formData.specialty} onValueChange={(value) => patchForm({ specialty: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
@@ -611,7 +611,7 @@ export default function Birds() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="color">Cor/Mutação / resumo <span className="text-xs font-normal text-gray-400">({colorsList.length} disponíveis)</span></Label>
+                    <Label htmlFor="color">Cor/Mutação / resumo</Label>
                     <Select value={formData.color} onValueChange={(value) => patchForm({ color: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
