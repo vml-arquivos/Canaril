@@ -316,15 +316,17 @@ export const aiJudgeRouter = router({
             {
               role: "system",
               content:
-                `Você identifica a especialidade (raça) e a cor/mutação de canários a partir de fotos, para um sistema de gestão de criadouro. ` +
+                `Você identifica a especialidade (raça/porte) e a cor/mutação de canários a partir de fotos, para um sistema de gestão de criadouro. ` +
                 `Escolha SEMPRE uma das opções da lista fechada fornecida no schema — nunca crie uma categoria nova. ` +
+                `Para a RAÇA/PORTE, avalie ativamente traços morfológicos visíveis na foto antes de decidir: presença e formato de crista/topete (Gloster Corona tem, Consort não), postura corporal (ereta e alongada = raças de porte como Belga/Holandês/Yorkshire; compacta e arredondada = raças de cor), textura da plumagem (frisada/ondulada indica raças Frisado; lisa e justa é mais comum em canários de cor), e tamanho relativo do corpo em proporção à gaiola/poleiro quando visível. Se nenhum desses traços de raça estiver visível (foto só do rosto, ângulo ruim), prefira as classes de canário de cor comum e reduza a confiança. ` +
+                `Para a COR/MUTAÇÃO, considere tom de base (amarelo/vermelho/branco), presença de fator vermelho, padrão nevado vs. intenso (distribuição uniforme = intenso; bordas mais claras nas penas = nevado), e sinais de mosaico (contraste entre áreas muito saturadas e áreas claras, mais comum nas asas/cauda). ` +
                 `Se a foto não permitir identificação confiável (ângulo ruim, muito longe, desfocada), ainda assim escolha a opção mais provável, mas reflita a incerteza no campo confidence (valores baixos, perto de 0, quando não tiver certeza). ` +
-                `Seja honesto sobre os limites: identificação de mutações de cor por foto tem margem de erro real, principalmente entre tons próximos.`,
+                `Seja honesto sobre os limites: identificação de raça e de mutações de cor por foto tem margem de erro real, principalmente entre tons próximos ou quando a crista/plumagem não está bem visível. Explique no campo reasoning quais traços concretos da foto embasaram cada parte da escolha (raça e cor separadamente).`,
             },
             {
               role: "user",
               content: [
-                { type: "text", text: "Identifique a especialidade e a cor deste canário:" },
+                { type: "text", text: "Identifique a raça/porte e a cor deste canário, explicando quais traços da foto você usou para cada decisão:" },
                 { type: "image_url", image_url: { url: input.dataUrl, detail: "high" } },
               ],
             },
