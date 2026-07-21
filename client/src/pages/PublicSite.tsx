@@ -6,6 +6,7 @@
 import { useRoute, Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Bird, MapPin, Phone, Mail, ArrowLeft } from "lucide-react";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 
 function labelFor(items: readonly { id?: string; code?: string; name: string }[], code?: string | null) {
   return items.find((i) => i.id === code || i.code === code)?.name ?? code ?? "";
@@ -42,7 +43,7 @@ export default function PublicSite() {
     );
   }
 
-  const { tenant, gallery, birds } = data;
+  const { tenant, gallery, birds, posts, faqs } = data;
   const primary = tenant.themePrimaryColor || "#D97706";
   const secondary = tenant.themeSecondaryColor || "#78350F";
   const coverPhoto = tenant.themeBackgroundImageUrl || gallery.find((g) => g.isPrimary)?.url || gallery[0]?.url || null;
@@ -113,6 +114,40 @@ export default function PublicSite() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Blog */}
+      {posts.length > 0 && (
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <h2 className="text-xl font-semibold mb-4 text-center" style={{ color: secondary }}>Novidades do canaril</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {posts.map((post) => (
+              <div key={post.id} className="rounded-lg border overflow-hidden shadow-sm bg-white">
+                {post.coverImageUrl && <img src={post.coverImageUrl} alt={post.title} className="w-full h-36 object-cover" />}
+                <div className="p-4">
+                  <h3 className="font-semibold text-gray-900">{post.title}</h3>
+                  {post.excerpt && <p className="text-sm text-gray-500 mt-1">{post.excerpt}</p>}
+                  <p className="text-sm text-gray-600 mt-2 whitespace-pre-line line-clamp-6">{post.content}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Perguntas e Respostas */}
+      {faqs.length > 0 && (
+        <div className="max-w-2xl mx-auto px-6 py-8">
+          <h2 className="text-xl font-semibold mb-4 text-center" style={{ color: secondary }}>Perguntas frequentes</h2>
+          <Accordion type="single" collapsible>
+            {faqs.map((faq) => (
+              <AccordionItem key={faq.id} value={String(faq.id)}>
+                <AccordionTrigger>{faq.question}</AccordionTrigger>
+                <AccordionContent className="whitespace-pre-line">{faq.answer}</AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
         </div>
       )}
 

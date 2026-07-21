@@ -41,6 +41,7 @@ const GlossarioPublico = lazy(() => import("@/pages/GuiasPublico").then(m => ({ 
 const PublicBirdPage = lazy(() => import("@/pages/PublicBirdPage"));
 const PublicSite = lazy(() => import("@/pages/PublicSite"));
 const MeuSite = lazy(() => import("@/pages/MeuSite"));
+const Equipe = lazy(() => import("@/pages/Equipe"));
 const Linhagem = lazy(() => import("@/pages/Linhagem"));
 const RotinaDiaria = lazy(() => import("@/pages/RotinaDiariaPWA"));
 const Admin = lazy(() => import("@/pages/Admin"));
@@ -198,6 +199,9 @@ function Router() {
       </Route>
       <Route path={"/meu-site"}>
         {(params) => <ProtectedRoute component={MeuSite} {...params} />}
+      </Route>
+      <Route path={"/equipe"}>
+        {(params) => <ProtectedRoute component={Equipe} {...params} />}
       </Route>
       <Route path={"/pedigree/:birdId"}>
         {(params) => <ProtectedRoute component={PedigreeTree} {...params} />}

@@ -12,7 +12,7 @@ import {
   LayoutDashboard, Bird, Heart, ClipboardList, Dna,
   BarChart3, Settings, Shield, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
-  Egg, Tag, Trophy, DollarSign, TrendingUp, Search, Bot, Globe,
+  Egg, Tag, Trophy, DollarSign, TrendingUp, Search, Bot, Globe, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -75,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
     defaultOpen: false,
     items: [
       { icon: Globe,    label: "Meu Site",       path: "/meu-site" },
+      { icon: Users,    label: "Minha Equipe",   path: "/equipe" },
       { icon: Settings, label: "Configurações", path: "/settings" },
     ],
   },
