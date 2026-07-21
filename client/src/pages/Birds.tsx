@@ -257,6 +257,20 @@ export default function Birds() {
 
   const selectedOfficialClass = officialClassResults?.items.find((cls) => String(cls.id) === formData.officialClassId);
 
+  // Agrupa as classes por categoria (grupo de cor, para COR; raça, para
+  // PORTE) — em vez de uma lista plana de até 771 itens, o combobox mostra
+  // seções com cabeçalho, muito mais fácil de escanear visualmente.
+  const groupedOfficialClasses = (() => {
+    const items = officialClassResults?.items ?? [];
+    const groups = new Map<string, typeof items>();
+    for (const cls of items) {
+      const heading = (cls.groupName || cls.breedName || "Outras classes") as string;
+      if (!groups.has(heading)) groups.set(heading, []);
+      groups.get(heading)!.push(cls);
+    }
+    return Array.from(groups.entries());
+  })();
+
   useEffect(() => {
     if (!selectedOfficialClass) return;
     setFormData((prev) => {
@@ -531,24 +545,26 @@ export default function Birds() {
                           </div>
                           <CommandList>
                             <CommandEmpty>Nenhuma classe encontrada para essa busca.</CommandEmpty>
-                            <CommandGroup>
-                              {(officialClassResults?.items ?? []).map((cls) => (
-                                <CommandItem
-                                  key={cls.id}
-                                  value={String(cls.id)}
-                                  onSelect={() => {
-                                    patchForm({ officialClassId: String(cls.id) });
-                                    setOfficialClassPopoverOpen(false);
-                                  }}
-                                >
-                                  <Check className={`mr-2 h-4 w-4 ${String(cls.id) === formData.officialClassId ? "opacity-100" : "opacity-0"}`} />
-                                  <span className="truncate">
-                                    {cls.officialCode} — {cls.officialName}
-                                    {cls.breedName ? ` · ${cls.breedName}` : ""}
-                                  </span>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
+                            {groupedOfficialClasses.map(([heading, items]) => (
+                              <CommandGroup key={heading} heading={heading}>
+                                {items.map((cls) => (
+                                  <CommandItem
+                                    key={cls.id}
+                                    value={String(cls.id)}
+                                    onSelect={() => {
+                                      patchForm({ officialClassId: String(cls.id) });
+                                      setOfficialClassPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Check className={`mr-2 h-4 w-4 ${String(cls.id) === formData.officialClassId ? "opacity-100" : "opacity-0"}`} />
+                                    <span className="truncate">
+                                      {cls.officialCode} — {cls.officialName}
+                                      {cls.breedName ? ` · ${cls.breedName}` : ""}
+                                    </span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            ))}
                           </CommandList>
                         </Command>
                       </PopoverContent>
