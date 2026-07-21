@@ -39,6 +39,7 @@ import { intelligenceRouter } from "./routers/intelligence";
 import { aiAssistantRouter } from "./routers/aiAssistant";
 import { adminResetRouter } from "./routers/adminReset";
 import { publicSiteRouter } from "./routers/publicSite";
+import { teamRouter } from "./routers/team";
 
 // Sanitiza o objeto de usuário antes de enviar ao cliente
 // NUNCA expor: passwordHash, internalNote, disabledReason, disabledBy, disabledAt, accessExpiresAt
@@ -212,6 +213,7 @@ export const appRouter = router({
   aiAssistant: aiAssistantRouter,
   adminReset: adminResetRouter,
   publicSite: publicSiteRouter,
+  team: teamRouter,
 });
 
 export type AppRouter = typeof appRouter;

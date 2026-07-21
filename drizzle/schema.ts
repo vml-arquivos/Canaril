@@ -1141,3 +1141,36 @@ export const ai_conversations = pgTable("ai_conversations", {
   sessionIdx: index("ai_conv_session_idx").on(table.sessionId),
   userIdx: index("ai_conv_user_idx").on(table.userId),
 }));
+
+// ============================================================================
+// Site institucional — Blog e Perguntas/Respostas (migration 0022)
+// Por tenant: cada canaril edita seu próprio blog/FAQ no site público /c/:slug
+// ============================================================================
+export const site_posts = pgTable("site_posts", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenantId").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 200 }).notNull(),
+  coverImageUrl: text("coverImageUrl"),
+  excerpt: varchar("excerpt", { length: 300 }),
+  content: text("content").notNull(),
+  published: boolean("published").notNull().default(true),
+  displayOrder: integer("displayOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  tenantIdx: index("site_posts_tenant_idx").on(table.tenantId),
+}));
+
+export const site_faqs = pgTable("site_faqs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenantId").notNull(),
+  question: varchar("question", { length: 300 }).notNull(),
+  answer: text("answer").notNull(),
+  published: boolean("published").notNull().default(true),
+  displayOrder: integer("displayOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (table) => ({
+  tenantIdx: index("site_faqs_tenant_idx").on(table.tenantId),
+}));

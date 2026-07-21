@@ -67,7 +67,7 @@ export const catalogRouter = router({
       z.object({
         query: z.string().optional(),
         modality: z.enum(["COR", "PORTE"]).optional(),
-        limit: z.number().min(1).max(150).default(50),
+        limit: z.number().min(1).max(800).default(50),
         offset: z.number().min(0).default(0),
       })
     )

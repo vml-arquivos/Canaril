@@ -24,6 +24,8 @@ import { GenotypeEditorDraft, EMPTY_GENOTYPE_DRAFT, type GenotypeDraft } from "@
 import { BirdFicha } from "@/components/BirdFicha";
 import { BirdPhotoIdentifier } from "@/components/BirdPhotoIdentifier";
 
+const CUSTOM_OPTION = "__custom__";
+
 const emptyForm = {
   ring: "",
   nickname: "",
@@ -128,6 +130,9 @@ export default function Birds() {
   const [formData, setFormData] = useState(emptyForm);
   const [officialClassSearch, setOfficialClassSearch] = useState("");
   const [officialClassPopoverOpen, setOfficialClassPopoverOpen] = useState(false);
+  const [specialtyCustom, setSpecialtyCustom] = useState(false);
+  const [colorCustom, setColorCustom] = useState(false);
+  const [officialClassLimit, setOfficialClassLimit] = useState(800);
   // isDirty: previne fechamento acidental quando o criador já alterou algo no formulário
   const [isDirty, setIsDirty] = useState(false);
 
@@ -145,7 +150,7 @@ export default function Birds() {
     {
       query: officialClassSearch || undefined,
       modality: formData.modality === "COR" || formData.modality === "PORTE" ? formData.modality : undefined,
-      limit: 50,
+      limit: officialClassLimit,
       offset: 0,
     },
     { enabled: open && (formData.modality === "COR" || formData.modality === "PORTE") }
@@ -457,7 +462,7 @@ export default function Birds() {
                       <Label htmlFor="modality">Modalidade</Label>
                       <Select
                         value={formData.modality}
-                        onValueChange={(value) => patchForm({ modality: value, officialClassId: "" })}
+                        onValueChange={(value) => { patchForm({ modality: value, officialClassId: "" }); setOfficialClassLimit(800); }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione..." />
@@ -506,13 +511,24 @@ export default function Birds() {
                             value={officialClassSearch}
                             onValueChange={setOfficialClassSearch}
                           />
-                          <p className="px-3 py-1.5 text-xs text-gray-400 border-b">
-                            {officialClassResults
-                              ? officialClassResults.total > (officialClassResults.items?.length ?? 0)
-                                ? `Mostrando ${officialClassResults.items.length} de ${officialClassResults.total} classes — refine a busca para achar a certa`
-                                : `${officialClassResults.total} classe${officialClassResults.total === 1 ? "" : "s"} encontrada${officialClassResults.total === 1 ? "" : "s"}`
-                              : "Carregando nomenclatura..."}
-                          </p>
+                          <div className="px-3 py-1.5 text-xs text-gray-400 border-b flex items-center justify-between gap-2">
+                            <span>
+                              {officialClassResults
+                                ? officialClassResults.total > (officialClassResults.items?.length ?? 0)
+                                  ? `Mostrando ${officialClassResults.items.length} de ${officialClassResults.total} classes`
+                                  : `${officialClassResults.total} classe${officialClassResults.total === 1 ? "" : "s"} encontrada${officialClassResults.total === 1 ? "" : "s"}`
+                                : "Carregando nomenclatura..."}
+                            </span>
+                            {officialClassResults && officialClassResults.total > officialClassResults.items.length && (
+                              <button
+                                type="button"
+                                className="text-amber-600 hover:underline shrink-0"
+                                onClick={() => setOfficialClassLimit(officialClassResults.total)}
+                              >
+                                Mostrar todas
+                              </button>
+                            )}
+                          </div>
                           <CommandList>
                             <CommandEmpty>Nenhuma classe encontrada para essa busca.</CommandEmpty>
                             <CommandGroup>
@@ -627,19 +643,40 @@ export default function Birds() {
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="specialty">Especialidade / resumo</Label>
-                    <Select value={formData.specialty} onValueChange={(value) => patchForm({ specialty: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {specialtiesList.map((s) => (
-                          <SelectItem key={s.code} value={s.code}>
-                            {s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="specialty">Especialidade / resumo <span className="text-xs font-normal text-gray-400">({specialtiesList.length} disponíveis)</span></Label>
+                    {specialtyCustom ? (
+                      <div className="flex gap-2">
+                        <Input
+                          id="specialty"
+                          value={formData.specialty}
+                          onChange={(e) => patchForm({ specialty: e.target.value })}
+                          placeholder="Digite a raça/especialidade"
+                        />
+                        <Button type="button" variant="ghost" size="sm" onClick={() => { setSpecialtyCustom(false); patchForm({ specialty: "" }); }}>
+                          Usar lista
+                        </Button>
+                      </div>
+                    ) : (
+                      <Select
+                        value={formData.specialty}
+                        onValueChange={(value) => {
+                          if (value === CUSTOM_OPTION) { setSpecialtyCustom(true); patchForm({ specialty: "" }); return; }
+                          patchForm({ specialty: value });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {specialtiesList.map((s) => (
+                            <SelectItem key={s.code} value={s.code}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={CUSTOM_OPTION}>✎ Outro (digitar manualmente)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="sex">Sexo *</Label>
@@ -657,19 +694,40 @@ export default function Birds() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="color">Cor/Mutação / resumo</Label>
-                    <Select value={formData.color} onValueChange={(value) => patchForm({ color: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {colorsList.map((c) => (
-                          <SelectItem key={c.code} value={c.code}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="color">Cor/Mutação / resumo <span className="text-xs font-normal text-gray-400">({colorsList.length} disponíveis)</span></Label>
+                    {colorCustom ? (
+                      <div className="flex gap-2">
+                        <Input
+                          id="color"
+                          value={formData.color}
+                          onChange={(e) => patchForm({ color: e.target.value })}
+                          placeholder="Digite a cor/mutação"
+                        />
+                        <Button type="button" variant="ghost" size="sm" onClick={() => { setColorCustom(false); patchForm({ color: "" }); }}>
+                          Usar lista
+                        </Button>
+                      </div>
+                    ) : (
+                      <Select
+                        value={formData.color}
+                        onValueChange={(value) => {
+                          if (value === CUSTOM_OPTION) { setColorCustom(true); patchForm({ color: "" }); return; }
+                          patchForm({ color: value });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {colorsList.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={CUSTOM_OPTION}>✎ Outro (digitar manualmente)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="birthDate">Data de Nascimento</Label>

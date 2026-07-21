@@ -23,10 +23,10 @@
  * ============================================================================
  */
 import { z } from "zod";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, or } from "drizzle-orm";
 import { protectedProcedure, publicProcedure, router, getCallerTenantId } from "../_core/trpc";
 import { getDb } from "../db";
-import { tenants, birds, photos } from "../../drizzle/schema";
+import { tenants, birds, photos, site_posts, site_faqs } from "../../drizzle/schema";
 
 const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -135,6 +135,143 @@ export const publicSiteRouter = router({
       .orderBy(desc(photos.isPrimary), photos.displayOrder, desc(photos.createdAt));
   }),
 
+  // ── Blog do site institucional (self-service, por tenant) ────────────────
+
+  /** Lista TODOS os posts do próprio canaril (publicados ou não) para edição. */
+  myPosts: protectedProcedure.query(async ({ ctx }) => {
+    const tenantId = getCallerTenantId(ctx);
+    if (!tenantId) return [];
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(site_posts).where(eq(site_posts.tenantId, tenantId)).orderBy(asc(site_posts.displayOrder), desc(site_posts.createdAt));
+  }),
+
+  upsertPost: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().optional(),
+        title: z.string().min(2).max(200),
+        slug: z.string().min(2).max(200).optional(),
+        coverImageUrl: z.string().url().optional().nullable(),
+        excerpt: z.string().max(300).optional().nullable(),
+        content: z.string().min(1).max(20000),
+        published: z.boolean().optional(),
+        displayOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = getCallerTenantId(ctx);
+      if (!tenantId) throw new Error("Seu usuário ainda não está vinculado a um canaril.");
+      const db = await getDb();
+      if (!db) throw new Error("Banco de dados não disponível.");
+
+      const slug = slugify(input.slug || input.title) || `post-${Date.now()}`;
+
+      const [clash] = await db
+        .select({ id: site_posts.id })
+        .from(site_posts)
+        .where(and(eq(site_posts.tenantId, tenantId), eq(site_posts.slug, slug), input.id ? ne(site_posts.id, input.id) : undefined));
+      if (clash) throw new Error(`Já existe um post com o endereço "${slug}". Ajuste o título ou o slug.`);
+
+      if (input.id) {
+        const [existing] = await db.select({ id: site_posts.id }).from(site_posts).where(and(eq(site_posts.id, input.id), eq(site_posts.tenantId, tenantId)));
+        if (!existing) throw new Error("Post não encontrado ou não pertence ao seu canaril.");
+        const [updated] = await db
+          .update(site_posts)
+          .set({ title: input.title, slug, coverImageUrl: input.coverImageUrl, excerpt: input.excerpt, content: input.content, published: input.published, displayOrder: input.displayOrder })
+          .where(eq(site_posts.id, input.id))
+          .returning();
+        return updated;
+      }
+
+      const [created] = await db
+        .insert(site_posts)
+        .values({
+          tenantId,
+          title: input.title,
+          slug,
+          coverImageUrl: input.coverImageUrl ?? null,
+          excerpt: input.excerpt ?? null,
+          content: input.content,
+          published: input.published ?? true,
+          displayOrder: input.displayOrder ?? 0,
+        })
+        .returning();
+      return created;
+    }),
+
+  deletePost: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = getCallerTenantId(ctx);
+      if (!tenantId) throw new Error("Seu usuário ainda não está vinculado a um canaril.");
+      const db = await getDb();
+      if (!db) throw new Error("Banco de dados não disponível.");
+      await db.delete(site_posts).where(and(eq(site_posts.id, input.id), eq(site_posts.tenantId, tenantId)));
+      return { success: true };
+    }),
+
+  // ── Perguntas e Respostas do site institucional (self-service) ───────────
+
+  myFaqs: protectedProcedure.query(async ({ ctx }) => {
+    const tenantId = getCallerTenantId(ctx);
+    if (!tenantId) return [];
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(site_faqs).where(eq(site_faqs.tenantId, tenantId)).orderBy(asc(site_faqs.displayOrder), asc(site_faqs.id));
+  }),
+
+  upsertFaq: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().optional(),
+        question: z.string().min(2).max(300),
+        answer: z.string().min(1).max(5000),
+        published: z.boolean().optional(),
+        displayOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = getCallerTenantId(ctx);
+      if (!tenantId) throw new Error("Seu usuário ainda não está vinculado a um canaril.");
+      const db = await getDb();
+      if (!db) throw new Error("Banco de dados não disponível.");
+
+      if (input.id) {
+        const [existing] = await db.select({ id: site_faqs.id }).from(site_faqs).where(and(eq(site_faqs.id, input.id), eq(site_faqs.tenantId, tenantId)));
+        if (!existing) throw new Error("Pergunta não encontrada ou não pertence ao seu canaril.");
+        const [updated] = await db
+          .update(site_faqs)
+          .set({ question: input.question, answer: input.answer, published: input.published, displayOrder: input.displayOrder })
+          .where(eq(site_faqs.id, input.id))
+          .returning();
+        return updated;
+      }
+
+      const [created] = await db
+        .insert(site_faqs)
+        .values({
+          tenantId,
+          question: input.question,
+          answer: input.answer,
+          published: input.published ?? true,
+          displayOrder: input.displayOrder ?? 0,
+        })
+        .returning();
+      return created;
+    }),
+
+  deleteFaq: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = getCallerTenantId(ctx);
+      if (!tenantId) throw new Error("Seu usuário ainda não está vinculado a um canaril.");
+      const db = await getDb();
+      if (!db) throw new Error("Banco de dados não disponível.");
+      await db.delete(site_faqs).where(and(eq(site_faqs.id, input.id), eq(site_faqs.tenantId, tenantId)));
+      return { success: true };
+    }),
+
   // ── Site público (sem login) ──────────────────────────────────────────────
 
   /**
@@ -163,7 +300,7 @@ export const publicSiteRouter = router({
 
       if (!tenant) return null;
 
-      const [featuredBirds, gallery] = await Promise.all([
+      const [featuredBirds, gallery, posts, faqs] = await Promise.all([
         db
           .select({
             id: birds.id,
@@ -184,6 +321,18 @@ export const publicSiteRouter = router({
           .where(and(eq(photos.entityType, "breeder"), eq(photos.entityId, tenant.id)))
           .orderBy(desc(photos.isPrimary), photos.displayOrder, desc(photos.createdAt))
           .limit(30),
+        db
+          .select()
+          .from(site_posts)
+          .where(and(eq(site_posts.tenantId, tenant.id), eq(site_posts.published, true)))
+          .orderBy(asc(site_posts.displayOrder), desc(site_posts.createdAt))
+          .limit(50),
+        db
+          .select()
+          .from(site_faqs)
+          .where(and(eq(site_faqs.tenantId, tenant.id), eq(site_faqs.published, true)))
+          .orderBy(asc(site_faqs.displayOrder), asc(site_faqs.id))
+          .limit(100),
       ]);
 
       // Foto principal de cada pássaro em destaque, numa única consulta
@@ -210,6 +359,8 @@ export const publicSiteRouter = router({
           themeBio: tenant.themeBio,
         },
         gallery: gallery.map((g) => ({ id: g.id, url: g.url, caption: g.caption, isPrimary: g.isPrimary })),
+        posts: posts.map((p) => ({ id: p.id, title: p.title, slug: p.slug, coverImageUrl: p.coverImageUrl, excerpt: p.excerpt, content: p.content, createdAt: p.createdAt })),
+        faqs: faqs.map((f) => ({ id: f.id, question: f.question, answer: f.answer })),
         birds: featuredBirds.map((b) => ({ ...b, photoUrl: photoByBirdId.get(b.id) ?? null })),
       };
     }),
