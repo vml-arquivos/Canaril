@@ -20,6 +20,7 @@ import {
   championships, tenants, audit_logs,
 } from "../../drizzle/schema";
 import { eq, and, isNull, isNotNull, ilike, or, sql } from "drizzle-orm";
+import { getCurrentTenantId } from "../_core/tenant";
 
 // ─── Helper: registrar auditoria ─────────────────────────────────────────────
 
@@ -405,8 +406,7 @@ export const adminRouter = router({
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
-      // PLATFORM_ADMIN sem tenant vê tudo; CANARIL_MANAGER vê só o próprio
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
       const q = db.select().from(audit_logs);
       const filtered = tenantId
         ? q.where(and(

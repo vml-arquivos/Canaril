@@ -4,6 +4,7 @@ import { getDb, getPool } from "../db";
 import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
 import { and, eq, desc, sql } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
+import { getCurrentTenantId } from "../_core/tenant";
 
 async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, year: number, startNumber: number, endNumber: number) {
   const now = new Date();
@@ -46,7 +47,7 @@ export const managementRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         let query: any = db.select().from(ring_batches);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(ring_batches.tenantId, tenantId));
@@ -79,7 +80,7 @@ export const managementRouter = router({
         }
 
         try {
-          const tenantId = (ctx.user as any)?.tenantId ?? null;
+          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
           const [createdBatch] = await db.insert(ring_batches).values({
             batch_number: input.batch_number,
             year: input.year,
@@ -112,7 +113,7 @@ export const managementRouter = router({
         const db = await getDb();
         if (!db) return [];
         try {
-          const tenantId = (ctx.user as any)?.tenantId ?? null;
+          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
           const conditions: any[] = [eq(rings.status, "available")];
           if (tenantId !== null) conditions.push(eq(rings.tenantId, tenantId));
           if (input?.batchId) conditions.push(eq(rings.batchId, input.batchId));
@@ -186,7 +187,7 @@ export const managementRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         let query: any = db.select().from(couples);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(couples.tenantId, tenantId));
@@ -207,7 +208,7 @@ export const managementRouter = router({
           const result = await db.select().from(couples).where(eq(couples.id, input)).limit(1);
           const couple = result.length > 0 ? result[0] : null;
           if (!couple) return null;
-          const tenantId = (ctx.user as any)?.tenantId ?? null;
+          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
           if (tenantId !== null && tenantId !== undefined) {
             requireTenantAccess(ctx, couple.tenantId);
           }
@@ -229,7 +230,7 @@ export const managementRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database not available");
         try {
-          const tenantId = (ctx.user as any)?.tenantId ?? null;
+          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
           // Filtra casais ativos do mesmo tenant
           const activeCouples = await db.select().from(couples).where(
             and(eq(couples.status, "active"), tenantId !== null && tenantId !== undefined ? eq(couples.tenantId, tenantId) : sql`1=1`)
@@ -296,7 +297,7 @@ export const managementRouter = router({
           if (!existing) {
             throw new Error("Casal não encontrado.");
           }
-          const tenantId = (ctx.user as any)?.tenantId ?? null;
+          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
           if (tenantId !== null && tenantId !== undefined) {
             requireTenantAccess(ctx, existing.tenantId);
           }
@@ -332,7 +333,7 @@ export const managementRouter = router({
           if (!existing) {
             throw new Error("Casal não encontrado.");
           }
-          const tenantId = (ctx.user as any)?.tenantId ?? null;
+          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
           if (tenantId !== null && tenantId !== undefined) {
             requireTenantAccess(ctx, existing.tenantId);
           }
@@ -351,7 +352,7 @@ export const managementRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         let query: any = db.select().from(clutches).orderBy(desc(clutches.createdAt));
         if (tenantId !== null) query = query.where(eq(clutches.tenantId, tenantId));
         return query;
@@ -387,7 +388,7 @@ export const managementRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         try {
           await db.insert(clutches).values({
             coupleId: input.coupleId,
@@ -413,7 +414,7 @@ export const managementRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         let query: any = db.select().from(chicks).orderBy(desc(chicks.createdAt));
         if (tenantId !== null) query = query.where(eq(chicks.tenantId, tenantId));
         return query;
@@ -449,7 +450,7 @@ export const managementRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         try {
           const [createdChick] = await db.insert(chicks).values({
             clutchId: input.clutchId,
@@ -482,8 +483,7 @@ export const managementRouter = router({
       if (!db) return { birds: 0, couples: 0, chicks: 0, rings: 0 };
 
       try {
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         // Helpers de filtro
         const birdFilter   = tenantId ? eq(birds.tenantId, tenantId)         : undefined;
         const coupleFilter = tenantId ? eq(couples.tenantId, tenantId)        : undefined;

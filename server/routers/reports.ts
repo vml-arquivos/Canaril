@@ -17,6 +17,7 @@ import {
 import { desc, eq, and } from "drizzle-orm";
 import { calculateCOI, calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 import { analyzeCoiForPair } from "../_core/coiAnalyzer";
+import { getCurrentTenantId } from "../_core/tenant";
 
 
 function countBy<T extends Record<string, any>>(rows: T[], key: keyof T): Record<string, number> {
@@ -50,7 +51,7 @@ export const reportsRouter = router({
         topScores: [] as Array<{ entryId: number; birdId: number; category: string; totalScore: number; placement: number | null; championshipName: string }>,
       };
     }
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
     const [birdsList, couplesList, clutchesList, ringsList, championshipsList, entriesList, scoresList] = await Promise.all([
@@ -115,7 +116,7 @@ export const reportsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { rows: [], generatedAt: new Date(), total: 0 };
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const tf = tenantId !== null;
 
       const [allBirds, allGenotypes, allProfiles, allCouples, allClutches] = await Promise.all([
@@ -277,7 +278,7 @@ export const reportsRouter = router({
   lacunasDados: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { rows: [], generatedAt: new Date(), summary: null };
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
     const [allBirds, allGenotypes, allProfiles] = await Promise.all([
@@ -329,7 +330,7 @@ export const reportsRouter = router({
   anilhas: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { batches: [], rings: [], generatedAt: new Date(), summary: null };
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
     const [batches, allRings] = await Promise.all([
@@ -449,7 +450,7 @@ export const reportsRouter = router({
   casaisReproducao: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { rows: [], generatedAt: new Date() };
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
     const [allCouples, allBirds, allClutches] = await Promise.all([
@@ -516,7 +517,7 @@ export const reportsRouter = router({
   temporada: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return null;
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
     const now = new Date();
@@ -634,7 +635,7 @@ export const reportsRouter = router({
 indice: protectedProcedure.query(async ({ ctx }) => {
   const db = await getDb();
   if (!db) return { rows: [], generatedAt: new Date() };
-  const tenantId = (ctx.user as any)?.tenantId ?? null;
+  const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
   const tf = tenantId !== null;
   const [allBirds, allCouples, allClutches, allEntries, allScores] = await Promise.all([
     tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
@@ -679,7 +680,7 @@ indice: protectedProcedure.query(async ({ ctx }) => {
 mapaGenetico: protectedProcedure.query(async ({ ctx }) => {
   const db = await getDb();
   if (!db) return null;
-  const tenantId = (ctx.user as any)?.tenantId ?? null;
+  const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
   const tf = tenantId !== null;
   const [allBirds, allGenotypes, allProfiles] = await Promise.all([
     tf ? db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))) : db.select().from(birds).where(eq(birds.status, "active")),

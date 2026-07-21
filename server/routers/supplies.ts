@@ -9,6 +9,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { supply_records } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const CATEGORIES = [
   "racao", "semente", "folhagem", "fruta", "suplemento",
@@ -42,8 +43,7 @@ export const suppliesRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const conditions: any[] = [];
       if (tenantId !== null) conditions.push(eq(supply_records.tenantId, tenantId));
       if (input?.category && input.category !== "all") conditions.push(eq(supply_records.category, input.category));
@@ -71,7 +71,7 @@ export const suppliesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível");
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const uid = (ctx.user as any)?.id ?? null;
 
       // Calcular totalCost se não informado diretamente
@@ -113,8 +113,7 @@ export const suppliesRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { total: 0, byCategory: [] };
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const conditions: any[] = [];
       if (tenantId !== null) conditions.push(eq(supply_records.tenantId, tenantId));
       if (input?.dateFrom) conditions.push(gte(supply_records.date, new Date(input.dateFrom)));

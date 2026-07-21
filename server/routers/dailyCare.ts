@@ -19,6 +19,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, desc, gte, isNull, sql } from "drizzle-orm";
 import { EVENT_TYPES, computeTotalsFromLogs, recalculateClutchFromLogs, generateBreedingAlerts } from "../_core/breedingDailyAggregator";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
@@ -28,8 +29,7 @@ export const dailyCareRouter = router({
   listActiveCouples: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     // Filtrar por tenant quando usuário operacional
     const coupleFilter = tenantId
       ? and(eq(couples.status, "active"), isNull(couples.deletedAt), eq(couples.tenantId, tenantId))
@@ -251,8 +251,7 @@ export const dailyCareRouter = router({
   getDailySummary: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { couplesWithLogs: [], couplesWithoutLogs: [], totalActive: 0 };
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const todayStr = TODAY();
     const coupleWhere = tenantId
       ? and(eq(couples.status, "active"), isNull(couples.deletedAt), eq(couples.tenantId, tenantId))
@@ -301,8 +300,7 @@ export const dailyCareRouter = router({
   nextRingReminders: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 7);
 

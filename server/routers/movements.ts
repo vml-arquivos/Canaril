@@ -11,6 +11,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { bird_movements, birds } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const ENTRY_TYPES = ["bought", "bred", "donated_in", "transferred_in"] as const;
 const EXIT_TYPES  = ["sold", "died", "escaped", "donated_out", "transferred_out", "culled"] as const;
@@ -51,8 +52,7 @@ export const movementsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       let q: any = db.select({
         id:          bird_movements.id,
         birdId:      bird_movements.birdId,
@@ -93,7 +93,7 @@ export const movementsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível");
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const uid = (ctx.user as any)?.id ?? null;
 
       const [mov] = await db.insert(bird_movements).values({
@@ -132,7 +132,7 @@ export const movementsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível");
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const uid = (ctx.user as any)?.id ?? null;
 
       const exitDate = input.date ? new Date(input.date) : new Date();
@@ -170,8 +170,7 @@ export const movementsRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { totalSales: 0, totalPurchases: 0, salesCount: 0, purchasesCount: 0 };
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const conditions: any[] = [];
       if (tenantId !== null) conditions.push(eq(bird_movements.tenantId, tenantId));
       if (input?.dateFrom) conditions.push(gte(bird_movements.date, new Date(input.dateFrom)));

@@ -1,173 +1,35 @@
-import { useEffect, useState } from "react";
+/**
+ * Settings.tsx — Redireciona para /meu-site
+ *
+ * Esta página antiga lia/gravava em `breeder_settings`, uma tabela de UMA
+ * linha só (id fixo = 1), sem coluna de tenant — ou seja, TODO usuário que
+ * abrisse "Configurações", de qualquer canaril, via sempre os mesmos dados
+ * (os do tenant "Canário Lima"). Isso era o vazamento reportado: um usuário
+ * de outro canaril via nome/cidade/e-mail/telefone do Canário Lima aqui.
+ *
+ * A correção não foi "consertar" a tabela global — foi eliminar a
+ * duplicidade: `/meu-site` (server/routers/publicSite.ts, `mySite` /
+ * `updateMySite`) já é a versão correta, por-tenant, testada, construída
+ * numa sessão anterior. Basta redirecionar para lá em vez de manter dois
+ * sistemas de configuração divergentes.
+ */
+import { useEffect } from "react";
+import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { trpc } from "@/lib/trpc";
-import { Settings as SettingsIcon, Save, Lock } from "lucide-react";
-import { toast } from "sonner";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { isPlatformAdmin } from "@shared/permissions";
+import { Loader2 } from "lucide-react";
 
 export default function Settings() {
-  const { user } = useAuth();
-  const isAdmin = isPlatformAdmin((user as any)?.role);
-  const { data: settings, refetch } = trpc.settings.get.useQuery();
-  const [formData, setFormData] = useState({
-    name: "",
-    city: "",
-    state: "",
-    address: "",
-    phone: "",
-    email: "",
-    website: "",
-    description: "",
-  });
+  const [, navigate] = useLocation();
 
-  // Preenche o formulário assim que os dados chegam do servidor.
   useEffect(() => {
-    if (settings) {
-      setFormData({
-        name: settings.name ?? "",
-        city: settings.city ?? "",
-        state: settings.state ?? "",
-        address: settings.address ?? "",
-        phone: settings.phone ?? "",
-        email: settings.email ?? "",
-        website: settings.website ?? "",
-        description: settings.description ?? "",
-      });
-    }
-  }, [settings]);
-
-  const updateSettings = trpc.settings.update.useMutation({
-    onSuccess: () => {
-      toast.success("Configurações salvas! A Home e a Ficha de Gaiola já refletem os novos dados.");
-      refetch();
-    },
-    onError: (error) => toast.error("Erro ao salvar: " + error.message),
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim()) {
-      toast.error("Informe o nome do criadouro");
-      return;
-    }
-    updateSettings.mutate(formData);
-  };
+    navigate("/meu-site", { replace: true });
+  }, [navigate]);
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-2xl">
-        <div className="flex items-center gap-3">
-          <SettingsIcon className="w-7 h-7 text-gray-700" />
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Configurações</h1>
-            <p className="text-gray-600 mt-1">
-              Dados do criadouro — usados na página inicial pública e na ficha de gaiola impressa
-            </p>
-          </div>
-        </div>
-
-        {/* CANARIL_MANAGER vê somente leitura — não pode alterar dados do Canaril Lima */}
-        {!isAdmin && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 flex items-start gap-3">
-            <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-amber-900 text-sm">Configurações do site público</p>
-              <p className="text-amber-700 text-xs mt-1">
-                As configurações do site público (nome, descrição, contato) são exclusivas do administrador da plataforma.
-                Você pode visualizar os dados abaixo, mas não editá-los.
-              </p>
-              <div className="mt-3 space-y-1 text-sm text-amber-900">
-                <p><strong>Nome:</strong> {settings?.name ?? "—"}</p>
-                {settings?.city && <p><strong>Cidade:</strong> {settings.city}{settings.state ? `, ${settings.state}` : ""}</p>}
-                {settings?.email && <p><strong>E-mail:</strong> {settings.email}</p>}
-                {settings?.phone && <p><strong>Telefone:</strong> {settings.phone}</p>}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Dados do Criadouro</CardTitle>
-            <CardDescription>Essas informações aparecem para quem visita seu site e nas fichas impressas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Nome do Criadouro *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ex: Canário Lima"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="city">Cidade</Label>
-                  <Input id="city" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} />
-                </div>
-                <div>
-                  <Label htmlFor="state">UF</Label>
-                  <Input
-                    id="state"
-                    maxLength={2}
-                    value={formData.state}
-                    onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
-                    placeholder="Ex: DF"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="address">Endereço</Label>
-                <Input
-                  id="address"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  placeholder="Rua, número, bairro"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="phone">Telefone</Label>
-                  <Input id="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="(61) 99999-9999" />
-                </div>
-                <div>
-                  <Label htmlFor="email">E-mail</Label>
-                  <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="website">Site</Label>
-                <Input id="website" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="www.seudominio.com.br" />
-              </div>
-              <div>
-                <Label htmlFor="description">Descrição (aparece na página inicial)</Label>
-                <Textarea
-                  id="description"
-                  rows={4}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Conte um pouco sobre o criadouro..."
-                />
-              </div>
-              <div className="flex justify-end">
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={updateSettings.isPending}>
-                  <Save className="w-4 h-4 mr-2" />
-                  {updateSettings.isPending ? "Salvando..." : "Salvar Configurações"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-        )}
+      <div className="flex items-center gap-2 text-gray-400 p-6">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Redirecionando para Meu Site...
       </div>
     </DashboardLayout>
   );

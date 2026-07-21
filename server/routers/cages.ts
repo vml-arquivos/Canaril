@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { cages } from "../../drizzle/schema";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const cageStatusSchema = z.enum(["free", "occupied", "maintenance"]);
 
@@ -10,7 +11,7 @@ export const cagesRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     let query: any = db.select().from(cages).orderBy(desc(cages.createdAt));
     if (tenantId !== null) query = query.where(eq(cages.tenantId, tenantId));
     return query;
@@ -36,7 +37,7 @@ export const cagesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível");
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const [created] = await db.insert(cages).values({
         code: input.code.trim(),
         section: input.section || null,

@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { championship_entries, championships, judges, scores } from "../../drizzle/schema";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const championshipStatusSchema = z.enum(["upcoming", "ongoing", "finished"]);
 const entryStatusSchema = z.enum(["registered", "judged", "disqualified", "awarded"]);
@@ -17,7 +18,7 @@ export const championshipsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     let query: any = db.select().from(championships).orderBy(desc(championships.startDate));
     if (tenantId !== null) query = query.where(eq(championships.tenantId, tenantId));
     return query;
@@ -48,7 +49,7 @@ export const championshipsRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível");
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const [created] = await db
         .insert(championships)
         .values({

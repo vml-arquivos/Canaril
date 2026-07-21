@@ -14,6 +14,7 @@ import { calculateColorCross, calculateLipochromeCross, MUTATION_CONFIG } from "
 import { scorePair, Objective } from "../_core/pairingOptimizer";
 import { invokeLLM } from "../_core/llm";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const autosomalRecessiveSchema = z.enum(["NN", "Nm", "mm"]);
 const sexLinkedMaleSchema = z.enum(["Z+Z+", "Z+Z-", "Z-Z-"]);
@@ -153,8 +154,7 @@ export const geneticsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
 
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const target = (await db.select().from(birds).where(eq(birds.id, input.birdId)))[0];
       if (!target) throw new Error("Pássaro não encontrado");
 
@@ -266,7 +266,7 @@ export const geneticsRouter = router({
       // Montar birdMap para COI se houver pássaros reais
       let birdMap: Map<number, PedigreeBird> | null = null;
       if (db) {
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         const allBirdsQ = tenantId
           ? db.select().from(birds).where(eq(birds.tenantId, tenantId))
           : db.select().from(birds);
@@ -343,7 +343,7 @@ export const geneticsRouter = router({
       const [femaleGeno] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.femaleId)).limit(1);
 
       // COI — usa pássaros do tenant para não contaminar com dados externos
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const allBirds = tenantId
         ? await db.select().from(birds).where(eq(birds.tenantId, tenantId))
         : await db.select().from(birds);

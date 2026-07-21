@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { predictCross, BirdGenotypeInput } from "../_core/mendelian";
 import { calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const zygositySchema = z.enum(["homozygous_mutant", "heterozygous_carrier", "homozygous_normal"]);
 const inheritanceSchema = z.enum(["autosomal_dominant", "autosomal_recessive", "sex_linked_recessive"]);
@@ -141,8 +142,7 @@ export const mendelianRouter = router({
       const targetGenotype = (await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.birdId)))[0];
 
       const oppositeSex = target.sex === "macho" ? "fêmea" : "macho";
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
-
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       // Filtrar pássaros do próprio tenant
       const activeBirdsQuery = tenantId
         ? and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))

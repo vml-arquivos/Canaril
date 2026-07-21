@@ -6,6 +6,7 @@ import { eq, desc, and, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { generateBirdDisplayTitle, deriveLegacyColorCode, deriveLegacySpecialtyCode } from "../_core/birdIdentity";
 import { interpretOfficialClass } from "../_core/officialClassInterpreter";
+import { getCurrentTenantId } from "../_core/tenant";
 
 // Schema reutilizável para birthDate: aceita Date (superjson) ou string 'YYYY-MM-DD'
 const birthDateSchema = z
@@ -128,7 +129,7 @@ export const birdsRouter = router({
 
       try {
         // Se usuário possui tenantId, filtrar por esse tenant. Plataforma Admin (tenantId null) vê todos
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         let query: any = db.select().from(birds);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(birds.tenantId, tenantId));
@@ -153,7 +154,7 @@ export const birdsRouter = router({
         const bird = result[0] || null;
         if (!bird) return null;
         // Verifica se o pássaro pertence ao tenant atual (exceto para admins globais)
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         if (tenantId !== null && tenantId !== undefined) {
           requireTenantAccess(ctx, bird.tenantId);
         }
@@ -198,7 +199,7 @@ export const birdsRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
 
       // Verifica unicidade da anilha na tabela birds (global)
-      const tenantId = (ctx.user as any)?.tenantId ?? null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const existing = await db
         .select({ id: birds.id })
         .from(birds)
@@ -326,7 +327,7 @@ export const birdsRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
         }
         // Verifica se pertence ao tenant do usuário
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         if (tenantId !== null && tenantId !== undefined) {
           requireTenantAccess(ctx, existingBird.tenantId);
         }
@@ -397,7 +398,7 @@ export const birdsRouter = router({
         if (!existingBird) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
         }
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         if (tenantId !== null && tenantId !== undefined) {
           requireTenantAccess(ctx, existingBird.tenantId);
         }

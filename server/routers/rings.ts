@@ -36,6 +36,7 @@ import {
 } from "../_core/ringAllocator";
 import { generateRingCode, parseRingCode } from "../_core/ringParser";
 import { TRPCError } from "@trpc/server";
+import { getCurrentTenantId } from "../_core/tenant";
 
 // ─── Schema Zod para criação de lote ────────────────────────────────────────
 const createBatchSchema = z.object({
@@ -66,7 +67,7 @@ export const ringsRouter = router({
       const db = await getDb();
       if (!db) return [];
       try {
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         let query: any = db.select().from(ring_batches);
         if (tenantId !== null && tenantId !== undefined) {
           query = query.where(eq(ring_batches.tenantId, tenantId));
@@ -90,7 +91,7 @@ export const ringsRouter = router({
           .limit(1);
         const batch = rows[0] ?? null;
         if (!batch) return null;
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         if (tenantId !== null && tenantId !== undefined) {
           requireTenantAccess(ctx, batch.tenantId);
         }
@@ -108,7 +109,7 @@ export const ringsRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "endNumber deve ser maior que startNumber." });
         }
 
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         const [batch] = await db
           .insert(ring_batches)
           .values({
@@ -455,7 +456,7 @@ export const ringsRouter = router({
         const db = await getDb();
         if (!db) return null;
         // Para usuários operacionais, inclui tenantId nos critérios para filtrar lotes
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         return getNextAvailableRing(db, { ...(input ?? {}), tenantId });
       }),
 
@@ -478,7 +479,7 @@ export const ringsRouter = router({
         if (!birdRow) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
         }
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         if (tenantId !== null && tenantId !== undefined) {
           requireTenantAccess(ctx, ringRow.tenantId);
           requireTenantAccess(ctx, birdRow.tenantId);
@@ -499,7 +500,7 @@ export const ringsRouter = router({
         if (!birdRow) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
         }
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         if (tenantId !== null && tenantId !== undefined) {
           requireTenantAccess(ctx, birdRow.tenantId);
         }
@@ -520,7 +521,7 @@ export const ringsRouter = router({
 
         const ring = await createManualRing(db, input);
         // Se usuário operacional, atualiza o tenantId da anilha manual para o tenant da sessão
-        const tenantId = (ctx.user as any)?.tenantId ?? null;
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         if (tenantId !== null && tenantId !== undefined) {
           await db.update(rings).set({ tenantId }).where(eq(rings.id, ring.id));
         }
@@ -608,7 +609,7 @@ export const ringsRouter = router({
       return { total: 0, available: 0, inUse: 0, batches: 0, exhaustedBatches: 0 };
     }
 
-    const tenantId = (ctx.user as any)?.tenantId ?? null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     try {
       // Constrói filtros por tenantId se necessário
       const ringFilter = tenantId !== null && tenantId !== undefined ? eq(rings.tenantId, tenantId) : undefined;
