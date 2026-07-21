@@ -205,6 +205,44 @@ export const adminRouter = router({
       return updated;
     }),
 
+  /**
+   * Reseta a senha de um usuário. Usa exatamente o mesmo esquema de hash
+   * (scrypt + sal fixo "canaril-salt") já usado em createUser acima e na
+   * verificação de login em routers.ts — senão o usuário fica sem conseguir
+   * entrar depois do reset.
+   */
+  resetPassword: platformAdminProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      newPassword: z.string().min(6, "A senha deve ter ao menos 6 caracteres"),
+      forceChangeOnNextLogin: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Banco não disponível.");
+      const uid = (ctx as any)?.userId;
+
+      const [target] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, input.id), isNull(users.deletedAt))).limit(1);
+      if (!target) throw new Error("Usuário não encontrado.");
+
+      const crypto = await import("crypto");
+      const passwordHash: string = await new Promise((resolve, reject) => {
+        crypto.scrypt(input.newPassword, "canaril-salt", 64, (err: any, derivedKey: Buffer) => {
+          if (err) return reject(err);
+          resolve(derivedKey.toString("hex"));
+        });
+      });
+
+      await db.update(users).set({
+        passwordHash,
+        loginMethod: "local",
+        mustChangePassword: input.forceChangeOnNextLogin,
+      }).where(eq(users.id, input.id));
+
+      await writeAudit(db, { userId: uid, action: "reset_password", entityType: "user", entityId: input.id });
+      return { success: true };
+    }),
+
   disableUser: platformAdminProcedure
     .input(z.object({
       id: z.number().int().positive(),

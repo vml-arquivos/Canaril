@@ -13,9 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Shield, Users, Trash2, AlertTriangle, History, Building2, RotateCcw, X, ExternalLink } from "lucide-react";
+import { Shield, Users, Trash2, AlertTriangle, History, Building2, RotateCcw, X, ExternalLink, Pencil, KeyRound } from "lucide-react";
 import { Link } from "wouter";
 
 // ─── Tab: Usuários ────────────────────────────────────────────────────────────
@@ -25,9 +27,21 @@ function TabUsuarios() {
   const disableUser = trpc.admin.disableUser.useMutation({ onSuccess: () => { toast.success("Usuário desativado."); refetch(); }, onError: (e) => toast.error(e.message) });
   const deleteUser = trpc.admin.deleteUser.useMutation({ onSuccess: () => { toast.success("Usuário removido."); refetch(); }, onError: (e) => toast.error(e.message) });
   const updateUser = trpc.admin.updateUser.useMutation({ onSuccess: () => { toast.success("Usuário atualizado."); refetch(); }, onError: (e) => toast.error(e.message) });
+  const resetPassword = trpc.admin.resetPassword.useMutation({
+    onSuccess: () => { toast.success("Senha redefinida."); setResetTarget(null); setNewPassword(""); },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Estado para mostrar a modal de criação de usuário
   const [showCreate, setShowCreate] = useState(false);
+
+  // Edição inline de nome/e-mail
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", email: "" });
+
+  // Modal de reset de senha
+  const [resetTarget, setResetTarget] = useState<{ id: number; name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   // Mapeamento de cores para os papéis oficiais
   const roleColors: Record<string, string> = {
@@ -62,11 +76,25 @@ function TabUsuarios() {
               <TableBody>
                 {(users ?? []).map((u) => (
                   <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.name ?? "—"}</TableCell>
-                    <TableCell className="text-sm text-gray-500">{u.email ?? "—"}</TableCell>
+                    {editingId === u.id ? (
+                      <>
+                        <TableCell><Input className="h-7 text-sm" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} /></TableCell>
+                        <TableCell><Input className="h-7 text-sm" value={editForm.email} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} /></TableCell>
+                      </>
+                    ) : (
+                      <>
+                        <TableCell className="font-medium">{u.name ?? "—"}</TableCell>
+                        <TableCell className="text-sm text-gray-500">{u.email ?? "—"}</TableCell>
+                      </>
+                    )}
                     <TableCell>
                     <Select
-                        defaultValue={u.role ?? "CANARIL_MEMBER"}
+                        // Antes: defaultValue={u.role ?? "CANARIL_MEMBER"} — usava `??`, que não
+                        // cobre string vazia "" (alguns usuários legados têm role="" no banco),
+                        // então o select aparecia em branco. Também trocado de `defaultValue`
+                        // (não-controlado) para `value` (controlado), para refletir o dado real
+                        // vindo do servidor após qualquer atualização/refetch.
+                        value={u.role || "CANARIL_MEMBER"}
                         onValueChange={(v) => updateUser.mutate({ id: u.id, role: v as any })}
                       >
                         <SelectTrigger className="w-40 h-7 text-xs">
@@ -87,7 +115,28 @@ function TabUsuarios() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap">
+                        {editingId === u.id ? (
+                          <>
+                            <Button
+                              variant="ghost" size="sm" className="h-7 text-green-700"
+                              onClick={() => { updateUser.mutate({ id: u.id, name: editForm.name, email: editForm.email }); setEditingId(null); }}
+                            >
+                              Salvar
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-gray-500" onClick={() => setEditingId(null)}>Cancelar</Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost" size="sm" className="h-7"
+                            onClick={() => { setEditingId(u.id); setEditForm({ name: u.name ?? "", email: u.email ?? "" }); }}
+                          >
+                            <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7" onClick={() => setResetTarget({ id: u.id, name: u.name ?? u.email ?? "usuário" })}>
+                          <KeyRound className="w-3.5 h-3.5 mr-1" /> Resetar senha
+                        </Button>
                         <Button variant="ghost" size="sm" className="h-7 text-amber-600" onClick={() => { if (confirm("Desativar este usuário?")) disableUser.mutate({ id: u.id }); }}>Desativar</Button>
                         <Button variant="ghost" size="sm" className="h-7 text-red-600" onClick={() => { if (confirm("Remover este usuário? Esta ação pode ser revertida na Lixeira.")) deleteUser.mutate({ id: u.id }); }}>Remover</Button>
                       </div>
@@ -102,6 +151,29 @@ function TabUsuarios() {
       </Card>
       {/* Modal de criação de usuário */}
       <CreateUserModal open={showCreate} onOpenChange={setShowCreate} />
+
+      {/* Modal de reset de senha */}
+      <Dialog open={!!resetTarget} onOpenChange={(v) => { if (!v) { setResetTarget(null); setNewPassword(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Redefinir senha de {resetTarget?.name}</DialogTitle>
+            <DialogDescription>Defina uma nova senha temporária. O usuário será obrigado a trocá-la no próximo login.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="newPassword">Nova senha</Label>
+            <Input id="newPassword" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setResetTarget(null); setNewPassword(""); }}>Cancelar</Button>
+            <Button
+              disabled={newPassword.length < 6 || resetPassword.isPending}
+              onClick={() => resetTarget && resetPassword.mutate({ id: resetTarget.id, newPassword })}
+            >
+              {resetPassword.isPending ? "Salvando..." : "Redefinir senha"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

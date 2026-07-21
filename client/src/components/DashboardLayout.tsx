@@ -236,12 +236,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           collapsed && "justify-center px-2"
         )}>
           <div className="w-8 h-8 rounded-xl bg-amber-600 flex items-center justify-center shrink-0">
-            <span className="text-white font-bold text-sm">C</span>
+            <span className="text-white font-bold text-sm">V</span>
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="font-bold text-gray-900 text-sm leading-tight truncate">Canaril</p>
-              <p className="text-xs text-gray-400 truncate">Gestão Pro</p>
+              <p className="font-bold text-gray-900 text-sm leading-tight truncate">VittaBird</p>
+              <p className="text-xs text-gray-400 truncate">Plataforma de Criadouros</p>
             </div>
           )}
         </div>
@@ -302,9 +302,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <header className="md:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-gray-100 px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-amber-600 flex items-center justify-center">
-              <span className="text-white font-bold text-xs">C</span>
+              <span className="text-white font-bold text-xs">V</span>
             </div>
-            <span className="font-bold text-gray-900 text-sm">Canaril</span>
+            <span className="font-bold text-gray-900 text-sm">VittaBird</span>
           </div>
           <GlobalSearch />
         </header>

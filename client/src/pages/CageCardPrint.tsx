@@ -169,7 +169,7 @@ function CageCard({
           </div>
         </div>
         <div style={{ fontSize: "6pt" }} className="opacity-80 leading-tight">
-          Sistema Canário Gestão Pro
+          Plataforma VittaBird
         </div>
       </div>
 

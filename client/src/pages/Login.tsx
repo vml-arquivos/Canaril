@@ -57,8 +57,8 @@ export default function LoginPage() {
               <Bird className="w-8 h-8 text-white" />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Canário Lima</h1>
-          <p className="text-gray-600">Gestão Profissional de Criadouro</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">VittaBird</h1>
+          <p className="text-gray-600">Plataforma de Gestão para Criadouros de Canários</p>
         </div>
 
         <Card className="shadow-xl border-0">
