@@ -727,6 +727,7 @@ function ModoGuiado() {
   const [maleId, setMaleId] = useState("");
   const [femaleId, setFemaleId] = useState("");
   const [objetivo, setObjetivo] = useState("");
+  const [showTech, setShowTech] = useState(false);
   const { data: allBirds } = trpc.birds.list.useQuery({});
   const males   = (allBirds ?? []).filter((b) => b.sex === "macho");
   const females = (allBirds ?? []).filter((b) => b.sex === "fêmea");
@@ -863,6 +864,29 @@ function ModoGuiado() {
                   <ArrowRight className="w-3.5 h-3.5 mt-0.5 shrink-0" />{r}
                 </p>
               ))}
+
+              {/* Detalhamento técnico completo por mutação — antes só existia
+                  no modo "Casal do Plantel"; o Modo Guiado calculava os mesmos
+                  dados (Punnett, probabilidades por filho macho/fêmea) mas
+                  nunca exibia, então o criador via só avisos genéricos sem a
+                  tabela de probabilidades real por trás da recomendação. */}
+              {report.colorResult && Object.keys(report.colorResult.byMutation ?? {}).length > 0 && (
+                <div>
+                  <button type="button" onClick={() => setShowTech(!showTech)}
+                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 mb-3">
+                    <FlaskConical className="w-4 h-4" />
+                    {showTech ? "Ocultar" : "Ver"} detalhamento genético completo (Punnett e probabilidades)
+                    {showTech ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                  {showTech && (
+                    <div className="space-y-3">
+                      {Object.values(report.colorResult.byMutation as Record<string, any>).map((m: any) => (
+                        <MutResultCard key={m.mutationId} result={m} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep(0)} className="flex-1">Novo cálculo</Button>

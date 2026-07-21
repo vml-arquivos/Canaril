@@ -10,11 +10,118 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS } from "@shared/constants";
-import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle, Dna, CheckCircle, ShieldAlert, TrendingUp } from "lucide-react";
+import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle, Dna, CheckCircle, ShieldAlert, TrendingUp, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
 const emptyForm = { maleId: "", femaleId: "", cageNumber: "", formationDate: "", status: "active" };
+
+const PAIRING_OBJECTIVES: { value: "cor" | "porte" | "show" | "linhagem" | "diversidade" | "portadores"; label: string; desc: string }[] = [
+  { value: "linhagem",    label: "Manter linhagem",      desc: "Preserva as características da linha atual" },
+  { value: "cor",          label: "Melhorar cor",          desc: "Prioriza combinações de mutação mais favoráveis" },
+  { value: "porte",        label: "Melhorar porte",        desc: "Foca em conformação e tamanho" },
+  { value: "show",         label: "Preparar exposição",    desc: "Maximiza classe oficial e conformação" },
+  { value: "diversidade",  label: "Reduzir parentesco",    desc: "Prioriza pares com menor COI (evita endogamia)" },
+  { value: "portadores",   label: "Produzir portadores",   desc: "Útil para fixar/espalhar uma mutação recessiva" },
+];
+
+/**
+ * Sugestão de par ideal — assim que o criador escolhe UM dos dois lados
+ * (macho ou fêmea), mostra os melhores parceiros disponíveis para a
+ * finalidade escolhida, com o motivo de cada recomendação (COI, mutações,
+ * avisos de risco). Reaproveita genetics.recommendPairing (já existente e
+ * testado), só que agora conectado ao formulário real de formar casal.
+ */
+function PairSuggestions({
+  formData,
+  onPick,
+}: {
+  formData: { maleId: string; femaleId: string };
+  onPick: (field: "maleId" | "femaleId", id: number) => void;
+}) {
+  const [objective, setObjective] = useState<typeof PAIRING_OBJECTIVES[number]["value"]>("linhagem");
+
+  const anchorField: "maleId" | "femaleId" | null =
+    formData.maleId && !formData.femaleId ? "maleId" : !formData.maleId && formData.femaleId ? "femaleId" : null;
+  const anchorId = anchorField ? Number(formData[anchorField]) : null;
+  const targetField: "maleId" | "femaleId" = anchorField === "maleId" ? "femaleId" : "maleId";
+
+  const { data, isLoading } = trpc.genetics.recommendPairing.useQuery(
+    { birdId: anchorId ?? 0, objective },
+    { enabled: !!anchorId }
+  );
+
+  if (!anchorField) return null;
+
+  return (
+    <Card className="border-amber-200 bg-amber-50/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2 text-amber-800">
+          <Sparkles className="w-4 h-4" /> Sugestão de par ideal
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Escolha a finalidade da tiragem — o sistema analisa o mapa genético do plantel e ordena os melhores parceiros disponíveis, com o motivo de cada indicação.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Select value={objective} onValueChange={(v: any) => setObjective(v)}>
+          <SelectTrigger className="h-9 text-sm bg-white"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {PAIRING_OBJECTIVES.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                <span className="font-medium">{o.label}</span>
+                <span className="text-xs text-gray-400 ml-1.5">— {o.desc}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {isLoading && <p className="text-xs text-gray-400">Analisando o plantel...</p>}
+
+        {data && data.candidates.length === 0 && (
+          <p className="text-xs text-gray-500">Nenhum parceiro disponível sem risco alto de parentesco foi encontrado para essa finalidade.</p>
+        )}
+
+        {data && data.candidates.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500">
+              {data.candidates.length} de {data.totalEvaluated} pássaro(s) elegível(is), ordenados pela melhor combinação:
+            </p>
+            {data.candidates.slice(0, 5).map((c) => (
+              <div key={c.id} className="flex items-start justify-between gap-3 rounded-lg border bg-white p-2.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-semibold text-sm">{c.ring}</span>
+                    <Badge className="text-xs bg-emerald-100 text-emerald-800 border-emerald-200">{Math.round(c.finalScore)} pts</Badge>
+                    <Badge className={`text-xs ${c.coiRisk === "low" ? "bg-green-100 text-green-700" : c.coiRisk === "moderate" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                      COI {c.coiPct}
+                    </Badge>
+                  </div>
+                  {c.displayTitle && <p className="text-xs text-gray-500 truncate mt-0.5">{c.displayTitle}</p>}
+                  {c.reasons?.length > 0 && (
+                    <ul className="text-xs text-gray-600 mt-1 space-y-0.5">
+                      {c.reasons.slice(0, 3).map((r: string, i: number) => (
+                        <li key={i} className="flex items-start gap-1"><span className="text-emerald-500">•</span>{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {c.warnings?.length > 0 && (
+                    <p className="text-xs text-red-600 mt-1 flex items-start gap-1">
+                      <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />{c.warnings[0]}
+                    </p>
+                  )}
+                </div>
+                <Button type="button" size="sm" variant="outline" className="shrink-0 h-7 text-xs" onClick={() => onPick(targetField, c.id)}>
+                  Usar este
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 // ── Preview genético inline no modal de criação de casal ──────────────────────
 function GeneticPreview({ maleId, femaleId }: { maleId: string; femaleId: string }) {
@@ -302,6 +409,17 @@ export default function Couples() {
                     </div>
                   )}
                 </div>
+
+                {/* Sugestão de par ideal — aparece assim que UM dos dois lados é
+                    escolhido, antes do outro. Reaproveita genetics.recommendPairing,
+                    que já existia mas só estava exposto dentro da Calculadora
+                    Genética, desconectado de onde o casal é realmente formado. */}
+                {!editingId && (
+                  <PairSuggestions
+                    formData={formData}
+                    onPick={(field, id) => setFormData((f) => ({ ...f, [field]: String(id) }))}
+                  />
+                )}
 
                 <CoiWarning maleId={formData.maleId} femaleId={formData.femaleId} />
 
