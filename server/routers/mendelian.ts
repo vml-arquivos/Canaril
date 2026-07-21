@@ -34,6 +34,7 @@ export const mendelianRouter = router({
         birdId: z.number(),
         backgroundColor: z.string().optional(),
         featherType: z.enum(["intenso", "nevado"]).optional(),
+        pattern: z.enum(["comum", "mosaico"]).optional(),
         hasCrest: z.boolean().optional(),
         mutations: z.array(mutationSchema).optional(),
         notes: z.string().optional(),
@@ -99,6 +100,7 @@ export const mendelianRouter = router({
         sex: "macho",
         backgroundColor: fatherGenotype.backgroundColor ?? undefined,
         featherType: (fatherGenotype.featherType as "intenso" | "nevado" | null) ?? undefined,
+        pattern: (fatherGenotype.pattern as "comum" | "mosaico" | null) ?? undefined,
         hasCrest: fatherGenotype.hasCrest,
         mutations: fatherGenotype.mutations ?? [],
       };
@@ -106,6 +108,7 @@ export const mendelianRouter = router({
         sex: "fêmea",
         backgroundColor: motherGenotype.backgroundColor ?? undefined,
         featherType: (motherGenotype.featherType as "intenso" | "nevado" | null) ?? undefined,
+        pattern: (motherGenotype.pattern as "comum" | "mosaico" | null) ?? undefined,
         hasCrest: motherGenotype.hasCrest,
         mutations: motherGenotype.mutations ?? [],
       };
@@ -202,6 +205,7 @@ export const mendelianRouter = router({
             sex: "macho",
             backgroundColor: fatherGeno.backgroundColor ?? undefined,
             featherType: (fatherGeno.featherType as "intenso" | "nevado" | null) ?? undefined,
+            pattern: (fatherGeno.pattern as "comum" | "mosaico" | null) ?? undefined,
             hasCrest: fatherGeno.hasCrest,
             mutations: fatherGeno.mutations ?? [],
           };
@@ -209,6 +213,7 @@ export const mendelianRouter = router({
             sex: "fêmea",
             backgroundColor: motherGeno.backgroundColor ?? undefined,
             featherType: (motherGeno.featherType as "intenso" | "nevado" | null) ?? undefined,
+            pattern: (motherGeno.pattern as "comum" | "mosaico" | null) ?? undefined,
             hasCrest: motherGeno.hasCrest,
             mutations: motherGeno.mutations ?? [],
           };

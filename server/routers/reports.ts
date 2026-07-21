@@ -758,5 +758,106 @@ assistenteCruzamento: protectedProcedure
     return { baseBird: { id: bird.id, ring: bird.ring, displayTitle: bird.displayTitle, sex: bird.sex }, objetivo: input.objetivo, candidates: candidates.slice(0, input.maxResults).map((c) => ({ birdId: c.candidate.id, ring: c.candidate.ring, displayTitle: c.candidate.displayTitle, breedName: c.candidate.breedName, modality: c.candidate.modality, coi: c.coi, coiPct: c.coiPct, coiRisk: c.coiRisk, score: c.score, status: c.status, motivo: c.motivo, alerts: c.alerts })), generatedAt: new Date() };
   }),
 
+  // ===========================================================================
+  // Mapa de Consanguinidade do Plantel — identifica "gargalos" genéticos
+  // (ancestrais que aparecem demais nas linhagens do plantel) e os pares
+  // potenciais mais arriscados, para orientar decisões de "sangue novo".
+  // Reaproveita analyzeCoiForPair (coiAnalyzer.ts), já testado (12 casos),
+  // em vez de duplicar lógica de COI.
+  // ===========================================================================
+  mapaConsanguinidade: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+
+    const [activeBirds, allTenantBirds] = await Promise.all([
+      tenantId !== null
+        ? db.select().from(birds).where(and(eq(birds.tenantId, tenantId), eq(birds.status, "active")))
+        : db.select().from(birds).where(eq(birds.status, "active")),
+      tenantId !== null ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
+    ]);
+
+    // Mapa de pedigree usa TODOS os pássaros do tenant (inclusive inativos/
+    // falecidos), pois um ancestral pode não estar mais ativo mas ainda
+    // conta pra endogamia dos descendentes vivos.
+    const birdMap = new Map<number, PedigreeBird>(
+      allTenantBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+    );
+
+    const males = activeBirds.filter((b) => b.sex === "macho");
+    const females = activeBirds.filter((b) => b.sex === "fêmea");
+
+    // Limite de segurança: em planteis muito grandes, N machos × M fêmeas
+    // pode ficar caro. Acima disso, pedimos pra filtrar em vez de travar a
+    // tela — mais honesto do que devolver um resultado parcial silencioso.
+    const MAX_PAIRS = 3000;
+    if (males.length * females.length > MAX_PAIRS) {
+      return {
+        tooLarge: true,
+        totalActive: activeBirds.length,
+        totalPairs: males.length * females.length,
+        maxPairs: MAX_PAIRS,
+      } as const;
+    }
+
+    const ringById = new Map(allTenantBirds.map((b) => [b.id, b.ring]));
+    const nameById = new Map(allTenantBirds.map((b) => [b.id, b.displayTitle ?? b.ring]));
+
+    const ancestorContribution = new Map<number, number>(); // soma de contributionPct
+    const ancestorPairCount = new Map<number, number>();    // em quantos pares esse ancestral apareceu
+    const riskyPairs: Array<{ maleId: number; maleRing: string; femaleId: number; femaleRing: string; coi: number; coiPct: string; risk: string; riskLabel: string }> = [];
+    let coiSum = 0;
+    let pairCount = 0;
+
+    for (const male of males) {
+      for (const female of females) {
+        const analysis = analyzeCoiForPair(male.id, female.id, birdMap, 6);
+        coiSum += analysis.coi;
+        pairCount++;
+
+        if (analysis.risk !== "low") {
+          riskyPairs.push({
+            maleId: male.id, maleRing: male.ring,
+            femaleId: female.id, femaleRing: female.ring,
+            coi: analysis.coi, coiPct: analysis.coiPct,
+            risk: analysis.risk, riskLabel: analysis.riskLabel,
+          });
+        }
+
+        for (const anc of analysis.commonAncestors) {
+          ancestorContribution.set(anc.ancestorId, (ancestorContribution.get(anc.ancestorId) ?? 0) + anc.contributionPct);
+          ancestorPairCount.set(anc.ancestorId, (ancestorPairCount.get(anc.ancestorId) ?? 0) + 1);
+        }
+      }
+    }
+
+    const bottlenecks = Array.from(ancestorContribution.entries())
+      .map(([ancestorId, totalContribution]) => ({
+        ancestorId,
+        ring: ringById.get(ancestorId) ?? `#${ancestorId}`,
+        displayTitle: nameById.get(ancestorId) ?? null,
+        pairsAffected: ancestorPairCount.get(ancestorId) ?? 0,
+        pairsAffectedPct: pairCount > 0 ? `${((( ancestorPairCount.get(ancestorId) ?? 0) / pairCount) * 100).toFixed(1)}%` : "0%",
+        totalContributionPct: totalContribution,
+      }))
+      .sort((a, b) => b.pairsAffected - a.pairsAffected || b.totalContributionPct - a.totalContributionPct)
+      .slice(0, 10);
+
+    riskyPairs.sort((a, b) => b.coi - a.coi);
+
+    return {
+      tooLarge: false as const,
+      totalActive: activeBirds.length,
+      totalMales: males.length,
+      totalFemales: females.length,
+      totalPairs: pairCount,
+      plantelAvgCOI: pairCount > 0 ? coiSum / pairCount : 0,
+      plantelAvgCOIPct: pairCount > 0 ? `${((coiSum / pairCount) * 100).toFixed(2)}%` : "0%",
+      bottlenecks,
+      riskyPairs: riskyPairs.slice(0, 30),
+      totalRiskyPairs: riskyPairs.length,
+      generatedAt: new Date(),
+    };
+  }),
 
 });

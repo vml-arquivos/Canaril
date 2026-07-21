@@ -29,6 +29,7 @@ function toGenotypeInput(g: typeof bird_genotype.$inferSelect | undefined, sex: 
     sex,
     backgroundColor: g.backgroundColor ?? undefined,
     featherType: (g.featherType as "intenso" | "nevado" | null) ?? undefined,
+    pattern: (g.pattern as "comum" | "mosaico" | null) ?? undefined,
     hasCrest: g.hasCrest,
     mutations: g.mutations ?? [],
   };

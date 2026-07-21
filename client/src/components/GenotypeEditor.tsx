@@ -28,6 +28,7 @@ export function GenotypeEditor({ birdId, sex }: { birdId: number; sex: string })
   const { data: genotype, refetch } = trpc.mendelian.getGenotype.useQuery(birdId);
   const [backgroundColor, setBackgroundColor] = useState<string>("");
   const [featherType, setFeatherType] = useState<string>("");
+  const [pattern, setPattern] = useState<string>("");
   const [hasCrest, setHasCrest] = useState(false);
   const [mutations, setMutations] = useState<MutationRow[]>([]);
 
@@ -35,6 +36,7 @@ export function GenotypeEditor({ birdId, sex }: { birdId: number; sex: string })
     if (genotype) {
       setBackgroundColor(genotype.backgroundColor ?? "");
       setFeatherType(genotype.featherType ?? "");
+      setPattern((genotype as any).pattern ?? "");
       setHasCrest(genotype.hasCrest);
       setMutations((genotype.mutations as MutationRow[]) ?? []);
     }
@@ -53,6 +55,7 @@ export function GenotypeEditor({ birdId, sex }: { birdId: number; sex: string })
       birdId,
       backgroundColor: backgroundColor || undefined,
       featherType: (featherType as "intenso" | "nevado") || undefined,
+      pattern: (pattern as "comum" | "mosaico") || undefined,
       hasCrest,
       mutations,
     });
@@ -73,7 +76,7 @@ export function GenotypeEditor({ birdId, sex }: { birdId: number; sex: string })
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div>
           <Label className="text-xs">Cor de Fundo (Lipocromo)</Label>
           <Select value={backgroundColor} onValueChange={setBackgroundColor}>
@@ -97,6 +100,18 @@ export function GenotypeEditor({ birdId, sex }: { birdId: number; sex: string })
               {FEATHER_TYPES.map((f) => (
                 <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Padrão</Label>
+          <Select value={pattern} onValueChange={setPattern}>
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Selecione..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="comum">Comum</SelectItem>
+              <SelectItem value="mosaico">Mosaico</SelectItem>
             </SelectContent>
           </Select>
         </div>

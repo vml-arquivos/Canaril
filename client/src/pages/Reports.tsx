@@ -902,6 +902,115 @@ function TabIndice() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Tab: Mapa de Consanguinidade do Plantel
+// ────────────────────────────────────────────────────────────
+function TabConsanguinidade() {
+  const { data, isLoading } = trpc.reports.mapaConsanguinidade.useQuery();
+
+  if (isLoading) return <div className="text-center py-12 text-gray-400">Analisando o plantel...</div>;
+  if (!data) return <div className="text-center py-12 text-gray-400">Sem dados disponíveis.</div>;
+
+  if (data.tooLarge) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-gray-600 text-sm">
+          Seu plantel tem {data.totalActive} pássaros ativos, o que gera {data.totalPairs.toLocaleString("pt-BR")} combinações macho×fêmea —
+          acima do limite de {data.maxPairs.toLocaleString("pt-BR")} que processamos de uma vez, pra não travar a tela.
+          Fale com o suporte se precisar desse mapa para todo o plantel de uma vez.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const riskColor: Record<string, string> = {
+    low: "bg-green-100 text-green-800",
+    moderate: "bg-amber-100 text-amber-800",
+    high: "bg-orange-100 text-orange-800",
+    very_high: "bg-red-100 text-red-800",
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Pássaros ativos analisados</p><p className="text-2xl font-bold">{data.totalActive}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Combinações possíveis</p><p className="text-2xl font-bold">{data.totalPairs}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">COI médio do plantel</p><p className="text-2xl font-bold">{data.plantelAvgCOIPct}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Pares com parentesco relevante</p><p className="text-2xl font-bold text-amber-600">{data.totalRiskyPairs}</p></CardContent></Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Gargalos genéticos — ancestrais que mais se repetem</CardTitle>
+          <CardDescription>
+            Pássaros que aparecem como ancestral comum em muitas combinações do seu plantel. Concentram a base genética —
+            considere buscar "sangue novo" sem parentesco com eles.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.bottlenecks.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhum ancestral comum relevante encontrado — boa diversidade genética no plantel.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Anilha</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Aparece em</TableHead>
+                  <TableHead>% das combinações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.bottlenecks.map((b) => (
+                  <TableRow key={b.ancestorId}>
+                    <TableCell className="font-mono font-semibold">{b.ring}</TableCell>
+                    <TableCell className="text-sm text-gray-500">{b.displayTitle}</TableCell>
+                    <TableCell>{b.pairsAffected} combinação(ões)</TableCell>
+                    <TableCell><Badge className="bg-amber-100 text-amber-800">{b.pairsAffectedPct}</Badge></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Combinações com parentesco a evitar</CardTitle>
+          <CardDescription>Todas as combinações macho×fêmea disponíveis com COI acima de 3% — não são casais formados, é o universo de opções possíveis.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.riskyPairs.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhuma combinação com parentesco relevante — plantel com boa diversidade.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Macho</TableHead>
+                  <TableHead>Fêmea</TableHead>
+                  <TableHead>COI</TableHead>
+                  <TableHead>Risco</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.riskyPairs.map((p, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono">{p.maleRing}</TableCell>
+                    <TableCell className="font-mono">{p.femaleRing}</TableCell>
+                    <TableCell className="font-semibold">{p.coiPct}</TableCell>
+                    <TableCell><Badge className={riskColor[p.risk] ?? "bg-gray-100 text-gray-600"}>{p.riskLabel}</Badge></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Componente principal
 // ────────────────────────────────────────────────────────────
 export default function Reports() {
@@ -929,6 +1038,7 @@ export default function Reports() {
             <TabsTrigger value="anilhas">Anilhas</TabsTrigger>
             <TabsTrigger value="casais">Casais</TabsTrigger>
             <TabsTrigger value="confronto">Confronto Genético</TabsTrigger>
+            <TabsTrigger value="consanguinidade">Mapa de Consanguinidade</TabsTrigger>
             <TabsTrigger value="temporada">Temporada</TabsTrigger>
             <TabsTrigger value="indice">Índice</TabsTrigger>
           </TabsList>
@@ -939,6 +1049,7 @@ export default function Reports() {
           <TabsContent value="anilhas" className="mt-6"><TabAnilhas /></TabsContent>
           <TabsContent value="casais" className="mt-6"><TabCasais /></TabsContent>
           <TabsContent value="confronto" className="mt-6"><TabConfronto /></TabsContent>
+          <TabsContent value="consanguinidade" className="mt-6"><TabConsanguinidade /></TabsContent>
           <TabsContent value="temporada" className="mt-6"><TabTemporada /></TabsContent>
           <TabsContent value="indice" className="mt-6"><TabIndice /></TabsContent>
         </Tabs>

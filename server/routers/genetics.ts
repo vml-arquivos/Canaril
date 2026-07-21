@@ -11,6 +11,7 @@ import {
   PedigreeBird,
 } from "../_core/genetics";
 import { calculateColorCross, calculateLipochromeCross, MUTATION_CONFIG } from "../_core/colorGenetics";
+import { predictCross, BirdGenotypeInput } from "../_core/mendelian";
 import { scorePair, Objective } from "../_core/pairingOptimizer";
 import { invokeLLM } from "../_core/llm";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
@@ -396,6 +397,26 @@ export const geneticsRouter = router({
         });
       }
 
+      // Predição mendeliana (Punnett) — inclui alertas letais/qualidade
+      // (crista, branco dominante, double buffing, intenso excessivo,
+      // mosaico descaracterizado), agora também usada para enriquecer o
+      // relatório de casal com os mesmos avisos do motor de pareamento.
+      let mendelianWarnings: ReturnType<typeof predictCross>["warnings"] = [];
+      if (hasMaleGeno && hasFemaleGeno) {
+        const toGenotypeInput = (geno: typeof maleGeno, sex: "macho" | "fêmea"): BirdGenotypeInput => ({
+          sex,
+          backgroundColor: geno?.backgroundColor ?? undefined,
+          featherType: (geno?.featherType as "intenso" | "nevado" | null) ?? undefined,
+          pattern: (geno?.pattern as "comum" | "mosaico" | null) ?? undefined,
+          hasCrest: geno?.hasCrest ?? false,
+          mutations: (geno?.mutations as any) ?? [],
+        });
+        mendelianWarnings = predictCross(
+          toGenotypeInput(maleGeno, "macho"),
+          toGenotypeInput(femaleGeno, "fêmea")
+        ).warnings;
+      }
+
       // Missing data
       const missingData: string[] = [];
       if (!hasMaleGeno)   missingData.push("Genótipo do macho não cadastrado");
@@ -406,11 +427,12 @@ export const geneticsRouter = router({
       if (!female.motherId) missingData.push("Mãe da fêmea desconhecida");
 
       // Status
-      const hasLethal = (colorResult?.phenotypeSummary?.lethalFraction ?? 0) > 0 || coiRisk === "high";
+      const hasFatalMendelianWarning = mendelianWarnings.some((w) => w.type === "crista" || w.type === "branco_dominante");
+      const hasLethal = (colorResult?.phenotypeSummary?.lethalFraction ?? 0) > 0 || coiRisk === "high" || hasFatalMendelianWarning;
       const status: "IDEAL" | "APROVADO" | "ATENCAO" | "NAO_RECOMENDADO" | "DADOS_INSUFICIENTES" =
         !hasMaleGeno && !hasFemaleGeno ? "DADOS_INSUFICIENTES"
         : hasLethal ? "NAO_RECOMENDADO"
-        : coiRisk === "moderate" ? "ATENCAO"
+        : coiRisk === "moderate" || mendelianWarnings.length > 0 ? "ATENCAO"
         : "APROVADO";
 
       return {
@@ -423,7 +445,8 @@ export const geneticsRouter = router({
         missingData,
         status,
         colorResult,
-        warnings: colorResult?.warnings ?? [],
+        mendelianWarnings,
+        warnings: [...(colorResult?.warnings ?? []), ...mendelianWarnings.map((w) => w.message)],
         recommendations: colorResult?.recommendations ?? [],
         generatedAt: new Date(),
       };

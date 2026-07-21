@@ -12,11 +12,16 @@
 import { z } from "zod";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { birds, cages, bird_genetic_profiles, bird_genotype } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { birds, cages, bird_genetic_profiles, bird_genotype, championship_entries, championships, scores, tenants } from "../../drizzle/schema";
+import { eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { MUTATION_CONFIG } from "../_core/colorGenetics";
 
-const BASE_URL = process.env.APP_URL || "https://canarillima.casadf.com.br";
+// Em produção, APP_URL deve estar configurado no ambiente com o domínio real
+// da plataforma. Este fallback é só para desenvolvimento local — antes
+// apontava para o domínio de um cliente específico (canarillima.casadf.com.br),
+// o que geraria QR Codes com o link ERRADO para qualquer outro criadouro.
+const BASE_URL = process.env.APP_URL || "http://localhost:5000";
 
 function makePublicCode(): string {
   // 8 chars alfanumérico — suficiente para criadouros (<100k pássaros)
@@ -113,10 +118,55 @@ export const qrcodeRouter = router({
 
       if (!bird || !bird.isPublic) return null;
 
+      const tenantRow = bird.tenantId
+        ? (await db.select({ name: tenants.name, publicSlug: tenants.publicSlug, slug: tenants.slug }).from(tenants).where(eq(tenants.id, bird.tenantId)).limit(1))[0]
+        : null;
+
       const [profile] = await db.select().from(bird_genetic_profiles)
         .where(eq(bird_genetic_profiles.birdId, bird.id)).limit(1);
       const [genotype] = await db.select().from(bird_genotype)
         .where(eq(bird_genotype.birdId, bird.id)).limit(1);
+
+      // Genealogia — só anilha/nome dos pais (dado genealógico, não sensível).
+      const parentIds = [bird.fatherId, bird.motherId].filter((id): id is number => !!id);
+      const parents = parentIds.length
+        ? await db.select({ id: birds.id, ring: birds.ring, displayTitle: birds.displayTitle, sex: birds.sex }).from(birds).where(inArray(birds.id, parentIds))
+        : [];
+      const father = parents.find((p) => p.id === bird.fatherId) ?? null;
+      const mother = parents.find((p) => p.id === bird.motherId) ?? null;
+
+      // Premiações — só resultados já julgados (score existente), com nome
+      // e data do concurso. Não expõe critérios detalhados de julgamento.
+      const entries = await db.select().from(championship_entries).where(eq(championship_entries.birdId, bird.id));
+      let awards: Array<{ championshipName: string; date: Date; category: string; placement: number | null; totalScore: number }> = [];
+      if (entries.length > 0) {
+        const entryIds = entries.map((e) => e.id);
+        const [entryScores, champs] = await Promise.all([
+          db.select().from(scores).where(inArray(scores.entryId, entryIds)),
+          db.select().from(championships).where(inArray(championships.id, entries.map((e) => e.championshipId))),
+        ]);
+        const champById = new Map(champs.map((c) => [c.id, c]));
+        awards = entryScores
+          .map((s) => {
+            const entry = entries.find((e) => e.id === s.entryId)!;
+            const champ = champById.get(entry.championshipId);
+            if (!champ) return null;
+            return { championshipName: champ.name, date: champ.startDate, category: entry.category, placement: s.placement, totalScore: s.totalScore };
+          })
+          .filter((a): a is NonNullable<typeof a> => !!a)
+          .sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
+      }
+
+      // Mutações com rótulo legível em vez do código interno.
+      const mutations = ((genotype?.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [])
+        .map((m) => {
+          const cfg = (MUTATION_CONFIG as any)[m.mutation];
+          const zygosityLabel =
+            m.zygosity === "homozygous_mutant" ? "Visual (manifesta)" :
+            m.zygosity === "heterozygous_carrier" ? "Portador" : "Normal";
+          return { id: m.mutation, label: cfg?.label ?? m.mutation, zygosity: m.zygosity, zygosityLabel };
+        })
+        .filter((m) => m.zygosity !== "homozygous_normal");
 
       return {
         ring: bird.ring,
@@ -130,8 +180,15 @@ export const qrcodeRouter = router({
         officialCode: profile?.officialCode ?? null,
         officialName: profile?.officialName ?? null,
         featherType: genotype?.featherType ?? null,
+        pattern: (genotype as any)?.pattern ?? null,
         hasCrest: genotype?.hasCrest ?? false,
         backgroundColor: genotype?.backgroundColor ?? null,
+        mutations,
+        father: father ? { ring: father.ring, displayTitle: father.displayTitle } : null,
+        mother: mother ? { ring: mother.ring, displayTitle: mother.displayTitle } : null,
+        awards,
+        breederName: tenantRow?.name ?? null,
+        breederSlug: tenantRow?.publicSlug || tenantRow?.slug || null,
       };
     }),
 

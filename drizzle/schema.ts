@@ -736,6 +736,7 @@ export const bird_genotype = pgTable("bird_genotype", {
   birdId: integer("birdId").notNull().unique(),
   backgroundColor: varchar("backgroundColor", { length: 30 }), // id de BACKGROUND_COLORS
   featherType: varchar("featherType", { length: 20 }), // "intenso" | "nevado"
+  pattern: varchar("pattern", { length: 20 }), // "comum" | "mosaico" — migration 0023
   hasCrest: boolean("hasCrest").default(false).notNull(),
   // Cada mutação que o pássaro carrega/manifesta, com tipo de herança e
   // zigosidade — ver GenotypeMutation acima.

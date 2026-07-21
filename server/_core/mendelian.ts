@@ -28,6 +28,7 @@ export type BirdGenotypeInput = {
   sex: "macho" | "fêmea";
   backgroundColor?: string;
   featherType?: "intenso" | "nevado";
+  pattern?: "comum" | "mosaico";
   hasCrest?: boolean;
   mutations: MutationGenotype[];
 };
@@ -126,9 +127,9 @@ export type MutationPrediction = {
 };
 
 export type LethalWarning = {
-  type: "crista" | "branco_dominante" | "double_buffing";
+  type: "crista" | "branco_dominante" | "double_buffing" | "intenso_excesso" | "mosaico_descaracterizado";
   message: string;
-  lethalFraction: number; // fração estimada de ovos/filhotes perdidos
+  lethalFraction: number; // fração estimada de ovos/filhotes perdidos (0 = não é letal, só alerta de qualidade)
 };
 
 export type CrossPrediction = {
@@ -188,6 +189,45 @@ export function predictCross(father: BirdGenotypeInput, mother: BirdGenotypeInpu
         "Os dois pais carregam Branco Dominante — a forma homozigótica (dose dupla) é semi-letal. " +
         "Não recomendado: evite cruzar dois portadores/manifestantes de Branco Dominante.",
       lethalFraction: 0.25,
+    });
+  }
+
+  // ----- Intenso × Intenso: alerta de QUALIDADE, não é gene letal -----
+  // Importante: ao contrário do que às vezes se lê por aí, o fator de
+  // intensidade (intenso/nevado) NÃO é um gene letal em canários — os únicos
+  // fatores letais/semi-letais documentados são crista (dose dupla) e branco
+  // dominante (dose dupla). Cruzar dois intensos tende a produzir prole com
+  // pena curta, dura e quebradiça, com lipocromo mais opaco/áspero ao longo
+  // das gerações — um problema de QUALIDADE de plumagem, não de mortalidade
+  // embrionária. Por isso lethalFraction fica em 0 aqui (diferente de
+  // crista/branco dominante/double buffing, que de fato estimam perda real).
+  if (father.featherType === "intenso" && mother.featherType === "intenso") {
+    warnings.push({
+      type: "intenso_excesso",
+      message:
+        "Os dois pais são intensos — não há risco de morte embrionária, mas ao longo das gerações a " +
+        "plumagem tende a ficar curta, dura e quebradiça, com lipocromo mais opaco. Prefira cruzar intenso × nevado.",
+      lethalFraction: 0,
+    });
+  }
+
+  // ----- Mosaico × Não-mosaico: alerta de QUALIDADE, não é gene letal -----
+  // O padrão mosaico depende de zonas de eleição bem definidas (máscara,
+  // ombros, encontro, rabadilha). Cruzar com um pássaro de padrão comum
+  // tende a "espalhar" o pigmento fora dessas zonas, descaracterizando o
+  // padrão na prole — problema de valor de exposição/seleção, não de saúde.
+  if (
+    father.pattern && mother.pattern &&
+    father.pattern !== mother.pattern &&
+    (father.pattern === "mosaico" || mother.pattern === "mosaico")
+  ) {
+    warnings.push({
+      type: "mosaico_descaracterizado",
+      message:
+        "Um dos pais é mosaico e o outro não — a prole tende a nascer com o padrão mosaico " +
+        "descaracterizado (pigmento fora das zonas de eleição). Se o objetivo é manter o padrão " +
+        "mosaico para exposição, prefira cruzar mosaico × mosaico.",
+      lethalFraction: 0,
     });
   }
 

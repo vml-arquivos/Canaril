@@ -107,6 +107,52 @@ describe("mendelian — genes letais e alertas", () => {
     expect(result.warnings.find((w) => w.type === "double_buffing")).toBeUndefined();
   });
 
+  it("intenso × intenso gera alerta de qualidade (NÃO letal)", () => {
+    const result = predictCross(
+      { ...baseFather, featherType: "intenso" },
+      { ...baseMother, featherType: "intenso" }
+    );
+    const warning = result.warnings.find((w) => w.type === "intenso_excesso");
+    expect(warning).toBeDefined();
+    // Diferente de crista/branco dominante/double buffing: isto é um alerta
+    // de qualidade de plumagem, não uma estimativa de perda embrionária.
+    expect(warning?.lethalFraction).toBe(0);
+  });
+
+  it("intenso × nevado NÃO gera alerta de excesso de intensidade", () => {
+    const result = predictCross(
+      { ...baseFather, featherType: "intenso" },
+      { ...baseMother, featherType: "nevado" }
+    );
+    expect(result.warnings.find((w) => w.type === "intenso_excesso")).toBeUndefined();
+  });
+
+  it("mosaico × comum gera alerta de descaracterização do padrão", () => {
+    const result = predictCross(
+      { ...baseFather, pattern: "mosaico" },
+      { ...baseMother, pattern: "comum" }
+    );
+    const warning = result.warnings.find((w) => w.type === "mosaico_descaracterizado");
+    expect(warning).toBeDefined();
+    expect(warning?.lethalFraction).toBe(0);
+  });
+
+  it("mosaico × mosaico NÃO gera alerta de descaracterização", () => {
+    const result = predictCross(
+      { ...baseFather, pattern: "mosaico" },
+      { ...baseMother, pattern: "mosaico" }
+    );
+    expect(result.warnings.find((w) => w.type === "mosaico_descaracterizado")).toBeUndefined();
+  });
+
+  it("comum × comum NÃO gera alerta de descaracterização", () => {
+    const result = predictCross(
+      { ...baseFather, pattern: "comum" },
+      { ...baseMother, pattern: "comum" }
+    );
+    expect(result.warnings.find((w) => w.type === "mosaico_descaracterizado")).toBeUndefined();
+  });
+
   it("predictCross combina múltiplas mutações em comum corretamente", () => {
     const father: BirdGenotypeInput = {
       sex: "macho",
