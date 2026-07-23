@@ -74,7 +74,7 @@ export function BirdFicha({
 
   return (
     <Dialog open={!!bird} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{bird.displayTitle || bird.ring}</DialogTitle>
         </DialogHeader>
@@ -107,7 +107,7 @@ export function BirdFicha({
         </div>
 
         {/* Dados */}
-        <div className="grid grid-cols-2 gap-3 text-sm border-t pt-4">
+        <div className="grid grid-cols-3 gap-3 text-sm border-t pt-4">
           <InfoItem icon={Calendar} label="Nascimento" value={bird.birthDate ? new Date(bird.birthDate).toLocaleDateString("pt-BR") : "—"} />
           <InfoItem icon={Calendar} label="Idade" value={calculateAge(bird.birthDate)} />
           <InfoItem icon={Ruler} label="Porte" value={specialty?.size ?? "—"} />

@@ -24,6 +24,7 @@ import { Link } from "wouter";
 
 function TabUsuarios() {
   const { data: users, refetch } = trpc.admin.listUsers.useQuery();
+  const { data: tenantsList } = trpc.admin.getTenants.useQuery();
   const disableUser = trpc.admin.disableUser.useMutation({ onSuccess: () => { toast.success("Usuário desativado."); refetch(); }, onError: (e) => toast.error(e.message) });
   const deleteUser = trpc.admin.deleteUser.useMutation({ onSuccess: () => { toast.success("Usuário removido."); refetch(); }, onError: (e) => toast.error(e.message) });
   const updateUser = trpc.admin.updateUser.useMutation({ onSuccess: () => { toast.success("Usuário atualizado."); refetch(); }, onError: (e) => toast.error(e.message) });
@@ -69,6 +70,7 @@ function TabUsuarios() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Papel</TableHead>
+                  <TableHead>Criadouro</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Ações</TableHead>
                 </TableRow>
@@ -110,6 +112,24 @@ function TabUsuarios() {
                       </Select>
                     </TableCell>
                     <TableCell>
+                      <Select
+                        value={(u as any).tenantId ? String((u as any).tenantId) : "__none__"}
+                        onValueChange={(v) => updateUser.mutate({ id: u.id, tenantId: v === "__none__" ? null : Number(v) })}
+                      >
+                        <SelectTrigger className="w-44 h-7 text-xs">
+                          <SelectValue placeholder="Sem criadouro" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">
+                            <span className="text-gray-400">Nenhum (acesso global)</span>
+                          </SelectItem>
+                          {(tenantsList ?? []).map((t: any) => (
+                            <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
                       <Badge className={(u as any).isActive !== false ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}>
                         {(u as any).isActive !== false ? "Ativo" : "Inativo"}
                       </Badge>
@@ -143,7 +163,7 @@ function TabUsuarios() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {(users ?? []).length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-gray-400 py-8">Nenhum usuário.</TableCell></TableRow>}
+                {(users ?? []).length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-gray-400 py-8">Nenhum usuário.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </div>
