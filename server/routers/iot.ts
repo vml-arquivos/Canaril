@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb } from "../db";
-import { cage_sensor_readings } from "../../drizzle/schema";
+import { cage_sensor_readings, cages } from "../../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 
 // Faixas de referência usadas para alertar o criador (não bloqueiam o
@@ -24,18 +24,30 @@ export const iotRouter = router({
       luminosityLux: z.number().optional(),
       ammoniaPpm: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
+      if (input.cageId) {
+        const [cage] = await db.select({ tenantId: cages.tenantId }).from(cages).where(eq(cages.id, input.cageId)).limit(1);
+        if (!cage) throw new Error("Gaiola não encontrada.");
+        requireTenantAccess(ctx, cage.tenantId);
+      }
       await db.insert(cage_sensor_readings).values(input);
       return { success: true };
     }),
 
   latestByCage: protectedProcedure
     .input(z.number())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
+
+      // Antes: nenhuma verificação — qualquer usuário logado podia ler os
+      // sensores de uma gaiola de outro criadouro só sabendo o cageId.
+      const [cage] = await db.select({ tenantId: cages.tenantId }).from(cages).where(eq(cages.id, input)).limit(1);
+      if (!cage) return null;
+      requireTenantAccess(ctx, cage.tenantId);
+
       const [reading] = await db
         .select()
         .from(cage_sensor_readings)

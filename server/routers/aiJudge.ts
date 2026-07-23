@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb } from "../db";
 import { ai_judge_analyses, birds, specialties, CriteriaScore } from "../../drizzle/schema";
 import { invokeLLM } from "../_core/llm";
@@ -68,9 +68,15 @@ export const aiJudgeRouter = router({
         specialty_code: z.string(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível");
+
+      if (input.birdId) {
+        const [bird] = await db.select({ tenantId: birds.tenantId }).from(birds).where(eq(birds.id, input.birdId)).limit(1);
+        if (!bird) throw new Error("Pássaro não encontrado.");
+        requireTenantAccess(ctx, bird.tenantId);
+      }
 
       const [specialty] = await db
         .select()
@@ -164,9 +170,12 @@ export const aiJudgeRouter = router({
   // Histórico de análises de um pássaro específico
   listByBird: protectedProcedure
     .input(z.number())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
+      const [bird] = await db.select({ tenantId: birds.tenantId }).from(birds).where(eq(birds.id, input)).limit(1);
+      if (!bird) return [];
+      requireTenantAccess(ctx, bird.tenantId);
       return db
         .select()
         .from(ai_judge_analyses)

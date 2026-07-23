@@ -16,6 +16,7 @@
 
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { getCurrentTenantId } from "../_core/tenant";
 import { getDb } from "../db";
 import { ai_conversations } from "../../drizzle/schema";
 import { eq, and, desc, lte } from "drizzle-orm";
@@ -25,12 +26,27 @@ import { buildCriadouroContext } from "../_core/aiContextBuilder";
 const MAX_HISTORY_MESSAGES = 20; // mensagens mantidas no contexto da conversa
 const MAX_RESPONSE_TOKENS = 1024;
 
+/**
+ * O Assistente IA sempre atua sobre o contexto de UM criadouro específico —
+ * não faz sentido um "global". Antes, todo lugar deste arquivo usava
+ * `ctx.user.tenantId ?? 0`: se o usuário não tivesse tenant, caía
+ * silenciosamente no tenant fantasma "0", misturando/perdendo dados em vez
+ * de recusar o acesso. Agora falha de forma explícita.
+ */
+function requireOwnTenantId(ctx: any): number {
+  const tenantId = getCurrentTenantId(ctx);
+  if (tenantId === null) {
+    throw new Error("Seu usuário não está vinculado a um criadouro. Fale com o administrador da plataforma.");
+  }
+  return tenantId;
+}
+
 export const aiAssistantRouter = router({
 
   // ── Status do assistente ──────────────────────────────────────────────────
   getStatus: protectedProcedure.query(async ({ ctx }) => {
     const provider = getActiveProvider();
-    const criadouroCtx = await buildCriadouroContext(ctx.user.tenantId ?? 0);
+    const criadouroCtx = await buildCriadouroContext(requireOwnTenantId(ctx));
     return {
       aiAvailable: provider !== null,
       provider: provider ?? "none",
@@ -58,7 +74,7 @@ export const aiAssistantRouter = router({
         );
       }
 
-      const tenantId = ctx.user.tenantId ?? 0;
+      const tenantId = requireOwnTenantId(ctx);
       const userId = ctx.user.id;
 
       // 1. Contexto do criadouro
@@ -161,7 +177,7 @@ export const aiAssistantRouter = router({
       const db = await getDb();
       if (!db) return [];
 
-      const tenantId = ctx.user.tenantId ?? 0;
+      const tenantId = requireOwnTenantId(ctx);
 
       const rows = await db
         .select({
@@ -192,7 +208,7 @@ export const aiAssistantRouter = router({
       const db = await getDb();
       if (!db) return { cleared: 0 };
 
-      const tenantId = ctx.user.tenantId ?? 0;
+      const tenantId = requireOwnTenantId(ctx);
 
       const deleted = await db
         .delete(ai_conversations)
@@ -213,7 +229,7 @@ export const aiAssistantRouter = router({
       const db = await getDb();
       if (!db) return [];
 
-      const tenantId = ctx.user.tenantId ?? 0;
+      const tenantId = requireOwnTenantId(ctx);
 
       // Última mensagem de cada sessão
       const rows = await db

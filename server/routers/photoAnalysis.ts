@@ -19,7 +19,7 @@
  * "desconhecido" nos campos correspondentes, ver fieldsNotConfirmed.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb } from "../db";
 import { bird_photo_analyses, official_bird_classes, birds } from "../../drizzle/schema";
 import { eq, desc, or, ilike } from "drizzle-orm";
@@ -53,12 +53,13 @@ export const photoAnalysisRouter = router({
         })).optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível.");
 
-      const [bird] = await db.select({ id: birds.id }).from(birds).where(eq(birds.id, input.birdId)).limit(1);
+      const [bird] = await db.select({ id: birds.id, tenantId: birds.tenantId }).from(birds).where(eq(birds.id, input.birdId)).limit(1);
       if (!bird) throw new Error(`Pássaro #${input.birdId} não encontrado.`);
+      requireTenantAccess(ctx, bird.tenantId);
 
       const startTime = Date.now();
       const result = await analyzePhotoPhenotype({
@@ -170,6 +171,13 @@ export const photoAnalysisRouter = router({
         .limit(1);
       if (!analysis) throw new Error("Análise não encontrada.");
 
+      // Confere o tenant ANTES de qualquer escrita — antes desta correção,
+      // a análise era marcada como "aceita" no banco mesmo que o pássaro
+      // pertencesse a outro criadouro (só a atualização do perfil genético,
+      // via geneticProfileRouter, já estava protegida).
+      const [ownerBird] = await db.select({ tenantId: birds.tenantId }).from(birds).where(eq(birds.id, analysis.birdId)).limit(1);
+      requireTenantAccess(ctx, ownerBird?.tenantId ?? null);
+
       await db
         .update(bird_photo_analyses)
         .set({
@@ -229,9 +237,12 @@ export const photoAnalysisRouter = router({
 
   listByBird: protectedProcedure
     .input(z.number().int().positive())
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
+      const [bird] = await db.select({ tenantId: birds.tenantId }).from(birds).where(eq(birds.id, input)).limit(1);
+      if (!bird) return [];
+      requireTenantAccess(ctx, bird.tenantId);
       return db
         .select()
         .from(bird_photo_analyses)

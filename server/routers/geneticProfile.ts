@@ -26,7 +26,9 @@ import {
   birds,
   bird_genotype,
 } from "../../drizzle/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
+import { requireTenantAccess } from "../_core/trpc";
+import { getCurrentTenantId } from "../_core/tenant";
 import { interpretOfficialClass } from "../_core/officialClassInterpreter";
 import { calculateCOI, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 
@@ -97,9 +99,13 @@ export const geneticProfileRouter = router({
    */
   getByBird: protectedProcedure
     .input(z.object({ birdId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
+
+      const [bird] = await db.select({ tenantId: birds.tenantId }).from(birds).where(eq(birds.id, input.birdId)).limit(1);
+      if (!bird) return null;
+      requireTenantAccess(ctx, bird.tenantId);
 
       const [profile] = await db
         .select()
@@ -115,9 +121,13 @@ export const geneticProfileRouter = router({
    */
   getInferenceLogs: protectedProcedure
     .input(z.object({ birdId: z.number().int().positive(), limit: z.number().min(1).max(50).default(20) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
+
+      const [bird] = await db.select({ tenantId: birds.tenantId }).from(birds).where(eq(birds.id, input.birdId)).limit(1);
+      if (!bird) return [];
+      requireTenantAccess(ctx, bird.tenantId);
 
       return db
         .select()
@@ -156,17 +166,20 @@ export const geneticProfileRouter = router({
    */
   upsert: protectedProcedure
     .input(geneticProfileUpsertSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível.");
 
-      // Verifica se o pássaro existe
+      // Verifica se o pássaro existe E pertence ao tenant do usuário logado
+      // (antes só conferia existência, permitindo sobrescrever o perfil
+      // genético de um pássaro de outro criadouro).
       const [bird] = await db
-        .select({ id: birds.id })
+        .select({ id: birds.id, tenantId: birds.tenantId })
         .from(birds)
         .where(eq(birds.id, input.birdId))
         .limit(1);
       if (!bird) throw new Error(`Pássaro #${input.birdId} não encontrado.`);
+      requireTenantAccess(ctx, bird.tenantId);
 
       // Busca perfil existente
       const [existing] = await db
@@ -305,9 +318,13 @@ export const geneticProfileRouter = router({
    */
   clearManualOverride: protectedProcedure
     .input(z.object({ birdId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível.");
+
+      const [bird] = await db.select({ tenantId: birds.tenantId }).from(birds).where(eq(birds.id, input.birdId)).limit(1);
+      if (!bird) throw new Error(`Pássaro #${input.birdId} não encontrado.`);
+      requireTenantAccess(ctx, bird.tenantId);
 
       await db
         .update(bird_genetic_profiles)
@@ -328,11 +345,14 @@ export const geneticProfileRouter = router({
    * completa, quais estão incompletos, e quais portam quais mutações" —
    * sem precisar abrir ficha por ficha.
    */
-  plantelReport: protectedProcedure.query(async () => {
+  plantelReport: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) return { generatedAt: new Date(), rows: [], summary: null };
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
 
-    const allBirds = await db.select().from(birds).where(eq(birds.status, "active"));
+    const allBirds = tenantId !== null
+      ? await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId)))
+      : await db.select().from(birds).where(eq(birds.status, "active"));
     const allGenotypes = await db.select().from(bird_genotype);
     const allProfiles = await db.select().from(bird_genetic_profiles);
 

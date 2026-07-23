@@ -2,7 +2,8 @@
  * intelligence.ts — Router do Canaril Intelligence Core (Missão 5)
  */
 import { z } from "zod";
-import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
+import { protectedProcedure, publicProcedure, router, requireTenantAccess } from "../_core/trpc";
+import { getCurrentTenantId } from "../_core/tenant";
 import { getDb } from "../db";
 import { birds, bird_genotype, bird_genetic_profiles } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -84,12 +85,13 @@ export const intelligenceRouter = router({
   // ─── Análise de lacunas de um pássaro ────────────────────────────────────
   analyzeDataGaps: protectedProcedure
     .input(z.object({ birdId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
 
       const [bird] = await db.select().from(birds).where(eq(birds.id, input.birdId)).limit(1);
       if (!bird) return null;
+      requireTenantAccess(ctx, bird.tenantId);
 
       const [genotype] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.birdId)).limit(1);
       const [profile] = await db.select().from(bird_genetic_profiles).where(eq(bird_genetic_profiles.birdId, input.birdId)).limit(1);
@@ -115,12 +117,13 @@ export const intelligenceRouter = router({
   // ─── Construir perfil genético interno ───────────────────────────────────
   buildBirdProfile: protectedProcedure
     .input(z.object({ birdId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
 
       const [bird] = await db.select().from(birds).where(eq(birds.id, input.birdId)).limit(1);
       if (!bird) return null;
+      requireTenantAccess(ctx, bird.tenantId);
 
       const [genotype] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.birdId)).limit(1);
       const [profile] = await db.select().from(bird_genetic_profiles).where(eq(bird_genetic_profiles.birdId, input.birdId)).limit(1);
@@ -171,18 +174,25 @@ export const intelligenceRouter = router({
       femaleId: z.number().int().positive(),
       objective: z.string().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
 
       const [male] = await db.select().from(birds).where(eq(birds.id, input.maleId)).limit(1);
       const [female] = await db.select().from(birds).where(eq(birds.id, input.femaleId)).limit(1);
       if (!male || !female) return null;
+      requireTenantAccess(ctx, male.tenantId);
+      requireTenantAccess(ctx, female.tenantId);
 
       const [maleGeno] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.maleId)).limit(1);
       const [femaleGeno] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.femaleId)).limit(1);
 
-      const allBirds = await db.select().from(birds);
+      // Antes: buscava TODOS os pássaros da plataforma pra montar o mapa de
+      // pedigree usado no cálculo de COI — vazando a árvore genealógica de
+      // outros criadouros. Agora restrito ao tenant dos dois pássaros.
+      const allBirds = male.tenantId
+        ? await db.select().from(birds).where(eq(birds.tenantId, male.tenantId))
+        : await db.select().from(birds);
       const birdMap = new Map<number, PedigreeBird>(
         allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
       );

@@ -7,10 +7,10 @@
  * em server/_core/pairingOptimizer.ts.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb } from "../db";
 import { birds, bird_genotype, health_records, couples, clutches, championship_entries, scores } from "../../drizzle/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { scorePair, Objective, HealthFlags, ReproductiveHistory } from "../_core/pairingOptimizer";
 import { calculateCOIForPair, PedigreeBird } from "../_core/genetics";
 import { BirdGenotypeInput } from "../_core/mendelian";
@@ -45,15 +45,22 @@ export const pairingOptimizerRouter = router({
         limit: z.number().min(1).max(30).default(10),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { baseBird: null, recommendations: [] };
 
       const [base] = await db.select().from(birds).where(eq(birds.id, input.baseBirdId));
       if (!base) throw new Error("Pássaro não encontrado");
+      // Confere que o pássaro-base pertence ao tenant do usuário logado —
+      // antes desta correção, esta rota não checava tenant em NENHUM ponto:
+      // buscava pássaro base, plantel inteiro, casais e posturas de TODOS
+      // os criadouros cadastrados na plataforma, sem filtro nenhum.
+      requireTenantAccess(ctx, base.tenantId);
 
       const oppositeSex = base.sex === "macho" ? "fêmea" : "macho";
-      const allActive = await db.select().from(birds).where(eq(birds.status, "active"));
+      const allActive = base.tenantId
+        ? await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, base.tenantId)))
+        : await db.select().from(birds).where(eq(birds.status, "active"));
       const candidates = allActive.filter((b) => b.sex === oppositeSex && b.id !== base.id);
 
       const allGenotypes = await db.select().from(bird_genotype);
@@ -84,8 +91,12 @@ export const pairingOptimizerRouter = router({
 
       // Histórico reprodutivo: casais (de qualquer status) envolvendo cada
       // pássaro, somando ovos/eclosões de todas as posturas desses casais.
-      const allCouples = await db.select().from(couples);
-      const allClutches = await db.select().from(clutches);
+      const allCouples = base.tenantId
+        ? await db.select().from(couples).where(eq(couples.tenantId, base.tenantId))
+        : await db.select().from(couples);
+      const allClutches = base.tenantId
+        ? await db.select().from(clutches).where(eq(clutches.tenantId, base.tenantId))
+        : await db.select().from(clutches);
       function historyFor(birdId: number): ReproductiveHistory | null {
         const myCouples = allCouples.filter((c) => c.maleId === birdId || c.femaleId === birdId);
         if (myCouples.length === 0) return null;
