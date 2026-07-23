@@ -449,14 +449,15 @@ export const reportsRouter = router({
   // ─── NOVO: Relatório de Casais e Reprodução ──────────────────────────────
   casaisReproducao: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) return { rows: [], generatedAt: new Date() };
+    if (!db) return { rows: [], summary: null, generatedAt: new Date() };
     const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
-    const [allCouples, allBirds, allClutches] = await Promise.all([
+    const [allCouples, allBirds, allClutches, allChicks] = await Promise.all([
       tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
       tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
       tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
+      tf ? db.select().from(chicks).where(eq(chicks.tenantId, tenantId)) : db.select().from(chicks),
     ]);
 
     const birdMap = new Map(allBirds.map((b) => [b.id, b]));
@@ -469,6 +470,17 @@ export const reportsRouter = router({
       list.push(cl);
       clutchesByCouple.set(cl.coupleId, list);
     }
+    // Filhotes agrupados por postura, pra saber quantos "vingaram" (não
+    // morreram) de cada ninhada — dado que clutches.hatchedChicks sozinho
+    // não tem (ele só sabe quantos eclodiram, não quantos sobreviveram).
+    const chicksByClutch = new Map<number, typeof allChicks>();
+    for (const c of allChicks) {
+      const list = chicksByClutch.get(c.clutchId) ?? [];
+      list.push(c);
+      chicksByClutch.set(c.clutchId, list);
+    }
+
+    let plantelTotalEggs = 0, plantelTotalFertilized = 0, plantelTotalHatched = 0, plantelTotalSurvived = 0, plantelTotalDied = 0, plantelChicksRegistered = 0;
 
     const rows = allCouples.map((couple) => {
       const male = birdMap.get(couple.maleId);
@@ -480,13 +492,47 @@ export const reportsRouter = router({
       const totalHatched = coupleClutches.reduce((s, c) => s + c.hatchedChicks, 0);
       const totalLost = coupleClutches.reduce((s, c) => s + c.lostEggs, 0);
 
+      // Filhotes de verdade cadastrados (nem toda eclosão vira registro de
+      // filhote na hora — por isso os dois números podem divergir).
+      const coupleChicks = coupleClutches.flatMap((cl) => chicksByClutch.get(cl.id) ?? []);
+      const chicksRegistered = coupleChicks.length;
+      const chicksDied = coupleChicks.filter((c) => c.status === "died").length;
+      const chicksSurvived = coupleChicks.filter((c) => c.status !== "died").length;
+
       const coi = calculateCOIForPair(couple.maleId, couple.femaleId, birdMapPedigree, 5);
       const coiRisk = classifyCOIRisk(coi);
 
+      const fertilizationRate = totalEggs > 0 ? Math.round((totalFertilized / totalEggs) * 100) : null;
+      const hatchRate = totalFertilized > 0 ? Math.round((totalHatched / totalFertilized) * 100) : null;
+      const survivalRate = chicksRegistered > 0 ? Math.round((chicksSurvived / chicksRegistered) * 100) : null;
+
       const alerts: string[] = [];
+      const recommendations: string[] = [];
       if (coiRisk === "high") alerts.push(`COI alto (${(coi * 100).toFixed(1)}%)`);
       if (coupleClutches.length >= 3 && couple.status === "active") alerts.push("Muitas posturas — avaliar descanso");
-      if (totalEggs > 0 && totalFertilized / totalEggs < 0.5) alerts.push("Taxa de fertilização baixa");
+      if (fertilizationRate !== null && fertilizationRate < 50) {
+        alerts.push("Taxa de fertilização baixa");
+        recommendations.push("Fertilização abaixo de 50%: avalie idade e condição física do macho, tempo de convívio do casal antes da postura, e se há disputa/estresse na gaiola.");
+      }
+      if (hatchRate !== null && hatchRate < 60) {
+        recommendations.push("Taxa de eclosão abaixo de 60% entre ovos galados: revise umidade/temperatura de incubação e manejo da fêmea durante a choca.");
+      }
+      if (survivalRate !== null && survivalRate < 70) {
+        recommendations.push("Sobrevivência dos filhotes abaixo de 70%: avalie alimentação de papa/muda, higiene do ninho e se os pais estão alimentando bem a ninhada.");
+      }
+      if (coiRisk === "high") {
+        recommendations.push("Parentesco alto entre os pais: considere trocar um dos dois por um pássaro sem ancestrais em comum antes da próxima temporada.");
+      }
+      if (recommendations.length === 0 && chicksRegistered > 0) {
+        recommendations.push("Índices dentro do esperado — mantenha o manejo atual.");
+      }
+
+      plantelTotalEggs += totalEggs;
+      plantelTotalFertilized += totalFertilized;
+      plantelTotalHatched += totalHatched;
+      plantelTotalSurvived += chicksSurvived;
+      plantelTotalDied += chicksDied;
+      plantelChicksRegistered += chicksRegistered;
 
       return {
         coupleId: couple.id,
@@ -502,15 +548,44 @@ export const reportsRouter = router({
         totalFertilized,
         totalHatched,
         totalLost,
-        fertilizationRate: totalEggs > 0 ? Math.round((totalFertilized / totalEggs) * 100) : null,
-        hatchRate: totalFertilized > 0 ? Math.round((totalHatched / totalFertilized) * 100) : null,
+        chicksRegistered,
+        chicksSurvived,
+        chicksDied,
+        fertilizationRate,
+        hatchRate,
+        survivalRate,
         alerts,
+        recommendations,
       };
     });
 
     rows.sort((a, b) => (b.status === "active" ? 1 : 0) - (a.status === "active" ? 1 : 0));
 
-    return { rows, generatedAt: new Date() };
+    // Ranking de "super-reprodutores": casais com pelo menos 1 ninhada e as
+    // melhores taxas combinadas (fertilização + eclosão + sobrevivência).
+    const ranked = rows
+      .filter((r) => r.clutchesCount > 0 && r.fertilizationRate !== null)
+      .map((r) => ({ ...r, compositeScore: (r.fertilizationRate ?? 0) + (r.hatchRate ?? 0) + (r.survivalRate ?? 0) }))
+      .sort((a, b) => b.compositeScore - a.compositeScore);
+
+    const summary = {
+      totalCouples: allCouples.length,
+      activeCouples: allCouples.filter((c) => c.status === "active").length,
+      totalClutches: allClutches.length,
+      totalEggs: plantelTotalEggs,
+      totalFertilized: plantelTotalFertilized,
+      totalHatched: plantelTotalHatched,
+      totalChicksRegistered: plantelChicksRegistered,
+      totalSurvived: plantelTotalSurvived,
+      totalDied: plantelTotalDied,
+      fertilizationRatePct: plantelTotalEggs > 0 ? Math.round((plantelTotalFertilized / plantelTotalEggs) * 100) : null,
+      hatchRatePct: plantelTotalFertilized > 0 ? Math.round((plantelTotalHatched / plantelTotalFertilized) * 100) : null,
+      survivalRatePct: plantelChicksRegistered > 0 ? Math.round((plantelTotalSurvived / plantelChicksRegistered) * 100) : null,
+      topPerformers: ranked.slice(0, 5).map((r) => ({ coupleId: r.coupleId, male: r.male, female: r.female, compositeScore: r.compositeScore, fertilizationRate: r.fertilizationRate, hatchRate: r.hatchRate, survivalRate: r.survivalRate })),
+      bottomPerformers: ranked.slice(-5).reverse().map((r) => ({ coupleId: r.coupleId, male: r.male, female: r.female, compositeScore: r.compositeScore, fertilizationRate: r.fertilizationRate, hatchRate: r.hatchRate, survivalRate: r.survivalRate })),
+    };
+
+    return { rows, summary, generatedAt: new Date() };
   }),
 
   // ─── NOVO: Painel de Temporada ────────────────────────────────────────────

@@ -614,7 +614,7 @@ function TabCasais() {
 
   const exportCSV = () => {
     if (!data?.rows.length) return;
-    const header = ["Casal", "Macho", "Fêmea", "Gaiola", "Status", "COI", "Posturas", "Ovos", "Fertilizados", "Eclosões", "Taxa Fert.", "Taxa Ecl.", "Alertas"];
+    const header = ["Casal", "Macho", "Fêmea", "Gaiola", "Status", "COI", "Posturas", "Ovos", "Fertilizados", "Eclosões", "Filhotes vingaram", "Filhotes perdidos", "Taxa Fert.", "Taxa Ecl.", "Taxa Sobrevivência", "Alertas", "Recomendações"];
     const rows = data.rows.map((r) => [
       r.coupleId,
       r.male?.ring ?? "",
@@ -626,9 +626,13 @@ function TabCasais() {
       r.totalEggs,
       r.totalFertilized,
       r.totalHatched,
+      r.chicksSurvived,
+      r.chicksDied,
       r.fertilizationRate !== null ? `${r.fertilizationRate}%` : "",
       r.hatchRate !== null ? `${r.hatchRate}%` : "",
+      r.survivalRate !== null ? `${r.survivalRate}%` : "",
       r.alerts.join("; "),
+      r.recommendations.join("; "),
     ]);
     const csv = [header, ...rows].map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -662,6 +666,63 @@ function TabCasais() {
             ))}
           </div>
 
+          {/* Resumo do plantel — porcentagens agregadas */}
+          {data.summary && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Desempenho reprodutivo do plantel</CardTitle>
+                <CardDescription>Consolidado de todas as posturas e filhotes registrados.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <p className="text-xs text-gray-500">Taxa de fertilização</p>
+                    <p className="text-2xl font-bold text-amber-700">{data.summary.fertilizationRatePct ?? "—"}{data.summary.fertilizationRatePct !== null ? "%" : ""}</p>
+                    <p className="text-xs text-gray-400">{data.summary.totalFertilized} de {data.summary.totalEggs} ovos</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Taxa de eclosão</p>
+                    <p className="text-2xl font-bold text-blue-700">{data.summary.hatchRatePct ?? "—"}{data.summary.hatchRatePct !== null ? "%" : ""}</p>
+                    <p className="text-xs text-gray-400">{data.summary.totalHatched} de {data.summary.totalFertilized} galados</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Taxa de sobrevivência</p>
+                    <p className="text-2xl font-bold text-green-700">{data.summary.survivalRatePct ?? "—"}{data.summary.survivalRatePct !== null ? "%" : ""}</p>
+                    <p className="text-xs text-gray-400">{data.summary.totalSurvived} vingaram / {data.summary.totalDied} perdas de {data.summary.totalChicksRegistered} filhotes</p>
+                  </div>
+                </div>
+
+                {data.summary.topPerformers.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Melhores casais (super-reprodutores)</p>
+                    <div className="space-y-1.5">
+                      {data.summary.topPerformers.map((p) => (
+                        <div key={p.coupleId} className="flex items-center justify-between text-sm bg-green-50 rounded-lg px-3 py-2 border border-green-100">
+                          <span className="font-mono">{p.male?.ring ?? "—"} × {p.female?.ring ?? "—"}</span>
+                          <span className="text-xs text-gray-500">Fert. {p.fertilizationRate}% · Ecl. {p.hatchRate}% · Sobr. {p.survivalRate ?? "—"}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {data.summary.bottomPerformers.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Casais que precisam de atenção</p>
+                    <div className="space-y-1.5">
+                      {data.summary.bottomPerformers.map((p) => (
+                        <div key={p.coupleId} className="flex items-center justify-between text-sm bg-amber-50 rounded-lg px-3 py-2 border border-amber-100">
+                          <span className="font-mono">{p.male?.ring ?? "—"} × {p.female?.ring ?? "—"}</span>
+                          <span className="text-xs text-gray-500">Fert. {p.fertilizationRate}% · Ecl. {p.hatchRate}% · Sobr. {p.survivalRate ?? "—"}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Tabela */}
           <Card>
             <CardHeader className="pb-3">
@@ -688,13 +749,15 @@ function TabCasais() {
                       <TableHead>Posturas</TableHead>
                       <TableHead>Ovos</TableHead>
                       <TableHead>Eclosões</TableHead>
+                      <TableHead>Sobrevivência</TableHead>
                       <TableHead>Taxa Fert.</TableHead>
                       <TableHead>Alertas</TableHead>
+                      <TableHead>O que fazer</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {data.rows.length === 0 && (
-                      <TableRow><TableCell colSpan={10} className="text-center text-gray-400 py-8">Nenhum casal cadastrado.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={12} className="text-center text-gray-400 py-8">Nenhum casal cadastrado.</TableCell></TableRow>
                     )}
                     {data.rows.map((r) => (
                       <TableRow key={r.coupleId}>
@@ -717,6 +780,12 @@ function TabCasais() {
                           <span className={`text-sm font-semibold ${r.totalHatched > 0 ? "text-green-700" : "text-gray-400"}`}>{r.totalHatched}</span>
                         </TableCell>
                         <TableCell>
+                          {r.survivalRate !== null
+                            ? <div className="flex items-center gap-1.5"><div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${r.survivalRate >= 70 ? "bg-green-500" : "bg-red-400"}`} style={{ width: `${r.survivalRate}%` }} /></div><span className="text-xs text-gray-600">{r.survivalRate}%</span></div>
+                            : <span className="text-gray-300 text-xs">—</span>}
+                          <p className="text-xs text-gray-400 mt-0.5">{r.chicksSurvived} vingaram / {r.chicksDied} perdas</p>
+                        </TableCell>
+                        <TableCell>
                           {r.fertilizationRate !== null
                             ? <div className="flex items-center gap-1.5"><div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-amber-400 rounded-full" style={{ width: `${r.fertilizationRate}%` }} /></div><span className="text-xs text-gray-600">{r.fertilizationRate}%</span></div>
                             : <span className="text-gray-300 text-xs">—</span>}
@@ -725,6 +794,11 @@ function TabCasais() {
                           {r.alerts.length === 0
                             ? <span className="text-gray-300 text-xs">—</span>
                             : <div className="flex flex-wrap gap-1">{r.alerts.map((a, i) => <Badge key={i} variant="outline" className="text-xs text-amber-700 border-amber-200">{a}</Badge>)}</div>}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          {r.recommendations.length === 0
+                            ? <span className="text-gray-300 text-xs">—</span>
+                            : <ul className="text-xs text-gray-600 space-y-0.5">{r.recommendations.map((rec, i) => <li key={i}>• {rec}</li>)}</ul>}
                         </TableCell>
                       </TableRow>
                     ))}

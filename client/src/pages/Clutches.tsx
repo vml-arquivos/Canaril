@@ -16,7 +16,8 @@ export default function Clutches() {
   const [openClutch, setOpenClutch] = useState(false);
   const [openChick, setOpenChick] = useState(false);
   const [selectedClutchId, setSelectedClutchId] = useState<number | null>(null);
-  
+  const [editingClutchId, setEditingClutchId] = useState<number | null>(null);
+
   const [clutchData, setClutchData] = useState({
     coupleId: "",
     clutchDate: "",
@@ -24,6 +25,7 @@ export default function Clutches() {
     fertilizedEggs: "0",
     infertileEggs: "0",
     lostEggs: "0",
+    hatchedChicks: "0",
   });
 
   const [chickData, setChickData] = useState({
@@ -37,6 +39,10 @@ export default function Clutches() {
   const { data: clutches, refetch: refetchClutches } = trpc.management.clutches.list.useQuery();
   const { data: couples } = trpc.management.couples.list.useQuery();
   const { data: chicks, refetch: refetchChicks } = trpc.management.chicks.list.useQuery();
+  const updateChickStatus = trpc.management.chicks.update.useMutation({
+    onSuccess: () => { toast.success("Status atualizado."); refetchChicks(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const createClutch = trpc.management.clutches.create.useMutation({
     onSuccess: () => {
@@ -50,11 +56,28 @@ export default function Clutches() {
         fertilizedEggs: "0",
         infertileEggs: "0",
         lostEggs: "0",
+        hatchedChicks: "0",
       });
     },
     onError: (error) => {
       toast.error("Erro ao registrar postura: " + error.message);
     },
+  });
+
+  const updateClutch = trpc.management.clutches.update.useMutation({
+    onSuccess: () => {
+      toast.success("Postura atualizada!");
+      refetchClutches();
+      setOpenClutch(false);
+      setEditingClutchId(null);
+      setClutchData({ coupleId: "", clutchDate: "", totalEggs: "0", fertilizedEggs: "0", infertileEggs: "0", lostEggs: "0", hatchedChicks: "0" });
+    },
+    onError: (error) => toast.error("Erro ao atualizar postura: " + error.message),
+  });
+
+  const deleteClutch = trpc.management.clutches.delete.useMutation({
+    onSuccess: () => { toast.success("Postura removida."); refetchClutches(); },
+    onError: (error) => toast.error("Erro ao remover postura: " + error.message),
   });
 
   const createChick = trpc.management.chicks.create.useMutation({
@@ -82,6 +105,19 @@ export default function Clutches() {
       return;
     }
 
+    if (editingClutchId) {
+      updateClutch.mutate({
+        id: editingClutchId,
+        clutchDate: new Date(clutchData.clutchDate),
+        totalEggs: parseInt(clutchData.totalEggs),
+        fertilizedEggs: parseInt(clutchData.fertilizedEggs),
+        infertileEggs: parseInt(clutchData.infertileEggs),
+        lostEggs: parseInt(clutchData.lostEggs),
+        hatchedChicks: parseInt(clutchData.hatchedChicks),
+      });
+      return;
+    }
+
     createClutch.mutate({
       coupleId: parseInt(clutchData.coupleId),
       clutchDate: new Date(clutchData.clutchDate),
@@ -89,7 +125,22 @@ export default function Clutches() {
       fertilizedEggs: parseInt(clutchData.fertilizedEggs),
       infertileEggs: parseInt(clutchData.infertileEggs),
       lostEggs: parseInt(clutchData.lostEggs),
+      hatchedChicks: parseInt(clutchData.hatchedChicks),
     });
+  };
+
+  const startEditClutch = (clutch: any) => {
+    setEditingClutchId(clutch.id);
+    setClutchData({
+      coupleId: String(clutch.coupleId),
+      clutchDate: new Date(clutch.clutchDate).toISOString().slice(0, 10),
+      totalEggs: String(clutch.totalEggs),
+      fertilizedEggs: String(clutch.fertilizedEggs),
+      infertileEggs: String(clutch.infertileEggs),
+      lostEggs: String(clutch.lostEggs),
+      hatchedChicks: String(clutch.hatchedChicks),
+    });
+    setOpenClutch(true);
   };
 
   const handleSubmitChick = (e: React.FormEvent) => {
@@ -128,23 +179,23 @@ export default function Clutches() {
           {/* Posturas Tab */}
           <TabsContent value="clutches" className="space-y-4">
             <div className="flex justify-end">
-              <Dialog open={openClutch} onOpenChange={setOpenClutch}>
+              <Dialog open={openClutch} onOpenChange={(v) => { setOpenClutch(v); if (!v) setEditingClutchId(null); }}>
                 <DialogTrigger asChild>
-                  <Button className="bg-yellow-600 hover:bg-yellow-700">
+                  <Button className="bg-yellow-600 hover:bg-yellow-700" onClick={() => setEditingClutchId(null)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Registrar Postura
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl">
                   <DialogHeader>
-                    <DialogTitle>Registrar Nova Postura</DialogTitle>
-                    <DialogDescription>Preencha os dados da postura</DialogDescription>
+                    <DialogTitle>{editingClutchId ? "Editar Postura" : "Registrar Nova Postura"}</DialogTitle>
+                    <DialogDescription>{editingClutchId ? "Corrija os dados desta postura" : "Preencha os dados da postura"}</DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleSubmitClutch} className="space-y-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="coupleId">Casal *</Label>
-                        <Select value={clutchData.coupleId} onValueChange={(value) => setClutchData({ ...clutchData, coupleId: value })}>
+                        <Select value={clutchData.coupleId} onValueChange={(value) => setClutchData({ ...clutchData, coupleId: value })} disabled={!!editingClutchId}>
                           <SelectTrigger>
                             <SelectValue placeholder="Selecione..." />
                           </SelectTrigger>
@@ -206,13 +257,23 @@ export default function Clutches() {
                           min="0"
                         />
                       </div>
+                      <div>
+                        <Label htmlFor="hatchedChicks">Ovos Eclodidos</Label>
+                        <Input
+                          id="hatchedChicks"
+                          type="number"
+                          value={clutchData.hatchedChicks}
+                          onChange={(e) => setClutchData({ ...clutchData, hatchedChicks: e.target.value })}
+                          min="0"
+                        />
+                      </div>
                     </div>
                     <div className="flex gap-2 justify-end">
-                      <Button type="button" variant="outline" onClick={() => setOpenClutch(false)}>
+                      <Button type="button" variant="outline" onClick={() => { setOpenClutch(false); setEditingClutchId(null); }}>
                         Cancelar
                       </Button>
                       <Button type="submit" className="bg-yellow-600 hover:bg-yellow-700">
-                        Registrar
+                        {editingClutchId ? "Salvar alterações" : "Registrar"}
                       </Button>
                     </div>
                   </form>
@@ -253,10 +314,13 @@ export default function Clutches() {
                             <TableCell className="font-semibold">{clutch.hatchedChicks}</TableCell>
                             <TableCell>
                               <div className="flex gap-2">
-                                <Button size="sm" variant="ghost">
+                                <Button size="sm" variant="ghost" onClick={() => startEditClutch(clutch)}>
                                   <Edit2 className="w-4 h-4" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="text-red-600">
+                                <Button
+                                  size="sm" variant="ghost" className="text-red-600"
+                                  onClick={() => { if (confirm("Remover esta postura? Os filhotes já registrados a partir dela não são apagados.")) deleteClutch.mutate({ id: clutch.id }); }}
+                                >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               </div>
@@ -390,9 +454,30 @@ export default function Clutches() {
                             <TableCell>{chick.color_code || "-"}</TableCell>
                             <TableCell>{new Date(chick.birthDate).toLocaleDateString("pt-BR")}</TableCell>
                             <TableCell>
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
-                                {chick.status}
-                              </span>
+                              <Select
+                                value={chick.status || "active"}
+                                onValueChange={(v) => updateChickStatus.mutate({
+                                  id: chick.id,
+                                  status: v as any,
+                                  weanDate: v === "weaned" ? new Date() : undefined,
+                                })}
+                              >
+                                <SelectTrigger className={`h-7 w-32 text-xs ${
+                                  chick.status === "died" ? "bg-red-50 text-red-700 border-red-200" :
+                                  chick.status === "weaned" ? "bg-green-50 text-green-700 border-green-200" :
+                                  chick.status === "sold" || chick.status === "transferred" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                  "bg-amber-50 text-amber-700 border-amber-200"
+                                }`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="active">Vivo / crescendo</SelectItem>
+                                  <SelectItem value="weaned">Desmamado (vingou)</SelectItem>
+                                  <SelectItem value="died">Morreu</SelectItem>
+                                  <SelectItem value="sold">Vendido</SelectItem>
+                                  <SelectItem value="transferred">Transferido</SelectItem>
+                                </SelectContent>
+                              </Select>
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-2">

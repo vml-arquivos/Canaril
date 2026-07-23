@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
 import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, eq, desc, sql, isNull } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
 import { getCurrentTenantId } from "../_core/tenant";
 
@@ -353,8 +353,8 @@ export const managementRouter = router({
       if (!db) return [];
       try {
         const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-        let query: any = db.select().from(clutches).orderBy(desc(clutches.createdAt));
-        if (tenantId !== null) query = query.where(eq(clutches.tenantId, tenantId));
+        let query: any = db.select().from(clutches).where(isNull(clutches.deletedAt)).orderBy(desc(clutches.createdAt));
+        if (tenantId !== null) query = db.select().from(clutches).where(and(isNull(clutches.deletedAt), eq(clutches.tenantId, tenantId))).orderBy(desc(clutches.createdAt));
         return query;
       } catch (error) {
         console.error("Error listing clutches:", error);
@@ -368,7 +368,7 @@ export const managementRouter = router({
         const db = await getDb();
         if (!db) return [];
         try {
-          return await db.select().from(clutches).where(eq(clutches.coupleId, input)).orderBy(desc(clutches.clutchDate));
+          return await db.select().from(clutches).where(and(eq(clutches.coupleId, input), isNull(clutches.deletedAt))).orderBy(desc(clutches.clutchDate));
         } catch (error) {
           console.error("Error getting clutches by couple:", error);
           return [];
@@ -405,6 +405,58 @@ export const managementRouter = router({
           console.error("Error creating clutch:", error);
           throw error;
         }
+      }),
+
+    /**
+     * Corrige/atualiza uma postura já registrada. Faltava completamente —
+     * sem isso, nenhum erro de digitação (ovos, galados, ECLOSÕES) podia
+     * ser corrigido depois, e o número de eclosões nunca podia ser
+     * preenchido depois que os ovos realmente eclodiam.
+     */
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        clutchDate: z.date().optional(),
+        totalEggs: z.number().optional(),
+        fertilizedEggs: z.number().optional(),
+        infertileEggs: z.number().optional(),
+        lostEggs: z.number().optional(),
+        hatchedChicks: z.number().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+        const { id, ...fields } = input;
+
+        const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId }).from(clutches).where(eq(clutches.id, id)).limit(1);
+        if (!existing) throw new Error("Postura não encontrada.");
+        if (tenantId !== null && existing.tenantId !== tenantId) {
+          throw new Error("Esta postura não pertence ao seu criadouro.");
+        }
+
+        await db.update(clutches).set({ ...fields, updatedAt: new Date() }).where(eq(clutches.id, id));
+        return { success: true };
+      }),
+
+    /** Remove (soft delete) uma postura registrada por engano. */
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+        const uid = (ctx as any)?.userId;
+
+        const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId }).from(clutches).where(eq(clutches.id, input.id)).limit(1);
+        if (!existing) throw new Error("Postura não encontrada.");
+        if (tenantId !== null && existing.tenantId !== tenantId) {
+          throw new Error("Esta postura não pertence ao seu criadouro.");
+        }
+
+        await db.update(clutches).set({ deletedAt: new Date(), deletedBy: uid }).where(eq(clutches.id, input.id));
+        return { success: true };
       }),
   }),
 
@@ -473,6 +525,36 @@ export const managementRouter = router({
           console.error("Error creating chick:", error);
           throw error;
         }
+      }),
+
+    /**
+     * Atualiza o status de um filhote já cadastrado (vivo → desmamado /
+     * morto / vendido / transferido). Faltava completamente antes — só
+     * dava pra CRIAR um filhote, nunca registrar uma perda ou um desmame
+     * bem-sucedido depois. Sem isso, nenhum relatório de "quantos
+     * vingaram" tinha como ser preciso, porque o dado nunca era capturado.
+     */
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(["active", "weaned", "died", "sold", "transferred"]).optional(),
+        weanDate: z.date().optional().nullable(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+
+        const { id, ...fields } = input;
+        const [existing] = await db.select({ id: chicks.id, tenantId: chicks.tenantId }).from(chicks).where(eq(chicks.id, id)).limit(1);
+        if (!existing) throw new Error("Filhote não encontrado.");
+        if (tenantId !== null && existing.tenantId !== tenantId) {
+          throw new Error("Este filhote não pertence ao seu criadouro.");
+        }
+
+        await db.update(chicks).set({ ...fields, updatedAt: new Date() }).where(eq(chicks.id, id));
+        return { success: true };
       }),
   }),
 
