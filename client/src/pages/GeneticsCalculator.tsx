@@ -20,7 +20,7 @@ import { trpc } from "@/lib/trpc";
 import {
   Calculator, AlertTriangle, Dna, Zap, RefreshCw, ChevronDown, ChevronUp,
   CheckCircle, BookOpen, Users, Sparkles, XCircle, ArrowRight, Printer,
-  Star, TrendingUp, Shield, Info, Heart, FlaskConical, GitCompare,
+  Star, TrendingUp, Shield, Info, Heart, FlaskConical, GitCompare, Layers,
 } from "lucide-react";
 import { InlineAlert, HelpTooltip, ScoreBar, CoiRiskBadge } from "@/components/ui-premium";
 import { Link, useLocation } from "wouter";
@@ -1208,6 +1208,281 @@ function Referencia() {
   );
 }
 
+// ────────────────────────────────────────────────────────────
+// Tab: Simulação F1 → F2 (duas gerações adiante)
+// ────────────────────────────────────────────────────────────
+function GenotypeSelect({ label, sex, options, value, onChange }: {
+  label: string; sex: "macho" | "fêmea"; options: { value: string; label: string }[];
+  value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-1">{label} <span className="text-gray-400">({sex === "macho" ? "♂" : "♀"})</span></p>
+      <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
+        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Genótipo..." /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>— Selecione —</SelectItem>
+          {options.map((o) => <SelectItem key={o.value} value={o.value}><span className="font-mono mr-2">{o.value}</span>{o.label.split("—")[1]?.trim()}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function SimulacaoF1F2() {
+  const { data: mutations = [] } = trpc.genetics.listMutations.useQuery();
+  const [mutationId, setMutationId] = useState("");
+  const [genoA, setGenoA] = useState("");
+  const [genoB, setGenoB] = useState("");
+  const [genoC, setGenoC] = useState("");
+  const [cSex, setCSex] = useState<"macho" | "fêmea">("macho");
+  const [run, setRun] = useState(false);
+
+  const selectedMutation = mutations.find((m: any) => m.id === mutationId);
+  const inheritance = selectedMutation?.inheritance as "sex_linked" | "autosomal_recessive" | "autosomal_dominant" | undefined;
+
+  const optsFor = (sex: "macho" | "fêmea") =>
+    inheritance === "sex_linked" ? (sex === "macho" ? ZYGOSITY_SL_M : ZYGOSITY_SL_F)
+    : inheritance === "autosomal_recessive" ? ZYGOSITY_AR
+    : inheritance === "autosomal_dominant" ? ZYGOSITY_DOM
+    : [];
+
+  const f1Sex: "macho" | "fêmea" = cSex === "macho" ? "fêmea" : "macho";
+
+  const { data: result, isLoading, refetch } = trpc.genetics.simulateF2.useQuery(
+    {
+      grandparentA: { sex: "macho", [mutationId]: genoA } as any,
+      grandparentB: { sex: "fêmea", [mutationId]: genoB } as any,
+      mateC: { sex: cSex, [mutationId]: genoC } as any,
+      mutationId,
+    },
+    { enabled: run && !!mutationId && !!genoA && !!genoB && !!genoC, retry: false }
+  );
+
+  // Converte a lista de F2Outcome (agregada, com sexo opcional por item)
+  // no mesmo formato Record<genotype, probability> que o PunnettGrid já
+  // existente espera — reaproveita o componente visual sem duplicá-lo.
+  const f2Sons: Record<string, number> = {};
+  const f2Daughters: Record<string, number> = {};
+  const f2Offspring: Record<string, number> = {};
+  for (const o of result?.f2Outcomes ?? []) {
+    if (o.sex === "macho") f2Sons[o.genotype] = (f2Sons[o.genotype] ?? 0) + o.probability;
+    else if (o.sex === "fêmea") f2Daughters[o.genotype] = (f2Daughters[o.genotype] ?? 0) + o.probability;
+    else f2Offspring[o.genotype] = (f2Offspring[o.genotype] ?? 0) + o.probability;
+  }
+
+  return (
+    <div className="space-y-5">
+      <InlineAlert variant="info">
+        Simule duas gerações adiante: cruze A×B, e um dos filhotes (F1) com C. Funciona para uma mutação por vez —
+        a mesma simplificação de "genes independentes" já usada no resto da calculadora.
+      </InlineAlert>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">1. Escolha a mutação</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Select value={mutationId} onValueChange={(v) => { setMutationId(v); setGenoA(""); setGenoB(""); setGenoC(""); setRun(false); }}>
+            <SelectTrigger className="h-9"><SelectValue placeholder="Selecione a mutação..." /></SelectTrigger>
+            <SelectContent>
+              {mutations.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {inheritance && (
+        <div className="grid md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">2. Avô/avó A</CardTitle></CardHeader>
+            <CardContent><GenotypeSelect label="Genótipo" sex="macho" options={optsFor("macho")} value={genoA} onChange={(v) => { setGenoA(v); setRun(false); }} /></CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">2. Avô/avó B</CardTitle></CardHeader>
+            <CardContent><GenotypeSelect label="Genótipo" sex="fêmea" options={optsFor("fêmea")} value={genoB} onChange={(v) => { setGenoB(v); setRun(false); }} /></CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">3. Par C (cruza com o F1)</CardTitle>
+              <CardDescription className="text-xs">O F1 usado será {f1Sex === "macho" ? "macho" : "fêmea"} (sexo oposto a C)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Select value={cSex} onValueChange={(v: any) => { setCSex(v); setGenoC(""); setRun(false); }}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="macho">♂ Macho</SelectItem>
+                  <SelectItem value="fêmea">♀ Fêmea</SelectItem>
+                </SelectContent>
+              </Select>
+              <GenotypeSelect label="Genótipo" sex={cSex} options={optsFor(cSex)} value={genoC} onChange={(v) => { setGenoC(v); setRun(false); }} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Button className="bg-amber-600 hover:bg-amber-700 gap-2" disabled={!mutationId || !genoA || !genoB || !genoC || isLoading}
+        onClick={() => { setRun(true); refetch(); }}>
+        <Layers className="w-4 h-4" />{isLoading ? "Simulando..." : "Simular F1 → F2"}
+      </Button>
+
+      {result && (
+        <div className="space-y-5">
+          {result.warnings.map((w, i) => <InlineAlert key={i} variant="warning">{w}</InlineAlert>)}
+
+          <Card className="border-blue-100 bg-blue-50/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Geração F1 ({result.f1SexUsed === "macho" ? "♂ machos" : "♀ fêmeas"}) — resultado de A × B</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {result.f1Distribution.map((o, i) => (
+                <Badge key={i} variant="outline" className="text-xs">
+                  <span className="font-mono mr-1.5">{o.genotype}</span>{(o.probability * 100).toFixed(1)}%
+                </Badge>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-100 bg-emerald-50/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Geração F2 — resultado ponderado de F1 × C</CardTitle>
+              <CardDescription className="text-xs">Já considera todas as possibilidades de F1, ponderadas pela probabilidade de cada uma.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(result.f2Outcomes ?? []).map((o, i) => (
+                <div key={i} className="flex items-center justify-between text-sm bg-white rounded-lg border px-3 py-2">
+                  <span className="font-mono font-semibold">{o.genotype}{o.sex ? ` (${o.sex === "macho" ? "♂" : "♀"})` : ""}</span>
+                  <span className="text-xs text-gray-400">via F1: {o.viaF1Genotypes.join(", ")}</span>
+                  <Badge className="bg-emerald-100 text-emerald-800">{(o.probability * 100).toFixed(1)}%</Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {(Object.keys(f2Sons).length > 0 || Object.keys(f2Daughters).length > 0 || Object.keys(f2Offspring).length > 0) && (
+            <PunnettGrid
+              sons={Object.keys(f2Sons).length ? f2Sons : undefined}
+              daughters={Object.keys(f2Daughters).length ? f2Daughters : undefined}
+              offspring={Object.keys(f2Offspring).length ? f2Offspring : undefined}
+              inheritance={inheritance ?? ""}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Tab: Plano de Temporada (otimização do plantel inteiro)
+// ────────────────────────────────────────────────────────────
+function PlanoTemporada() {
+  const [objective, setObjective] = useState("PLANEJAMENTO_LIVRE");
+  const [run, setRun] = useState(false);
+  const { data, isLoading, refetch } = trpc.pairingOptimizer.planSeason.useQuery(
+    { objective: objective as any },
+    { enabled: run, retry: false }
+  );
+
+  const OBJECTIVES = [
+    { value: "PLANEJAMENTO_LIVRE", label: "Sem prioridade específica" },
+    { value: "MANTER_LINHAGEM", label: "Preservar linhagem" },
+    { value: "MELHORAR_COR", label: "Melhorar cor" },
+    { value: "MELHORAR_PORTE", label: "Melhorar porte" },
+    { value: "REDUZIR_COI", label: "Reduzir parentesco (diversidade)" },
+    { value: "PRODUZIR_PORTADORES", label: "Produzir portadores" },
+    { value: "EXPOSICAO", label: "Preparar para exposição" },
+    { value: "REPRODUCAO_SEGURA", label: "Priorizar segurança reprodutiva" },
+  ];
+
+  const statusColor: Record<string, string> = {
+    IDEAL: "bg-green-100 text-green-800", APROVADO: "bg-blue-100 text-blue-800",
+    ATENCAO: "bg-amber-100 text-amber-800", NAO_RECOMENDADO: "bg-red-100 text-red-800",
+  };
+
+  return (
+    <div className="space-y-5">
+      <InlineAlert variant="info">
+        Em vez de escolher um pássaro por vez, o sistema varre <strong>todos os machos × todas as fêmeas ativos</strong> do
+        plantel e monta o melhor conjunto de casais simultâneos pra temporada. Usa um algoritmo guloso (pega sempre a
+        melhor combinação disponível a cada passo) — é rápido e bom, mas não é uma garantia matemática absoluta do
+        melhor conjunto possível entre todas as combinações existentes.
+      </InlineAlert>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Objetivo da temporada</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap gap-3 items-end">
+          <div className="w-64">
+            <Select value={objective} onValueChange={(v) => { setObjective(v); setRun(false); }}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {OBJECTIVES.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button className="bg-amber-600 hover:bg-amber-700 gap-2" disabled={isLoading} onClick={() => { setRun(true); refetch(); }}>
+            <Users className="w-4 h-4" />{isLoading ? "Calculando..." : "Gerar plano de temporada"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {data?.tooLarge && (
+        <InlineAlert variant="warning">
+          Seu plantel tem {data.totalActive} pássaros ativos, acima do limite de {data.maxActive} que processamos de
+          uma vez. Fale com o suporte se precisar disso para o plantel inteiro.
+        </InlineAlert>
+      )}
+
+      {data && !data.tooLarge && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Casais sugeridos</p><p className="text-2xl font-bold">{data.assignedPairs.length}</p></CardContent></Card>
+            <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Pontuação média</p><p className="text-2xl font-bold">{data.averageScore.toFixed(0)}</p></CardContent></Card>
+            <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Machos sem par</p><p className="text-2xl font-bold text-amber-600">{data.unmatchedMales.length}</p></CardContent></Card>
+            <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Fêmeas sem par</p><p className="text-2xl font-bold text-amber-600">{data.unmatchedFemales.length}</p></CardContent></Card>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Casais sugeridos</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {data.assignedPairs.length === 0 ? (
+                <p className="text-sm text-gray-400">Nenhum casal recomendado com os dados atuais do plantel.</p>
+              ) : data.assignedPairs.map((p, i) => (
+                <div key={i} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="font-mono font-semibold text-sm">{p.male.ring} × {p.female.ring}</span>
+                    <Badge className={statusColor[p.status] ?? ""}>{p.status}</Badge>
+                    <Badge variant="outline">{p.finalScore.toFixed(0)} pts</Badge>
+                  </div>
+                  {p.reasons.length > 0 && (
+                    <ul className="text-xs text-gray-600 mt-2 space-y-0.5">
+                      {p.reasons.slice(0, 3).map((r, j) => <li key={j}>• {r}</li>)}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {(data.unmatchedMales.length > 0 || data.unmatchedFemales.length > 0) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Sem par nesta rodada</CardTitle>
+                <CardDescription className="text-xs">Sem parceiro disponível, ou todas as combinações restantes ficaram com risco genético alto demais.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                {[...data.unmatchedMales, ...data.unmatchedFemales].map((b) => (
+                  <Badge key={b.id} variant="outline" className="text-xs">{b.ring}</Badge>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Página principal ──────────────────────────────────────────────────────────
 
 export default function GeneticsCalculator() {
@@ -1231,6 +1506,8 @@ export default function GeneticsCalculator() {
             <TabsTrigger value="guiado">       <Zap className="w-3.5 h-3.5 mr-1.5" />Modo Guiado</TabsTrigger>
             <TabsTrigger value="tecnico">      <FlaskConical className="w-3.5 h-3.5 mr-1.5" />Modo Técnico</TabsTrigger>
             <TabsTrigger value="comparar">     <GitCompare className="w-3.5 h-3.5 mr-1.5" />Comparar Cenários</TabsTrigger>
+            <TabsTrigger value="f1f2">         <Layers className="w-3.5 h-3.5 mr-1.5" />Simulação F1→F2</TabsTrigger>
+            <TabsTrigger value="temporada">   <Users className="w-3.5 h-3.5 mr-1.5" />Plano de Temporada</TabsTrigger>
             <TabsTrigger value="referencia">   <BookOpen className="w-3.5 h-3.5 mr-1.5" />Referência</TabsTrigger>
           </TabsList>
 
@@ -1239,6 +1516,8 @@ export default function GeneticsCalculator() {
           <TabsContent value="guiado"     className="mt-5"><ModoGuiado /></TabsContent>
           <TabsContent value="tecnico"    className="mt-5"><ModoTecnico /></TabsContent>
           <TabsContent value="comparar"   className="mt-5"><CompararCenarios /></TabsContent>
+          <TabsContent value="f1f2"       className="mt-5"><SimulacaoF1F2 /></TabsContent>
+          <TabsContent value="temporada"  className="mt-5"><PlanoTemporada /></TabsContent>
           <TabsContent value="referencia" className="mt-5"><Referencia /></TabsContent>
         </Tabs>
       </div>

@@ -12,6 +12,7 @@ import {
 } from "../_core/genetics";
 import { calculateColorCross, calculateLipochromeCross, MUTATION_CONFIG } from "../_core/colorGenetics";
 import { predictCross, BirdGenotypeInput } from "../_core/mendelian";
+import { simulateF2Cross } from "../_core/multiGenSimulator";
 import { scorePair, Objective } from "../_core/pairingOptimizer";
 import { invokeLLM } from "../_core/llm";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
@@ -501,5 +502,24 @@ export const geneticsRouter = router({
       // cadastrados. Lança erro claro (capturado pelo tRPC) se os sexos
       // dos genótipos não baterem com macho/fêmea.
       return calculateColorCross(input as any);
+    }),
+
+  /**
+   * Simulação multi-geração F1 → F2: "se eu cruzar A×B, e um filhote (F1)
+   * com C, o que chega na F2?". Puramente matemático, mesma natureza do
+   * calculateColorCross acima — reaproveita a mesma função duas vezes em
+   * sequência (ver server/_core/multiGenSimulator.ts).
+   */
+  simulateF2: protectedProcedure
+    .input(
+      z.object({
+        grandparentA: parentGenotypesSchema,
+        grandparentB: parentGenotypesSchema,
+        mateC: parentGenotypesSchema,
+        mutationId: z.string(),
+      })
+    )
+    .query(({ input }) => {
+      return simulateF2Cross(input as any);
     }),
 });

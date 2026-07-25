@@ -12,6 +12,8 @@ import { getDb } from "../db";
 import { birds, bird_genotype, health_records, couples, clutches, championship_entries, scores } from "../../drizzle/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { scorePair, Objective, HealthFlags, ReproductiveHistory } from "../_core/pairingOptimizer";
+import { optimizePlantelPairing, PlantelBirdInput } from "../_core/plantelOptimizer";
+import { getCurrentTenantId } from "../_core/tenant";
 import { calculateCOIForPair, PedigreeBird } from "../_core/genetics";
 import { BirdGenotypeInput } from "../_core/mendelian";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
@@ -172,6 +174,91 @@ export const pairingOptimizerRouter = router({
       return {
         baseBird: { id: base.id, ring: base.ring, sex: base.sex, hasGenotype: !!baseGenotype },
         recommendations: recommendations.slice(0, input.limit),
+      };
+    }),
+
+  /**
+   * "Matchmaking reverso" / plano de temporada: em vez de partir de UM
+   * pássaro escolhido, varre o plantel inteiro (todos os machos × todas as
+   * fêmeas ativos) e monta o MELHOR CONJUNTO de casais simultâneos —
+   * reaproveitando scorePair (mesma pontuação já usada acima) e o novo
+   * server/_core/plantelOptimizer.ts (algoritmo guloso, documentado como
+   * aproximação, não ótimo garantido).
+   *
+   * Simplificação deliberada desta primeira versão: não carrega
+   * saúde/histórico/nota de exposição por pássaro (ficaria caro pra um
+   * plantel inteiro de uma vez) — scorePair já lida bem com dado ausente,
+   * então o resultado continua correto, só um pouco mais conservador.
+   */
+  planSeason: protectedProcedure
+    .input(
+      z.object({
+        objective: objectiveSchema.default("PLANEJAMENTO_LIVRE"),
+        maxCoi: z.number().min(0).max(1).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+
+      const activeBirds = tenantId !== null
+        ? await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId)))
+        : await db.select().from(birds).where(eq(birds.status, "active"));
+
+      const MAX_BIRDS = 200; // machos+fêmeas juntos — segurança de performance
+      if (activeBirds.length > MAX_BIRDS) {
+        return { tooLarge: true, totalActive: activeBirds.length, maxActive: MAX_BIRDS } as const;
+      }
+
+      const males = activeBirds.filter((b) => b.sex === "macho");
+      const females = activeBirds.filter((b) => b.sex === "fêmea");
+
+      const allGenotypes = await db.select().from(bird_genotype);
+      const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
+      const birdMap: Map<number, PedigreeBird> = new Map(
+        activeBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+      );
+
+      const toPlantelInput = (b: typeof activeBirds[number]): PlantelBirdInput => ({
+        bird: { id: b.id, ring: b.ring, sex: b.sex, status: b.status },
+        genotype: toGenotypeInput(genotypeByBird.get(b.id), b.sex === "macho" ? "macho" : "fêmea"),
+      });
+
+      const result = optimizePlantelPairing({
+        males: males.map(toPlantelInput),
+        females: females.map(toPlantelInput),
+        coiLookup: (maleId, femaleId) => calculateCOIForPair(maleId, femaleId, birdMap, 5),
+        objective: input.objective as Objective,
+        maxCoi: input.maxCoi,
+      });
+
+      const enrich = (b: typeof activeBirds[number] | undefined) => b ? {
+        ring: b.ring,
+        specialtyName: SPECIALTIES.find((s) => s.id === b.specialty_code)?.name ?? b.specialty_code,
+        colorName: COLORS.find((c) => c.id === b.color_code)?.name ?? b.color_code,
+      } : null;
+      const byId = new Map(activeBirds.map((b) => [b.id, b]));
+
+      return {
+        tooLarge: false as const,
+        totalMales: males.length,
+        totalFemales: females.length,
+        averageScore: result.averageScore,
+        totalPairsConsidered: result.totalPairsConsidered,
+        skippedBlocked: result.skippedBlocked,
+        assignedPairs: result.assignedPairs.map((p) => ({
+          male: { id: p.male.id, ...enrich(byId.get(p.male.id))! },
+          female: { id: p.female.id, ...enrich(byId.get(p.female.id))! },
+          finalScore: p.score.finalScore,
+          status: p.score.status,
+          coi: p.score.coiScore,
+          reasons: p.score.reasons,
+          warnings: p.score.warnings,
+          recommendationText: p.score.recommendationText,
+        })),
+        unmatchedMales: result.unmatchedMales.map((b) => ({ id: b.id, ...enrich(byId.get(b.id))! })),
+        unmatchedFemales: result.unmatchedFemales.map((b) => ({ id: b.id, ...enrich(byId.get(b.id))! })),
       };
     }),
 });
