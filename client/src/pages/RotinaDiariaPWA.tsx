@@ -261,6 +261,47 @@ const EVENT_BUTTONS = [
   },
 ] as const;
 
+const EVENT_LABEL_MAP: Record<string, { label: string; badge: string }> = Object.fromEntries(
+  EVENT_BUTTONS.flatMap((g) => g.events.map((e: any) => [e.type, { label: e.label, badge: e.badge }]))
+);
+
+// ─── Lista de registros de hoje (histórico real, vindo do servidor) ───────────
+function TodayLogsList({ coupleId }: { coupleId: number }) {
+  const { data: logs, isLoading } = trpc.dailyCare.getCoupleLogs.useQuery(
+    { coupleId, limitDays: 1 },
+    { enabled: true }
+  );
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayLogs = (logs ?? []).filter((l: any) => l.date === todayStr);
+
+  if (isLoading) return <p className="text-xs text-gray-400 px-0.5 mb-3">Carregando registros de hoje...</p>;
+  if (todayLogs.length === 0) return null;
+
+  return (
+    <div className="mb-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide px-3 pt-2.5 pb-1.5">
+        Registros de hoje ({todayLogs.length})
+      </p>
+      <div className="divide-y divide-gray-100">
+        {todayLogs.map((log: any) => {
+          const meta = EVENT_LABEL_MAP[log.eventType] ?? { label: log.eventType, badge: "bg-gray-500" };
+          const time = new Date(log.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+          return (
+            <div key={log.id} className="flex items-center gap-2.5 px-3 py-2">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${meta.badge}`} />
+              <span className="text-sm text-gray-800 flex-1">
+                {meta.label}{log.quantity > 1 ? ` (×${log.quantity})` : ""}
+              </span>
+              {log.noteText && <span className="text-xs text-gray-400 truncate max-w-[120px]">{log.noteText}</span>}
+              <span className="text-xs text-gray-400 shrink-0">{time}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function RotinaDiariaPWA() {
@@ -272,7 +313,6 @@ export default function RotinaDiariaPWA() {
   });
 
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [counts, setCounts]   = useState<Record<string, Record<string, number>>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
   // Ref para o input de câmera — um por sessão, reutilizado
@@ -296,10 +336,6 @@ export default function RotinaDiariaPWA() {
 
     const key = `${coupleId}-NEST_PHOTO`;
     setPending((p) => ({ ...p, [key]: true }));
-    setCounts((p) => ({
-      ...p,
-      [coupleId]: { ...p[coupleId], NEST_PHOTO: (p[coupleId]?.NEST_PHOTO ?? 0) + 1 },
-    }));
 
     logEvent.mutate({
       coupleId,
@@ -321,10 +357,6 @@ export default function RotinaDiariaPWA() {
     (coupleId: number, clutchId: number | null, eventType: string) => {
       haptic(40);
       const key = `${coupleId}-${eventType}`;
-      setCounts((p) => ({
-        ...p,
-        [coupleId]: { ...p[coupleId], [eventType]: (p[coupleId]?.[eventType] ?? 0) + 1 },
-      }));
       setPending((p) => ({ ...p, [key]: true }));
       logEvent.mutate({
         coupleId,
@@ -412,7 +444,14 @@ export default function RotinaDiariaPWA() {
           const isOpen   = expanded === couple.coupleId;
           const todayEvt = couple.todayEvents ?? [];
           const done     = todayEvt.length > 0;
-          const localCnt = counts[couple.coupleId] ?? {};
+          // Antes: os números nos botões vinham só de `counts` (estado local
+          // do navegador) — sumiam ao recarregar a página, mesmo o registro
+          // tendo sido salvo de verdade no banco. Agora vem do que o
+          // servidor realmente tem (couple.todayEvents), que é atualizado a
+          // cada `refetch()` depois de um registro bem-sucedido.
+          const serverCnt: Record<string, number> = {};
+          for (const ev of todayEvt) serverCnt[ev] = (serverCnt[ev] ?? 0) + 1;
+          const localCnt = serverCnt;
           const clutch   = couple.clutches?.find((c: any) => c.status === "active");
 
           return (
@@ -451,6 +490,9 @@ export default function RotinaDiariaPWA() {
               {/* Painel expandido */}
               {isOpen && (
                 <div className="border-t border-gray-100 bg-gray-50/40 px-3 pt-3 pb-4">
+
+                  {/* Registros de hoje — histórico real, não estado local */}
+                  <TodayLogsList coupleId={couple.coupleId} />
 
                   {/* Status da postura ativa */}
                   {clutch && (
