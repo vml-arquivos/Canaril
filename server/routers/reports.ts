@@ -17,6 +17,7 @@ import {
 import { desc, eq, and } from "drizzle-orm";
 import { calculateCOI, calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 import { analyzeCoiForPair } from "../_core/coiAnalyzer";
+import { buildPopulationGeneticsReport } from "../_core/populationGenetics";
 import { getCurrentTenantId } from "../_core/tenant";
 
 
@@ -933,6 +934,43 @@ assistenteCruzamento: protectedProcedure
       totalRiskyPairs: riskyPairs.length,
       generatedAt: new Date(),
     };
+  }),
+
+  // ===========================================================================
+  // Genética Populacional do Plantel — Mean Kinship, Ne (tamanho efetivo da
+  // população) e contribuição de fundadores. Construído inteiramente sobre
+  // funções já testadas (calculateCOIForPair, fullAncestrySet), em
+  // server/_core/populationGenetics.ts (16 testes próprios).
+  // ===========================================================================
+  geneticaPopulacional: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+
+    const [activeBirdsRaw, allTenantBirds] = await Promise.all([
+      tenantId !== null
+        ? db.select().from(birds).where(and(eq(birds.tenantId, tenantId), eq(birds.status, "active")))
+        : db.select().from(birds).where(eq(birds.status, "active")),
+      tenantId !== null ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
+    ]);
+
+    // Mesmo limite de segurança já usado no Mapa de Consanguinidade: Mean
+    // Kinship é O(n²) chamadas a calculateCOIForPair — em vez de travar
+    // silenciosamente num plantel muito grande, avisa e não processa.
+    const MAX_ACTIVE = 250;
+    if (activeBirdsRaw.length > MAX_ACTIVE) {
+      return { tooLarge: true, totalActive: activeBirdsRaw.length, maxActive: MAX_ACTIVE } as const;
+    }
+
+    const birdMap = new Map<number, PedigreeBird>(
+      allTenantBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
+    );
+    const activeBirds: PedigreeBird[] = activeBirdsRaw.map((b) => ({
+      id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId,
+    }));
+
+    const report = buildPopulationGeneticsReport({ activeBirds, birdMap, maxGenerations: 6 });
+    return { tooLarge: false as const, ...report };
   }),
 
 });

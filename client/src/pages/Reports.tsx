@@ -1085,6 +1085,148 @@ function TabConsanguinidade() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Tab: Diversidade Genética do Plantel (Mean Kinship, Ne, Fundadores)
+// ────────────────────────────────────────────────────────────
+function TabPopulacional() {
+  const { data, isLoading } = trpc.reports.geneticaPopulacional.useQuery();
+
+  if (isLoading) return <div className="text-center py-12 text-gray-400">Calculando diversidade genética do plantel...</div>;
+  if (!data) return <div className="text-center py-12 text-gray-400">Sem dados disponíveis.</div>;
+
+  if (data.tooLarge) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-gray-600 text-sm">
+          Seu plantel tem {data.totalActive} pássaros ativos, acima do limite de {data.maxActive} que processamos de
+          uma vez, pra não travar a tela. Fale com o suporte se precisar desse relatório para todo o plantel de uma vez.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const neColor: Record<string, string> = {
+    critical: "bg-red-100 text-red-800 border-red-200",
+    low: "bg-amber-100 text-amber-800 border-amber-200",
+    healthy: "bg-green-100 text-green-800 border-green-200",
+  };
+  const neLabel: Record<string, string> = { critical: "Crítico", low: "Baixo", healthy: "Saudável" };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Pássaros ativos analisados</p><p className="text-2xl font-bold">{data.totalActive}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Machos / Fêmeas reprodutores</p><p className="text-2xl font-bold">{data.breedingMales} / {data.breedingFemales}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Tamanho Efetivo (Ne)</p><p className="text-2xl font-bold">{data.effectivePopulationSize}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Mean Kinship médio do plantel</p><p className="text-2xl font-bold">{(data.plantelAverageMeanKinship * 100).toFixed(2)}%</p></CardContent></Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            Saúde genética do plantel
+            <Badge className={neColor[data.neStatus] ?? ""}>{neLabel[data.neStatus] ?? data.neStatus}</Badge>
+          </CardTitle>
+          <CardDescription>{data.neReferenceNote}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-gray-500">
+            Ne (Tamanho Efetivo da População) é uma estimativa da genética de conservação baseada na proporção de
+            machos/fêmeas reprodutores (fórmula de Wright, 1938). Quanto menor o Ne, mais rápido o plantel perde
+            variabilidade genética ao longo das gerações — mesmo que o número total de pássaros pareça grande.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Fundadores do plantel</CardTitle>
+          <CardDescription>
+            Pássaros sem pai/mãe cadastrados no sistema — a raiz de cada linhagem conhecida — e o quanto cada um
+            contribui geneticamente para o plantel ativo hoje.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.founders.length === 0 ? (
+            <p className="text-sm text-gray-400">Nenhum fundador identificado (todos os pássaros ativos têm pai e mãe cadastrados).</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Anilha</TableHead>
+                  <TableHead>Sexo</TableHead>
+                  <TableHead>Contribuição no plantel</TableHead>
+                  <TableHead>Descendentes ativos</TableHead>
+                  <TableHead>Alerta</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.founders.map((f) => (
+                  <TableRow key={f.founderId}>
+                    <TableCell className="font-mono font-semibold">{f.ring}</TableCell>
+                    <TableCell>{f.sex}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${f.flag === "dominant" ? "bg-red-500" : "bg-amber-400"}`} style={{ width: `${Math.min(f.averageContribution * 100, 100)}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-600">{f.averageContributionPct}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>{f.descendantsInPlantel}</TableCell>
+                    <TableCell>
+                      {f.flag === "dominant" && <Badge className="bg-red-100 text-red-800 border-red-200 text-xs">Linhagem dominando demais</Badge>}
+                      {f.flag === "vanishing" && <Badge className="bg-gray-100 text-gray-600 border-gray-200 text-xs">Linhagem sumindo</Badge>}
+                      {!f.flag && <span className="text-gray-300 text-xs">—</span>}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Mean Kinship por pássaro</CardTitle>
+          <CardDescription>Quão aparentado cada pássaro é, em média, com o restante do plantel ativo — não com um parceiro específico.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Anilha</TableHead>
+                <TableHead>Mean Kinship</TableHead>
+                <TableHead>Comparado contra</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.meanKinshipByBird.slice(0, 30).map((r) => (
+                <TableRow key={r.birdId}>
+                  <TableCell className="font-mono font-semibold">{r.ring}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${r.meanKinship >= 0.0625 ? "bg-red-400" : "bg-green-500"}`} style={{ width: `${Math.min(r.meanKinship * 100 * 4, 100)}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-600">{r.meanKinshipPct}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-gray-400">{r.comparedAgainst} pássaro(s)</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {data.meanKinshipByBird.length > 30 && (
+            <p className="text-xs text-gray-400 mt-2">Mostrando os 30 pássaros com maior mean kinship, de {data.meanKinshipByBird.length} no total.</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Componente principal
 // ────────────────────────────────────────────────────────────
 export default function Reports() {
@@ -1113,6 +1255,7 @@ export default function Reports() {
             <TabsTrigger value="casais">Casais</TabsTrigger>
             <TabsTrigger value="confronto">Confronto Genético</TabsTrigger>
             <TabsTrigger value="consanguinidade">Mapa de Consanguinidade</TabsTrigger>
+            <TabsTrigger value="populacional">Diversidade Genética</TabsTrigger>
             <TabsTrigger value="temporada">Temporada</TabsTrigger>
             <TabsTrigger value="indice">Índice</TabsTrigger>
           </TabsList>
@@ -1124,6 +1267,7 @@ export default function Reports() {
           <TabsContent value="casais" className="mt-6"><TabCasais /></TabsContent>
           <TabsContent value="confronto" className="mt-6"><TabConfronto /></TabsContent>
           <TabsContent value="consanguinidade" className="mt-6"><TabConsanguinidade /></TabsContent>
+          <TabsContent value="populacional" className="mt-6"><TabPopulacional /></TabsContent>
           <TabsContent value="temporada" className="mt-6"><TabTemporada /></TabsContent>
           <TabsContent value="indice" className="mt-6"><TabIndice /></TabsContent>
         </Tabs>
