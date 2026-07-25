@@ -265,6 +265,50 @@ const EVENT_LABEL_MAP: Record<string, { label: string; badge: string }> = Object
   EVENT_BUTTONS.flatMap((g) => g.events.map((e: any) => [e.type, { label: e.label, badge: e.badge }]))
 );
 
+// ─── Histórico de posturas do casal — mesmo dado/formato da Ficha de Gaiola ───
+function ClutchHistoryTable({ coupleId }: { coupleId: number }) {
+  const { data: clutches, isLoading } = trpc.management.clutches.getByCoupleId.useQuery(coupleId);
+
+  if (isLoading) return null;
+  if (!clutches || clutches.length === 0) return null;
+
+  const sorted = [...clutches].sort((a: any, b: any) => new Date(b.clutchDate).getTime() - new Date(a.clutchDate).getTime());
+
+  return (
+    <div className="mb-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide px-3 pt-2.5 pb-1.5">
+        Histórico de posturas ({sorted.length}) — mesmo dado da Ficha de Gaiola
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-gray-400 border-b border-gray-100">
+              <th className="text-left font-medium px-3 py-1.5">Postura</th>
+              <th className="text-left font-medium px-2 py-1.5">Data</th>
+              <th className="text-center font-medium px-2 py-1.5">Ovos</th>
+              <th className="text-center font-medium px-2 py-1.5">Galados</th>
+              <th className="text-center font-medium px-2 py-1.5">Eclod.</th>
+              <th className="text-center font-medium px-2 py-1.5">Filhotes</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {sorted.map((clutch: any, idx: number) => (
+              <tr key={clutch.id}>
+                <td className="px-3 py-1.5 text-gray-500">{sorted.length - idx}ª</td>
+                <td className="px-2 py-1.5 text-gray-700">{new Date(clutch.clutchDate).toLocaleDateString("pt-BR")}</td>
+                <td className="px-2 py-1.5 text-center font-medium">{clutch.totalEggs}</td>
+                <td className="px-2 py-1.5 text-center text-gray-600">{clutch.fertilizedEggs}</td>
+                <td className="px-2 py-1.5 text-center text-gray-600">{clutch.hatchedChicks}</td>
+                <td className="px-2 py-1.5 text-center font-medium text-green-700">{clutch.hatchedChicks}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Lista de registros de hoje (histórico real, vindo do servidor) ───────────
 function TodayLogsList({ coupleId, onChanged }: { coupleId: number; onChanged: () => void }) {
   const { data: logs, isLoading, refetch } = trpc.dailyCare.getCoupleLogs.useQuery(
@@ -552,6 +596,9 @@ export default function RotinaDiariaPWA() {
 
                   {/* Registros de hoje — histórico real, não estado local */}
                   <TodayLogsList coupleId={couple.coupleId} onChanged={refetch} />
+
+                  {/* Histórico de posturas — mesmo dado que aparece na Ficha de Gaiola e nos Relatórios */}
+                  <ClutchHistoryTable coupleId={couple.coupleId} />
 
                   {/* Status da postura ativa */}
                   {clutch && (
