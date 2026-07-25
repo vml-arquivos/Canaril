@@ -11,7 +11,7 @@
  *   getSpeciesRules     — regras de incubação/anilhamento
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
 import {
   couples, birds, cages, clutches, breeding_daily_logs,
@@ -277,15 +277,48 @@ export const dailyCareRouter = router({
   }),
 
   // ─── Excluir log (soft) ───────────────────────────────────────────────
-  deleteLog: protectedProcedure
-    .input(z.object({ logId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+  /**
+   * Corrige um registro já lançado (quantidade e/ou observação) — sem isso,
+   * um clique errado (ex: "Ovo quebrado" em vez de "Ovo perdido") não tinha
+   * como ser corrigido, só apagado e recriado.
+   */
+  updateLog: protectedProcedure
+    .input(z.object({
+      logId: z.number().int().positive(),
+      quantity: z.number().int().min(1).max(99).optional(),
+      noteText: z.string().max(1000).optional().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const pool = await getPool();
       if (!db || !pool) throw new Error("Banco não disponível.");
 
       const [log] = await db.select().from(breeding_daily_logs).where(eq(breeding_daily_logs.id, input.logId)).limit(1);
       if (!log) throw new Error("Log não encontrado.");
+      const [couple] = await db.select({ tenantId: couples.tenantId }).from(couples).where(eq(couples.id, log.coupleId)).limit(1);
+      requireTenantAccess(ctx, couple?.tenantId ?? null);
+
+      const { logId, ...fields } = input;
+      await db.update(breeding_daily_logs).set({ ...fields, updatedAt: new Date() }).where(eq(breeding_daily_logs.id, input.logId));
+
+      if (log.clutchId) {
+        await recalculateClutchFromLogs(pool, log.clutchId);
+      }
+
+      return { updated: true };
+    }),
+
+  deleteLog: protectedProcedure
+    .input(z.object({ logId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = await getPool();
+      if (!db || !pool) throw new Error("Banco não disponível.");
+
+      const [log] = await db.select().from(breeding_daily_logs).where(eq(breeding_daily_logs.id, input.logId)).limit(1);
+      if (!log) throw new Error("Log não encontrado.");
+      const [couple] = await db.select({ tenantId: couples.tenantId }).from(couples).where(eq(couples.id, log.coupleId)).limit(1);
+      requireTenantAccess(ctx, couple?.tenantId ?? null);
 
       await db.delete(breeding_daily_logs).where(eq(breeding_daily_logs.id, input.logId));
 

@@ -12,7 +12,7 @@ import { useState, useCallback, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { ChevronDown, ChevronUp, RefreshCw, Info } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCw, Info, Pencil, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 
 function haptic(ms = 30) { try { navigator.vibrate?.(ms); } catch {} }
@@ -266,11 +266,24 @@ const EVENT_LABEL_MAP: Record<string, { label: string; badge: string }> = Object
 );
 
 // ─── Lista de registros de hoje (histórico real, vindo do servidor) ───────────
-function TodayLogsList({ coupleId }: { coupleId: number }) {
-  const { data: logs, isLoading } = trpc.dailyCare.getCoupleLogs.useQuery(
+function TodayLogsList({ coupleId, onChanged }: { coupleId: number; onChanged: () => void }) {
+  const { data: logs, isLoading, refetch } = trpc.dailyCare.getCoupleLogs.useQuery(
     { coupleId, limitDays: 1 },
     { enabled: true }
   );
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editQty, setEditQty] = useState(1);
+  const [editNote, setEditNote] = useState("");
+
+  const updateLog = trpc.dailyCare.updateLog.useMutation({
+    onSuccess: () => { toast.success("Registro atualizado."); refetch(); onChanged(); setEditingId(null); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteLog = trpc.dailyCare.deleteLog.useMutation({
+    onSuccess: () => { toast.success("Registro removido."); refetch(); onChanged(); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayLogs = (logs ?? []).filter((l: any) => l.date === todayStr);
 
@@ -286,14 +299,60 @@ function TodayLogsList({ coupleId }: { coupleId: number }) {
         {todayLogs.map((log: any) => {
           const meta = EVENT_LABEL_MAP[log.eventType] ?? { label: log.eventType, badge: "bg-gray-500" };
           const time = new Date(log.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+          const isEditing = editingId === log.id;
+
+          if (isEditing) {
+            return (
+              <div key={log.id} className="px-3 py-2.5 bg-amber-50/60 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${meta.badge}`} />
+                  <span className="text-sm font-medium text-gray-800 flex-1">{meta.label}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500">Qtd.</label>
+                  <input type="number" min={1} max={99} value={editQty}
+                    onChange={(e) => setEditQty(Number(e.target.value) || 1)}
+                    className="w-14 h-7 text-xs border rounded px-1.5" />
+                  <input type="text" placeholder="Observação (opcional)" value={editNote}
+                    onChange={(e) => setEditNote(e.target.value)}
+                    className="flex-1 h-7 text-xs border rounded px-2" />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="text-xs bg-amber-600 text-white rounded px-2.5 py-1 font-medium"
+                    onClick={() => updateLog.mutate({ logId: log.id, quantity: editQty, noteText: editNote || null })}
+                    disabled={updateLog.isPending}
+                  >
+                    {updateLog.isPending ? "Salvando..." : "Salvar"}
+                  </button>
+                  <button className="text-xs text-gray-500 px-2.5 py-1" onClick={() => setEditingId(null)}>Cancelar</button>
+                </div>
+              </div>
+            );
+          }
+
           return (
-            <div key={log.id} className="flex items-center gap-2.5 px-3 py-2">
+            <div key={log.id} className="flex items-center gap-2.5 px-3 py-2 group">
               <span className={`w-2 h-2 rounded-full shrink-0 ${meta.badge}`} />
-              <span className="text-sm text-gray-800 flex-1">
+              <span className="text-sm text-gray-800 flex-1 min-w-0 truncate">
                 {meta.label}{log.quantity > 1 ? ` (×${log.quantity})` : ""}
+                {log.noteText && <span className="text-gray-400 font-normal"> — {log.noteText}</span>}
               </span>
-              {log.noteText && <span className="text-xs text-gray-400 truncate max-w-[120px]">{log.noteText}</span>}
               <span className="text-xs text-gray-400 shrink-0">{time}</span>
+              <button
+                className="text-gray-300 hover:text-amber-600 shrink-0 p-0.5"
+                title="Editar"
+                onClick={() => { setEditingId(log.id); setEditQty(log.quantity ?? 1); setEditNote(log.noteText ?? ""); }}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                className="text-gray-300 hover:text-red-600 shrink-0 p-0.5"
+                title="Excluir"
+                onClick={() => { if (confirm(`Remover o registro "${meta.label}"?`)) deleteLog.mutate({ logId: log.id }); }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             </div>
           );
         })}
@@ -492,7 +551,7 @@ export default function RotinaDiariaPWA() {
                 <div className="border-t border-gray-100 bg-gray-50/40 px-3 pt-3 pb-4">
 
                   {/* Registros de hoje — histórico real, não estado local */}
-                  <TodayLogsList coupleId={couple.coupleId} />
+                  <TodayLogsList coupleId={couple.coupleId} onChanged={refetch} />
 
                   {/* Status da postura ativa */}
                   {clutch && (
