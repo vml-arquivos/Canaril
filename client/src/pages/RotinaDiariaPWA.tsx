@@ -266,7 +266,7 @@ const EVENT_LABEL_MAP: Record<string, { label: string; badge: string }> = Object
 );
 
 // ─── Histórico de posturas do casal — mesmo dado/formato da Ficha de Gaiola ───
-function ClutchHistoryTable({ coupleId }: { coupleId: number }) {
+function ClutchHistoryTable({ coupleId, isOpen, onToggle }: { coupleId: number; isOpen: boolean; onToggle: () => void }) {
   const { data: clutches, isLoading } = trpc.management.clutches.getByCoupleId.useQuery(coupleId);
 
   if (isLoading) return null;
@@ -275,42 +275,50 @@ function ClutchHistoryTable({ coupleId }: { coupleId: number }) {
   const sorted = [...clutches].sort((a: any, b: any) => new Date(b.clutchDate).getTime() - new Date(a.clutchDate).getTime());
 
   return (
-    <div className="mb-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide px-3 pt-2.5 pb-1.5">
-        Histórico de posturas ({sorted.length}) — mesmo dado da Ficha de Gaiola
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-gray-400 border-b border-gray-100">
-              <th className="text-left font-medium px-3 py-1.5">Postura</th>
-              <th className="text-left font-medium px-2 py-1.5">Data</th>
-              <th className="text-center font-medium px-2 py-1.5">Ovos</th>
-              <th className="text-center font-medium px-2 py-1.5">Galados</th>
-              <th className="text-center font-medium px-2 py-1.5">Eclod.</th>
-              <th className="text-center font-medium px-2 py-1.5">Filhotes</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {sorted.map((clutch: any, idx: number) => (
-              <tr key={clutch.id}>
-                <td className="px-3 py-1.5 text-gray-500">{sorted.length - idx}ª</td>
-                <td className="px-2 py-1.5 text-gray-700">{new Date(clutch.clutchDate).toLocaleDateString("pt-BR")}</td>
-                <td className="px-2 py-1.5 text-center font-medium">{clutch.totalEggs}</td>
-                <td className="px-2 py-1.5 text-center text-gray-600">{clutch.fertilizedEggs}</td>
-                <td className="px-2 py-1.5 text-center text-gray-600">{clutch.hatchedChicks}</td>
-                <td className="px-2 py-1.5 text-center font-medium text-green-700">{clutch.hatchedChicks}</td>
+    <div className="mb-3 bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 py-2 text-left active:bg-gray-50"
+      >
+        <span className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
+          Histórico de posturas ({sorted.length})
+        </span>
+        {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
+      </button>
+      {isOpen && (
+        <div className="overflow-x-auto border-t border-gray-100">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-100">
+                <th className="text-left font-medium px-3 py-1.5">Postura</th>
+                <th className="text-left font-medium px-2 py-1.5">Data</th>
+                <th className="text-center font-medium px-2 py-1.5">Ovos</th>
+                <th className="text-center font-medium px-2 py-1.5">Galados</th>
+                <th className="text-center font-medium px-2 py-1.5">Eclod.</th>
+                <th className="text-center font-medium px-2 py-1.5">Filhotes</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {sorted.map((clutch: any, idx: number) => (
+                <tr key={clutch.id}>
+                  <td className="px-3 py-1.5 text-gray-500">{sorted.length - idx}ª</td>
+                  <td className="px-2 py-1.5 text-gray-700">{new Date(clutch.clutchDate).toLocaleDateString("pt-BR")}</td>
+                  <td className="px-2 py-1.5 text-center font-medium">{clutch.totalEggs}</td>
+                  <td className="px-2 py-1.5 text-center text-gray-600">{clutch.fertilizedEggs}</td>
+                  <td className="px-2 py-1.5 text-center text-gray-600">{clutch.hatchedChicks}</td>
+                  <td className="px-2 py-1.5 text-center font-medium text-green-700">{clutch.hatchedChicks}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Lista de registros de hoje (histórico real, vindo do servidor) ───────────
-function TodayLogsList({ coupleId, onChanged }: { coupleId: number; onChanged: () => void }) {
+function TodayLogsList({ coupleId, onChanged, isOpen, onToggle }: { coupleId: number; onChanged: () => void; isOpen: boolean; onToggle: () => void }) {
   const { data: logs, isLoading, refetch } = trpc.dailyCare.getCoupleLogs.useQuery(
     { coupleId, limitDays: 1 },
     { enabled: true }
@@ -331,15 +339,22 @@ function TodayLogsList({ coupleId, onChanged }: { coupleId: number; onChanged: (
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayLogs = (logs ?? []).filter((l: any) => l.date === todayStr);
 
-  if (isLoading) return <p className="text-xs text-gray-400 px-0.5 mb-3">Carregando registros de hoje...</p>;
+  if (isLoading) return null;
   if (todayLogs.length === 0) return null;
 
   return (
-    <div className="mb-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide px-3 pt-2.5 pb-1.5">
-        Registros de hoje ({todayLogs.length})
-      </p>
-      <div className="divide-y divide-gray-100">
+    <div className="mb-3 bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 py-2 text-left active:bg-gray-50"
+      >
+        <span className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
+          Registros de hoje ({todayLogs.length})
+        </span>
+        {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
+      </button>
+      {isOpen && (
+      <div className="divide-y divide-gray-100 border-t border-gray-100">
         {todayLogs.map((log: any) => {
           const meta = EVENT_LABEL_MAP[log.eventType] ?? { label: log.eventType, badge: "bg-gray-500" };
           const time = new Date(log.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -401,6 +416,7 @@ function TodayLogsList({ coupleId, onChanged }: { coupleId: number; onChanged: (
           );
         })}
       </div>
+      )}
     </div>
   );
 }
@@ -416,6 +432,8 @@ export default function RotinaDiariaPWA() {
   });
 
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (key: string) => setOpenSections((p) => ({ ...p, [key]: !p[key] }));
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
   // Ref para o input de câmera — um por sessão, reutilizado
@@ -595,10 +613,19 @@ export default function RotinaDiariaPWA() {
                 <div className="border-t border-gray-100 bg-gray-50/40 px-3 pt-3 pb-4">
 
                   {/* Registros de hoje — histórico real, não estado local */}
-                  <TodayLogsList coupleId={couple.coupleId} onChanged={refetch} />
+                  <TodayLogsList
+                    coupleId={couple.coupleId}
+                    onChanged={refetch}
+                    isOpen={!!openSections[`${couple.coupleId}-today`]}
+                    onToggle={() => toggleSection(`${couple.coupleId}-today`)}
+                  />
 
                   {/* Histórico de posturas — mesmo dado que aparece na Ficha de Gaiola e nos Relatórios */}
-                  <ClutchHistoryTable coupleId={couple.coupleId} />
+                  <ClutchHistoryTable
+                    coupleId={couple.coupleId}
+                    isOpen={!!openSections[`${couple.coupleId}-history`]}
+                    onToggle={() => toggleSection(`${couple.coupleId}-history`)}
+                  />
 
                   {/* Status da postura ativa */}
                   {clutch && (
