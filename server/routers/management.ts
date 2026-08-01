@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
 import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
-import { and, eq, desc, sql, isNull } from "drizzle-orm";
+import { and, eq, desc, sql, isNull, gte, lte } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
 import { getCurrentTenantId } from "../_core/tenant";
 
@@ -235,13 +235,17 @@ export const managementRouter = router({
           const activeCouples = await db.select().from(couples).where(
             and(eq(couples.status, "active"), tenantId !== null && tenantId !== undefined ? eq(couples.tenantId, tenantId) : sql`1=1`)
           );
-          const maleTaken = activeCouples.find((c) => c.maleId === input.maleId || c.femaleId === input.maleId);
-          const femaleTaken = activeCouples.find((c) => c.maleId === input.femaleId || c.femaleId === input.femaleId);
-          if (maleTaken) {
-            throw new Error("Este pássaro (macho) já está em outro casal ativo. Desfaça o casal anterior primeiro.");
-          }
+          // O MACHO pode estar em vários casais ativos ao mesmo tempo (uso
+          // em "harém", comum na prática de canaricultura — um macho
+          // reprodutor bom serve várias fêmeas na mesma temporada). A
+          // FÊMEA continua restrita a um único casal ativo por vez, porque
+          // ela só pode estar botando num ninho de cada vez.
+          const femaleTaken = activeCouples.find((c) => c.femaleId === input.femaleId);
           if (femaleTaken) {
             throw new Error("Este pássaro (fêmea) já está em outro casal ativo. Desfaça o casal anterior primeiro.");
+          }
+          if (activeCouples.some((c) => c.maleId === input.maleId && c.femaleId === input.femaleId)) {
+            throw new Error("Este casal (mesmo macho e mesma fêmea) já está ativo.");
           }
 
           await db.insert(couples).values({
@@ -390,6 +394,20 @@ export const managementRouter = router({
         if (!db) throw new Error("Database not available");
         const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         try {
+          // Aviso (não bloqueio) se o casal já passou de 4 posturas no
+          // mesmo ano-calendário da nova postura — 4/ano é a prática
+          // recomendada de descanso reprodutivo do casal, mas não travamos
+          // o cadastro pra não impedir correção de dados históricos.
+          const year = input.clutchDate.getFullYear();
+          const yearStart = new Date(year, 0, 1);
+          const yearEnd = new Date(year, 11, 31, 23, 59, 59);
+          const sameYearClutches = await db.select().from(clutches).where(
+            and(eq(clutches.coupleId, input.coupleId), gte(clutches.clutchDate, yearStart), lte(clutches.clutchDate, yearEnd), isNull(clutches.deletedAt))
+          );
+          const warning = sameYearClutches.length >= 4
+            ? `Atenção: este casal já tem ${sameYearClutches.length} postura(s) registrada(s) em ${year}. O recomendado é no máximo 4 por ano, pra não desgastar o casal.`
+            : null;
+
           await db.insert(clutches).values({
             coupleId: input.coupleId,
             clutchDate: input.clutchDate,
@@ -400,7 +418,7 @@ export const managementRouter = router({
             hatchedChicks: input.hatchedChicks || 0,
             tenantId: tenantId ?? null,
           });
-          return { success: true };
+          return { success: true, warning };
         } catch (error) {
           console.error("Error creating clutch:", error);
           throw error;

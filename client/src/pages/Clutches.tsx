@@ -45,8 +45,9 @@ export default function Clutches() {
   });
 
   const createClutch = trpc.management.clutches.create.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success("Postura registrada com sucesso!");
+      if (result?.warning) toast.warning(result.warning, { duration: 8000 });
       refetchClutches();
       setOpenClutch(false);
       setClutchData({

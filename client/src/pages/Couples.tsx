@@ -218,17 +218,16 @@ export default function Couples() {
 
   const { data: couples, refetch } = trpc.management.couples.list.useQuery();
   const { data: birds } = trpc.birds.list.useQuery({});
-  // Pássaros já vinculados a um casal ATIVO não podem formar outro casal —
-  // somem da lista de disponíveis até o casal anterior ser desfeito/
-  // excluído. Ao editar um casal existente, o macho/fêmea dele mesmo
-  // continuam aparecendo (senão o próprio formulário ficaria inválido).
-  const pairedMaleIds = new Set(
-    couples?.filter((c) => c.status === "active" && c.id !== editingId).map((c) => c.maleId)
-  );
+  // Fêmea já vinculada a um casal ATIVO não pode formar outro casal — some
+  // da lista até o casal anterior ser desfeito/excluído. O MACHO pode
+  // estar em vários casais ativos ao mesmo tempo (uso em "harém", comum na
+  // prática de canaricultura). Ao editar um casal existente, o macho/fêmea
+  // dele mesmo continuam aparecendo (senão o próprio formulário ficaria
+  // inválido).
   const pairedFemaleIds = new Set(
     couples?.filter((c) => c.status === "active" && c.id !== editingId).map((c) => c.femaleId)
   );
-  const malesAvailable = birds?.filter((b) => b.sex === "macho" && !pairedMaleIds.has(b.id));
+  const malesAvailable = birds?.filter((b) => b.sex === "macho");
   const femalesAvailable = birds?.filter((b) => b.sex === "fêmea" && !pairedFemaleIds.has(b.id));
   const ringOf = (id: number) => birds?.find((b) => b.id === id)?.ring ?? `#${id}`;
   const birdOf = (id: number) => birds?.find((b) => b.id === id);
@@ -352,11 +351,15 @@ export default function Couples() {
                         <SelectValue placeholder="Selecione o macho..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {malesAvailable?.map((bird) => (
-                          <SelectItem key={bird.id} value={bird.id.toString()}>
-                            {bird.ring} - {specialtyName(bird.specialty_code)}
-                          </SelectItem>
-                        ))}
+                        {malesAvailable?.map((bird) => {
+                          const activeCount = couples?.filter((c) => c.status === "active" && c.maleId === bird.id && c.id !== editingId).length ?? 0;
+                          return (
+                            <SelectItem key={bird.id} value={bird.id.toString()}>
+                              {bird.ring} - {specialtyName(bird.specialty_code)}
+                              {activeCount > 0 && <span className="text-amber-600 ml-1.5">· já em {activeCount} casal{activeCount > 1 ? "is" : ""} ativo{activeCount > 1 ? "s" : ""}</span>}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
