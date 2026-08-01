@@ -545,6 +545,50 @@ function TabConfronto() {
             </div>
           )}
 
+          {/* Alternativas — quando o casal escolhido não é ideal, mostra com quem seria */}
+          {data.betterAlternatives && (data.betterAlternatives.forMale.length > 0 || data.betterAlternatives.forFemale.length > 0) && (
+            <Card className="border-blue-100 bg-blue-50/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Este casal não é a combinação ideal — o que combinaria melhor</CardTitle>
+                <CardDescription className="text-xs">Buscamos no seu plantel os pássaros que teriam a melhor combinação genética com cada um dos dois.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid sm:grid-cols-2 gap-4">
+                {data.betterAlternatives.forMale.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Melhores fêmeas para {data.male.bird.ring}</p>
+                    <div className="space-y-1.5">
+                      {data.betterAlternatives.forMale.map((alt: any, i: number) => (
+                        <div key={i} className="bg-white rounded-lg border p-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-semibold">{alt.ring}</span>
+                            <Badge variant="outline">{alt.score.toFixed(0)} pts · COI {alt.coiPct}</Badge>
+                          </div>
+                          {alt.reasons[0] && <p className="text-gray-500 mt-1">{alt.reasons[0]}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {data.betterAlternatives.forFemale.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Melhores machos para {data.female.bird.ring}</p>
+                    <div className="space-y-1.5">
+                      {data.betterAlternatives.forFemale.map((alt: any, i: number) => (
+                        <div key={i} className="bg-white rounded-lg border p-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-semibold">{alt.ring}</span>
+                            <Badge variant="outline">{alt.score.toFixed(0)} pts · COI {alt.coiPct}</Badge>
+                          </div>
+                          {alt.reasons[0] && <p className="text-gray-500 mt-1">{alt.reasons[0]}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* COI */}
           <Card>
             <CardContent className="p-4 flex items-center gap-6">

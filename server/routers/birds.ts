@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router, requireTenantAccess, getCallerTenantId } from "../_core/trpc";
 import { getDb } from "../db";
 import { bird_genetic_inference_logs, bird_genetic_profiles, birds, official_bird_classes, rings } from "../../drizzle/schema";
-import { eq, desc, and, or, sql } from "drizzle-orm";
+import { eq, desc, and, or, sql, ilike } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { generateBirdDisplayTitle, deriveLegacyColorCode, deriveLegacySpecialtyCode } from "../_core/birdIdentity";
 import { interpretOfficialClass } from "../_core/officialClassInterpreter";
@@ -120,8 +120,11 @@ export const birdsRouter = router({
   list: protectedProcedure
     .input(z.object({
       specialty_code: z.string().optional(),
+      color_code: z.string().optional(),
+      sex: z.string().optional(),
       status: z.string().optional(),
       search: z.string().optional(),
+      limit: z.number().min(1).max(500).optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
@@ -130,11 +133,25 @@ export const birdsRouter = router({
       try {
         // Se usuário possui tenantId, filtrar por esse tenant. Plataforma Admin (tenantId null) vê todos
         const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-        let query: any = db.select().from(birds);
-        if (tenantId !== null && tenantId !== undefined) {
-          query = query.where(eq(birds.tenantId, tenantId));
+        const conditions: any[] = [];
+        if (tenantId !== null && tenantId !== undefined) conditions.push(eq(birds.tenantId, tenantId));
+
+        // Antes: specialty_code/status/search eram aceitos no input mas
+        // NUNCA usados pra filtrar — a lista sempre devolvia o plantel
+        // inteiro. Agora filtram de verdade.
+        if (input?.specialty_code) conditions.push(eq(birds.specialty_code, input.specialty_code));
+        if (input?.color_code) conditions.push(eq(birds.color_code, input.color_code));
+        if (input?.sex) conditions.push(eq(birds.sex, input.sex));
+        if (input?.status) conditions.push(eq(birds.status, input.status));
+        if (input?.search) {
+          const term = `%${input.search.trim()}%`;
+          conditions.push(or(ilike(birds.ring, term), ilike(birds.displayTitle, term), ilike(birds.nickname, term)));
         }
-        const results = await query.orderBy(desc(birds.createdAt));
+
+        let query: any = db.select().from(birds).where(conditions.length > 0 ? and(...conditions) : undefined);
+        query = query.orderBy(desc(birds.createdAt));
+        if (input?.limit) query = query.limit(input.limit);
+        const results = await query;
         return results;
       } catch (error) {
         console.error("Error listing birds:", error);

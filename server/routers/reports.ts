@@ -18,6 +18,7 @@ import { desc, eq, and } from "drizzle-orm";
 import { calculateCOI, calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 import { analyzeCoiForPair } from "../_core/coiAnalyzer";
 import { buildPopulationGeneticsReport } from "../_core/populationGenetics";
+import { scorePair } from "../_core/pairingOptimizer";
 import { getCurrentTenantId } from "../_core/tenant";
 
 
@@ -436,12 +437,49 @@ export const reportsRouter = router({
         alerts.push(`COI moderado (${(coi * 100).toFixed(1)}%) — aceitável com monitoramento`);
       }
 
+      // Se o casal escolhido tem algum problema (alerta ou COI não-baixo),
+      // busca no plantel quem seria uma combinação melhor pra cada um dos
+      // dois — reaproveitando scorePair, já usado e testado no otimizador
+      // de plantel e na "Sugestão de par ideal". Sempre que o sistema disser
+      // "não combina", ele também explica com quem combinaria melhor.
+      let betterAlternatives: { forMale: any[]; forFemale: any[] } | null = null;
+      if (alerts.length > 0 || coiRisk !== "low") {
+        const activeBirds = allBirds.filter((b) => b.status === "active");
+        const candidateFemales = activeBirds.filter((b) => b.sex === "fêmea" && b.id !== female.id);
+        const candidateMales = activeBirds.filter((b) => b.sex === "macho" && b.id !== male.id);
+
+        const scoreAgainst = (base: typeof male, baseGenotype: typeof maleGenotype, candidates: typeof activeBirds) => {
+          return candidates
+            .map((c) => {
+              const candCoi = calculateCOIForPair(base.sex === "macho" ? base.id : c.id, base.sex === "macho" ? c.id : base.id, birdMap, 5);
+              const result = scorePair({
+                male: base.sex === "macho" ? base : c,
+                female: base.sex === "macho" ? c : base,
+                coi: candCoi,
+                maleGenotype: null,
+                femaleGenotype: null,
+                objective: "PLANEJAMENTO_LIVRE",
+              });
+              return { ring: c.ring, displayTitle: c.displayTitle, coi: candCoi, coiPct: `${(candCoi * 100).toFixed(1)}%`, score: result.finalScore, status: result.status, reasons: result.reasons };
+            })
+            .filter((r) => r.status !== "NAO_RECOMENDADO")
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 3);
+        };
+
+        betterAlternatives = {
+          forMale: scoreAgainst(male, maleGenotype, candidateFemales),
+          forFemale: scoreAgainst(female, femaleGenotype, candidateMales),
+        };
+      }
+
       return {
         male: { bird: male, genotype: maleGenotype ?? null, profile: maleProfile ?? null },
         female: { bird: female, genotype: femaleGenotype ?? null, profile: femaleProfile ?? null },
         coi,
         coiRisk,
         alerts,
+        betterAlternatives,
         hasBothGenotypes: !!maleGenotype && !!femaleGenotype,
         generatedAt: new Date(),
       };

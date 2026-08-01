@@ -7,9 +7,11 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { supply_records } from "../../drizzle/schema";
+import { supply_records, birds } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
 import { getCurrentTenantId } from "../_core/tenant";
+import { allocateCostsPerBird, classifyBirdPigmentCategory } from "../_core/costAllocation";
+import { COLORS } from "../../shared/constants";
 
 const CATEGORIES = [
   "racao", "semente", "folhagem", "fruta", "suplemento",
@@ -67,6 +69,7 @@ export const suppliesRouter = router({
       supplier:  z.string().max(200).optional(),
       date:      z.string().optional(),
       notes:     z.string().max(500).optional(),
+      appliesToColorCategory: z.enum(["com_fator", "sem_fator"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -87,6 +90,7 @@ export const suppliesRouter = router({
         supplier:  input.supplier ?? null,
         date:      input.date ? new Date(input.date) : new Date(),
         notes:     input.notes ?? null,
+        appliesToColorCategory: input.appliesToColorCategory ?? null,
         tenantId,
         createdBy: uid,
       } as any).returning();
@@ -142,6 +146,58 @@ export const suppliesRouter = router({
           count:     Number(r.count),
           pct:       grandTotal > 0 ? Math.round((Number(r.total) / grandTotal) * 100) : 0,
         })),
+      };
+    }),
+
+  /**
+   * Custo real por pássaro no período — separa insumos gerais (ração,
+   * divididos igualmente entre todo o plantel) de insumos específicos por
+   * pigmento (ex.: cantaxantina só pra "com fator vermelho", xantofila só
+   * pra "sem fator"/amarelos), reaproveitando server/_core/costAllocation.ts
+   * (8 testes próprios, matemática conferida à mão).
+   */
+  costPerBird: protectedProcedure
+    .input(z.object({
+      dateFrom: z.string().optional(),
+      dateTo:   z.string().optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+
+      const supplyConditions: any[] = [];
+      if (tenantId !== null) supplyConditions.push(eq(supply_records.tenantId, tenantId));
+      if (input?.dateFrom) supplyConditions.push(gte(supply_records.date, new Date(input.dateFrom)));
+      if (input?.dateTo)   supplyConditions.push(lte(supply_records.date, new Date(input.dateTo)));
+
+      const [supplyRows, activeBirds] = await Promise.all([
+        db.select({ totalCost: supply_records.totalCost, appliesToColorCategory: supply_records.appliesToColorCategory })
+          .from(supply_records)
+          .where(supplyConditions.length > 0 ? and(...supplyConditions) : undefined),
+        tenantId !== null
+          ? db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId)))
+          : db.select().from(birds).where(eq(birds.status, "active")),
+      ]);
+
+      const result = allocateCostsPerBird({
+        supplies: supplyRows.map((s) => ({
+          totalCost: Number(s.totalCost ?? 0),
+          appliesToColorCategory: (s.appliesToColorCategory as "com_fator" | "sem_fator" | null) ?? null,
+        })),
+        birds: activeBirds.map((b) => ({
+          id: b.id,
+          ring: b.ring,
+          pigmentCategory: classifyBirdPigmentCategory(b.color_code, COLORS as any),
+        })),
+      });
+
+      const byId = new Map(activeBirds.map((b) => [b.id, b]));
+      return {
+        ...result,
+        perBird: result.perBird
+          .map((p) => ({ ...p, displayTitle: byId.get(p.birdId)?.displayTitle ?? null }))
+          .sort((a, b) => b.totalCost - a.totalCost),
       };
     }),
 });
