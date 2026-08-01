@@ -40,6 +40,25 @@ function calculateAge(birthDate: string | Date | null): string {
   return remMonths === 0 ? `${years} ${years === 1 ? "ano" : "anos"}` : `${years}a ${remMonths}m`;
 }
 
+// Mesma classificação usada em Pássaros e nos Relatórios (server/_core/costAllocation.ts).
+function ageCategoryOf(birthDate: string | Date | null | undefined): "filhote" | "jovem" | "adulto" | "desconhecido" {
+  if (!birthDate) return "desconhecido";
+  const birth = new Date(birthDate);
+  if (isNaN(birth.getTime())) return "desconhecido";
+  const ageDays = (Date.now() - birth.getTime()) / (1000 * 60 * 60 * 24);
+  if (ageDays < 0) return "desconhecido";
+  if (ageDays <= 40) return "filhote";
+  if (ageDays <= 365) return "jovem";
+  return "adulto";
+}
+const AGE_BADGE_STYLE: Record<string, string> = {
+  filhote: "bg-green-100 text-green-700", jovem: "bg-blue-100 text-blue-700",
+  adulto: "bg-gray-100 text-gray-600", desconhecido: "bg-amber-50 text-amber-600",
+};
+const AGE_BADGE_LABEL: Record<string, string> = {
+  filhote: "Filhote", jovem: "Jovem", adulto: "Adulto", desconhecido: "Idade desconhecida",
+};
+
 const riskConfig = {
   low: { label: "Risco baixo", className: "bg-green-100 text-green-800" },
   moderate: { label: "Risco moderado", className: "bg-yellow-100 text-yellow-800" },
@@ -97,6 +116,9 @@ export function BirdFicha({
             <p className="text-xs text-gray-400">{bird.speciesName || "Canário"}{bird.modality ? ` · ${bird.modality}` : ""}</p>
             <span className="inline-block mt-2 px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">
               {bird.status}
+            </span>
+            <span className={`inline-block mt-2 ml-1 px-2 py-0.5 rounded text-xs font-medium ${AGE_BADGE_STYLE[ageCategoryOf(bird.birthDate)]}`}>
+              {AGE_BADGE_LABEL[ageCategoryOf(bird.birthDate)]}
             </span>
             {risk && (
               <span className={`inline-block mt-2 ml-1 px-2 py-0.5 rounded text-xs font-medium ${risk.className}`}>

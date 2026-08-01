@@ -107,6 +107,30 @@ function labelFromId<T extends { id: string; name: string }>(items: readonly T[]
   return items.find((i) => i.id === id)?.name ?? id ?? "";
 }
 
+// Mesma classificação usada no backend (server/_core/costAllocation.ts) —
+// fonte: NIAAS (independência dos pais aos ~40 dias) e Petz (maturidade
+// reprodutiva recomendada em 1 ano) para canário-belga.
+function ageCategoryOf(birthDate: string | Date | null | undefined): "filhote" | "jovem" | "adulto" | "desconhecido" {
+  if (!birthDate) return "desconhecido";
+  const birth = new Date(birthDate);
+  if (isNaN(birth.getTime())) return "desconhecido";
+  const ageDays = (Date.now() - birth.getTime()) / (1000 * 60 * 60 * 24);
+  if (ageDays < 0) return "desconhecido";
+  if (ageDays <= 40) return "filhote";
+  if (ageDays <= 365) return "jovem";
+  return "adulto";
+}
+
+const AGE_BADGE_STYLE: Record<string, string> = {
+  filhote: "bg-green-100 text-green-700",
+  jovem: "bg-blue-100 text-blue-700",
+  adulto: "bg-gray-100 text-gray-600",
+  desconhecido: "bg-amber-50 text-amber-600",
+};
+const AGE_BADGE_LABEL: Record<string, string> = {
+  filhote: "Filhote", jovem: "Jovem", adulto: "Adulto", desconhecido: "Idade ?",
+};
+
 function labelFromCode(items: readonly CatalogOption[], code?: string | null) {
   return items.find((i) => i.code === code)?.name ?? code ?? "";
 }
@@ -940,7 +964,7 @@ export default function Birds() {
                       onClick={() => setFichaBird(bird)}
                       className="text-left rounded-xl border bg-white overflow-hidden hover:shadow-md hover:border-blue-300 transition-all"
                     >
-                      <div className="aspect-square bg-gray-100">
+                      <div className="aspect-square bg-gray-100 relative">
                         {photoUrl ? (
                           <img src={photoUrl} alt={bird.ring} className="w-full h-full object-cover" />
                         ) : (
@@ -948,6 +972,9 @@ export default function Birds() {
                             <BirdIcon className="w-10 h-10" />
                           </div>
                         )}
+                        <span className={`absolute top-1.5 right-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${AGE_BADGE_STYLE[ageCategoryOf(bird.birthDate)]}`}>
+                          {AGE_BADGE_LABEL[ageCategoryOf(bird.birthDate)]}
+                        </span>
                       </div>
                       <div className="p-2.5">
                         <p className="font-bold text-sm text-gray-900 truncate">{bird.displayTitle || bird.ring}</p>
@@ -987,6 +1014,7 @@ export default function Birds() {
                       <TableHead>Sexo</TableHead>
                       <TableHead>Cor</TableHead>
                       <TableHead>Data Nascimento</TableHead>
+                      <TableHead>Idade</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Ações</TableHead>
                     </TableRow>
@@ -1013,6 +1041,11 @@ export default function Birds() {
                         <TableCell>{SEXES.find((s) => s.id === bird.sex)?.name ?? bird.sex}</TableCell>
                         <TableCell>{labelFromCode(colorsList, bird.color_code)}</TableCell>
                         <TableCell>{bird.birthDate ? new Date(bird.birthDate).toLocaleDateString("pt-BR") : "-"}</TableCell>
+                        <TableCell>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${AGE_BADGE_STYLE[ageCategoryOf(bird.birthDate)]}`}>
+                            {AGE_BADGE_LABEL[ageCategoryOf(bird.birthDate)]}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
                             {bird.status}
