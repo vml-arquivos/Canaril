@@ -322,8 +322,9 @@ function CostPerBirdSection({ period }: { period: { dateFrom: string; dateTo: st
         </CardTitle>
         {data && data.perBird.length > 0 ? (
           <CardDescription>
-            Divide os insumos gerais igualmente entre o plantel e soma os insumos específicos (ex.: cantaxantina só
-            conta pra quem tem fator vermelho) — média de <span className="font-semibold">{currencyBR(data.averagePerBird)}</span> por pássaro no período.
+            Insumos gerais são divididos proporcionalmente à idade (filhotes consomem menos que adultos), e insumos
+            específicos (ex.: cantaxantina) só entram pra quem tem fator vermelho — média de{" "}
+            <span className="font-semibold">{currencyBR(data.averagePerBird)}</span> por pássaro no período.
           </CardDescription>
         ) : (
           <CardDescription>Divide o custo dos insumos registrados igualmente entre o plantel ativo.</CardDescription>
@@ -341,7 +342,16 @@ function CostPerBirdSection({ period }: { period: { dateFrom: string; dateTo: st
             <div className="max-h-80 overflow-y-auto space-y-1.5">
               {data.perBird.slice(0, 50).map((b: any) => (
                 <div key={b.birdId} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-1.5">
-                  <span className="font-mono font-semibold">{b.ring}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold">{b.ring}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                      b.ageCategory === "filhote" ? "bg-green-100 text-green-700" :
+                      b.ageCategory === "jovem" ? "bg-blue-100 text-blue-700" :
+                      "bg-gray-100 text-gray-500"
+                    }`}>
+                      {b.ageCategory === "filhote" ? "Filhote" : b.ageCategory === "jovem" ? "Jovem" : b.ageCategory === "adulto" ? "Adulto" : "Idade ?"}
+                    </span>
+                  </div>
                   <span className="text-xs text-gray-400">
                     Geral {currencyBR(b.generalCost)}{b.specificCost > 0 && ` + específico ${currencyBR(b.specificCost)}`}
                   </span>

@@ -10,7 +10,7 @@ import { getDb } from "../db";
 import { supply_records, birds } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
 import { getCurrentTenantId } from "../_core/tenant";
-import { allocateCostsPerBird, classifyBirdPigmentCategory } from "../_core/costAllocation";
+import { allocateCostsPerBird, classifyBirdPigmentCategory, classifyBirdAgeCategory } from "../_core/costAllocation";
 import { COLORS } from "../../shared/constants";
 
 const CATEGORIES = [
@@ -189,6 +189,7 @@ export const suppliesRouter = router({
           id: b.id,
           ring: b.ring,
           pigmentCategory: classifyBirdPigmentCategory(b.color_code, COLORS as any),
+          ageCategory: classifyBirdAgeCategory(b.birthDate),
         })),
       });
 

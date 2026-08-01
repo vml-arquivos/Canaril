@@ -150,12 +150,14 @@ function TabPlantel() {
   const [sexFilter, setSexFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [geneticFilter, setGeneticFilter] = useState<"all" | "completa" | "incompleta">("all");
+  const [ageFilter, setAgeFilter] = useState<"all" | "filhote" | "jovem" | "adulto" | "desconhecido">("all");
   const [search, setSearch] = useState("");
 
   const { data, isLoading } = trpc.reports.plantelCompleto.useQuery({
     sexFilter: sexFilter || undefined,
     statusFilter: statusFilter || undefined,
     geneticFilter,
+    ageFilter,
     search: search || undefined,
   });
 
@@ -163,11 +165,12 @@ function TabPlantel() {
 
   const exportCSV = () => {
     if (!data?.rows.length) return;
-    const header = ["Anilha", "Título", "Sexo", "Raça", "Classe Oficial", "Genética", "COI", "Pai", "Mãe", "Alertas"];
+    const header = ["Anilha", "Título", "Sexo", "Idade", "Raça", "Classe Oficial", "Genética", "COI", "Pai", "Mãe", "Alertas"];
     const rows = data.rows.map((r) => [
       r.ring,
       r.displayTitle ?? "",
       r.sex,
+      r.ageCategory === "filhote" ? "Filhote" : r.ageCategory === "jovem" ? "Jovem" : r.ageCategory === "adulto" ? "Adulto" : "Desconhecida",
       r.breedName ?? "",
       r.officialCode ?? "",
       r.geneticComplete ? "Completa" : "Incompleta",
@@ -215,6 +218,16 @@ function TabPlantel() {
             <SelectItem value="incompleta">Sem genética</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={ageFilter} onValueChange={(v) => setAgeFilter(v as any)}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Idade" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as idades</SelectItem>
+            <SelectItem value="filhote">Filhotes</SelectItem>
+            <SelectItem value="jovem">Jovens</SelectItem>
+            <SelectItem value="adulto">Adultos</SelectItem>
+            <SelectItem value="desconhecido">Idade desconhecida</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="ml-auto flex gap-2">
           <Button variant="outline" size="sm" onClick={exportCSV}><Feather className="w-4 h-4 mr-1.5" />CSV</Button>
           <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="w-4 h-4 mr-1.5" />Imprimir</Button>
@@ -222,6 +235,25 @@ function TabPlantel() {
       </div>
 
       {isLoading && <p className="text-gray-400 text-sm">Carregando plantel...</p>}
+
+      {data?.ageSummary && (
+        <div className="flex flex-wrap gap-2 print:hidden">
+          {[
+            { key: "filhote", label: "Filhotes", color: "bg-green-100 text-green-800 border-green-200" },
+            { key: "jovem", label: "Jovens", color: "bg-blue-100 text-blue-800 border-blue-200" },
+            { key: "adulto", label: "Adultos", color: "bg-gray-100 text-gray-700 border-gray-200" },
+            { key: "desconhecido", label: "Idade desconhecida", color: "bg-amber-50 text-amber-700 border-amber-200" },
+          ].map(({ key, label, color }) => (
+            <button
+              key={key}
+              onClick={() => setAgeFilter(ageFilter === key ? "all" : (key as any))}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-all ${color} ${ageFilter === key ? "ring-2 ring-offset-1 ring-amber-400" : ""}`}
+            >
+              {label}: <span className="font-bold">{(data.ageSummary as any)[key]}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {data && (
         <Card>
@@ -239,6 +271,7 @@ function TabPlantel() {
                     <TableHead>Anilha</TableHead>
                     <TableHead>Título / Apelido</TableHead>
                     <TableHead>Sexo</TableHead>
+                    <TableHead>Idade</TableHead>
                     <TableHead>Classe oficial</TableHead>
                     <TableHead>Genética</TableHead>
                     <TableHead>COI</TableHead>
@@ -247,7 +280,7 @@ function TabPlantel() {
                 </TableHeader>
                 <TableBody>
                   {data.rows.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="text-center text-gray-400 py-8">Nenhum pássaro encontrado com os filtros aplicados.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center text-gray-400 py-8">Nenhum pássaro encontrado com os filtros aplicados.</TableCell></TableRow>
                   )}
                   {data.rows.map((r) => (
                     <TableRow key={r.birdId}>
@@ -257,6 +290,16 @@ function TabPlantel() {
                         {r.nickname && <p className="text-xs text-gray-400">"{r.nickname}"</p>}
                       </TableCell>
                       <TableCell><SexBadge sex={r.sex} /></TableCell>
+                      <TableCell>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                          r.ageCategory === "filhote" ? "bg-green-100 text-green-700" :
+                          r.ageCategory === "jovem" ? "bg-blue-100 text-blue-700" :
+                          r.ageCategory === "adulto" ? "bg-gray-100 text-gray-600" :
+                          "bg-amber-50 text-amber-600"
+                        }`}>
+                          {r.ageCategory === "filhote" ? "Filhote" : r.ageCategory === "jovem" ? "Jovem" : r.ageCategory === "adulto" ? "Adulto" : "?"}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-xs text-gray-600">{r.officialCode ? `${r.officialCode} — ${r.officialName ?? ""}` : <span className="text-gray-300">—</span>}</TableCell>
                       <TableCell>
                         {r.geneticComplete

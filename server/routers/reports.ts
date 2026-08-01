@@ -19,6 +19,7 @@ import { calculateCOI, calculateCOIForPair, classifyCOIRisk, PedigreeBird } from
 import { analyzeCoiForPair } from "../_core/coiAnalyzer";
 import { buildPopulationGeneticsReport } from "../_core/populationGenetics";
 import { scorePair } from "../_core/pairingOptimizer";
+import { classifyBirdAgeCategory, AGE_CATEGORY_LABELS } from "../_core/costAllocation";
 import { getCurrentTenantId } from "../_core/tenant";
 
 
@@ -112,6 +113,7 @@ export const reportsRouter = router({
         sexFilter: z.string().optional(),
         statusFilter: z.string().optional(),
         geneticFilter: z.enum(["all", "completa", "incompleta"]).default("all"),
+        ageFilter: z.enum(["all", "filhote", "jovem", "adulto", "desconhecido"]).default("all"),
         search: z.string().optional(),
       }).optional()
     )
@@ -177,6 +179,7 @@ export const reportsRouter = router({
           specialtyCode: bird.specialty_code,
           colorCode: bird.color_code,
           birthDate: bird.birthDate,
+          ageCategory: classifyBirdAgeCategory(bird.birthDate),
           status: bird.status,
           fatherId: bird.fatherId,
           motherId: bird.motherId,
@@ -209,7 +212,20 @@ export const reportsRouter = router({
         );
       }
 
-      return { rows, generatedAt: new Date(), total: rows.length };
+      // Resumo por faixa de idade — calculado ANTES do filtro de idade em
+      // si (mas depois dos outros filtros), pra sempre mostrar a
+      // distribuição completa do que está sendo visto, servindo de atalho
+      // pra filtrar por categoria clicando.
+      const ageSummary = {
+        filhote: rows.filter((r) => r.ageCategory === "filhote").length,
+        jovem: rows.filter((r) => r.ageCategory === "jovem").length,
+        adulto: rows.filter((r) => r.ageCategory === "adulto").length,
+        desconhecido: rows.filter((r) => r.ageCategory === "desconhecido").length,
+      };
+
+      if (input?.ageFilter && input.ageFilter !== "all") rows = rows.filter((r) => r.ageCategory === input.ageFilter);
+
+      return { rows, ageSummary, generatedAt: new Date(), total: rows.length };
     }),
 
   // ─── NOVO: Relatório Individual de um Pássaro ──────────────────────────────
