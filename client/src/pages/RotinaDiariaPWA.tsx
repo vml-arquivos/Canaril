@@ -612,7 +612,8 @@ export default function RotinaDiariaPWA() {
           const serverCnt: Record<string, number> = {};
           for (const ev of todayEvt) serverCnt[ev] = (serverCnt[ev] ?? 0) + 1;
           const localCnt = serverCnt;
-          const clutch   = couple.clutches?.find((c: any) => c.status === "active");
+          const clutchId = (couple as any).activeClutchId ?? null;
+          const clutchTotals = (couple as any).totals ?? null;
 
           return (
             <div key={couple.coupleId}
@@ -667,17 +668,17 @@ export default function RotinaDiariaPWA() {
                   />
 
                   {/* Status da postura ativa */}
-                  {clutch && (
+                  {clutchTotals && (
                     <div className="flex items-center gap-2 mb-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                       <div className="flex gap-0.5 flex-wrap">
-                        {Array.from({ length: Math.min(clutch.totalEggs ?? 0, 8) }).map((_, i) => (
+                        {Array.from({ length: Math.min(clutchTotals.totalEggs ?? 0, 8) }).map((_, i) => (
                           <SvgOvoAdicionado key={i} size={18}/>
                         ))}
                       </div>
                       <div className="text-xs text-amber-800 ml-1">
-                        <span className="font-bold">{clutch.totalEggs ?? 0} ovos</span>
-                        {clutch.hatchedChicks > 0 && (
-                          <span className="ml-2 font-bold text-green-700">{clutch.hatchedChicks} filhotes</span>
+                        <span className="font-bold">{clutchTotals.totalEggs ?? 0} ovos</span>
+                        {clutchTotals.hatchedChicks > 0 && (
+                          <span className="ml-2 font-bold text-green-700">{clutchTotals.hatchedChicks} filhotes</span>
                         )}
                       </div>
                     </div>
@@ -702,9 +703,9 @@ export default function RotinaDiariaPWA() {
                               className={`relative flex flex-col items-center gap-0.5 active:scale-90 transition-transform duration-100 touch-manipulation select-none ${busy ? "opacity-50" : ""}`}
                               onClick={() => {
                                 if (isCamera) {
-                                  openCamera(couple.coupleId, clutch?.id ?? null);
+                                  openCamera(couple.coupleId, clutchId);
                                 } else {
-                                  handleEvent(couple.coupleId, clutch?.id ?? null, ev.type);
+                                  handleEvent(couple.coupleId, clutchId, ev.type);
                                 }
                               }}
                             >
