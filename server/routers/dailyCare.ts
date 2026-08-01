@@ -15,7 +15,7 @@ import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
 import {
   couples, birds, cages, clutches, breeding_daily_logs,
-  breeding_species_rules, breeding_reminders,
+  breeding_species_rules, breeding_reminders, chicks,
 } from "../../drizzle/schema";
 import { eq, and, desc, gte, isNull, sql } from "drizzle-orm";
 import { EVENT_TYPES, computeTotalsFromLogs, recalculateClutchFromLogs, generateBreedingAlerts } from "../_core/breedingDailyAggregator";
@@ -40,13 +40,14 @@ export const dailyCareRouter = router({
       ? and(isNull(clutches.deletedAt), eq(clutches.tenantId, tenantId))
       : isNull(clutches.deletedAt);
 
-    const [activeCouples, allBirds, allCages, allClutches, allLogs, speciesRules] = await Promise.all([
+    const [activeCouples, allBirds, allCages, allClutches, allLogs, speciesRules, allChicks] = await Promise.all([
       db.select().from(couples).where(coupleFilter),
       birdFilter ? db.select().from(birds).where(birdFilter) : db.select().from(birds),
       cageFilter ? db.select().from(cages).where(cageFilter) : db.select().from(cages),
       db.select().from(clutches).where(clutchFilter),
       db.select().from(breeding_daily_logs),
       db.select().from(breeding_species_rules).limit(1),
+      db.select().from(chicks),
     ]);
 
     const birdMap = new Map(allBirds.map((b) => [b.id, b]));
@@ -62,6 +63,12 @@ export const dailyCareRouter = router({
       const list = logsByCouple.get(log.coupleId) ?? [];
       list.push(log);
       logsByCouple.set(log.coupleId, list);
+    }
+    const chicksByClutch = new Map<number, typeof allChicks>();
+    for (const c of allChicks) {
+      const list = chicksByClutch.get(c.clutchId) ?? [];
+      list.push(c);
+      chicksByClutch.set(c.clutchId, list);
     }
 
     const rules = speciesRules[0] ?? { candlingDay: 7, incubationDaysMin: 13, incubationDaysMax: 14, ringingDayMin: 7, ringingDayMax: 9 };
@@ -115,6 +122,14 @@ export const dailyCareRouter = router({
         ? new Date(new Date(activeClutch.clutchDate).getTime() + rules.incubationDaysMax * 86400000)
         : null;
 
+      // Postura finalizada: já eclodiram filhotes E todos já foram
+      // anilhados (chicks.birdId preenchido, via management.chicks.ringAndPromote).
+      // Enquanto finalizada, a Rotina não deixa mais registrar nada nesta
+      // postura — o criador precisa "iniciar nova postura" explicitamente.
+      const clutchChicks = activeClutch ? (chicksByClutch.get(activeClutch.id) ?? []) : [];
+      const chicksRingedCount = clutchChicks.filter((c) => !!c.birdId).length;
+      const isPostureFinalized = !!activeClutch && activeClutch.hatchedChicks > 0 && chicksRingedCount >= activeClutch.hatchedChicks;
+
       return {
         coupleId: couple.id,
         cageNumber: couple.cageNumber,
@@ -128,7 +143,10 @@ export const dailyCareRouter = router({
         maleTitle: male?.displayTitle ?? null,
         femaleTitle: female?.displayTitle ?? null,
         sectorName: cage?.section ?? null,
-        activeClutchId: activeClutch?.id ?? null,
+        // Enquanto a postura está finalizada, não expomos o clutchId ativo
+        // pra frente — assim nenhum botão da Rotina consegue gravar nele
+        // por engano. O criador precisa clicar "Iniciar Nova Postura".
+        activeClutchId: isPostureFinalized ? null : (activeClutch?.id ?? null),
         clutchDate: activeClutch?.clutchDate ?? null,
         daysIncubating,
         totals,
@@ -138,6 +156,9 @@ export const dailyCareRouter = router({
         hasLogToday: todayLogs.length > 0,
         lastLogDate: lastLog?.createdAt ?? null,
         todayEvents: todayLogs.map((l) => l.eventType),
+        isPostureFinalized,
+        chicksRingedCount,
+        chicksExpected: activeClutch?.hatchedChicks ?? 0,
       };
     });
   }),
