@@ -21,6 +21,7 @@
  */
 
 import { predictCross, BirdGenotypeInput, CrossPrediction } from "./mendelian";
+import { MUTATION_CONFIG } from "./colorGenetics";
 
 export type Objective =
   | "REDUZIR_COI"
@@ -125,11 +126,17 @@ function scoreGenetics(
 
   if (maleGenotype.featherType && femaleGenotype.featherType && maleGenotype.featherType !== femaleGenotype.featherType) {
     score += 3;
-    reasons.push("Plumagem complementar (intenso × nevado) — reduz risco de excesso de pena nos filhotes.");
+    // Antes: o texto dizia sempre "(intenso × nevado)", travado, mesmo
+    // quando os valores reais fossem outra combinação — agora reflete o
+    // par avaliado de verdade.
+    reasons.push(`Plumagem complementar (${maleGenotype.featherType} × ${femaleGenotype.featherType}) — reduz risco de excesso de pena nos filhotes.`);
   }
 
   if (prediction.mutations.length > 0) {
-    reasons.push(`${prediction.mutations.length} traço(s) genético(s) em comum calculados via Punnett para a prole.`);
+    // Antes: só dizia "X traço(s) em comum", sem dizer QUAIS — agora cita
+    // o nome de cada mutação em comum de verdade.
+    const names = prediction.mutations.map((m) => (MUTATION_CONFIG as any)[m.mutation]?.label ?? m.mutation);
+    reasons.push(`Mutação(ões) em comum calculada(s) via Punnett para a prole: ${names.join(", ")}.`);
   }
 
   return { score: clamp(score, 0, 35), predictedOffspring: prediction };
@@ -200,13 +207,24 @@ function scoreObjective(
         missingData.push("Sem mutações em comum calculáveis para avaliar produção de portadores.");
         return 3;
       }
-      const hasCarrierChance = predictedOffspring.mutations.some((m) => {
-        const dist = m.overall ?? { ...m.sons, ...m.daughters };
-        return (dist.heterozygous_carrier ?? 0) > 0;
-      });
-      if (hasCarrierChance) reasons.push("Boa chance de produzir filhotes portadores das mutações em comum.");
-      return hasCarrierChance ? 10 : 5;
+      // Antes: "Boa chance de produzir filhotes portadores das mutações em
+      // comum" — igual pra qualquer par, sem dizer QUAL mutação nem QUAL
+      // probabilidade. Agora cita o nome real e o percentual calculado.
+      const carrierDetails = predictedOffspring.mutations
+        .map((m) => {
+          const dist = m.overall ?? { ...m.sons, ...m.daughters };
+          const pct = dist.heterozygous_carrier ?? 0;
+          if (pct <= 0) return null;
+          const label = (MUTATION_CONFIG as any)[m.mutation]?.label ?? m.mutation;
+          return { label, pct };
+        })
+        .filter((x): x is { label: string; pct: number } => !!x);
 
+      if (carrierDetails.length > 0) {
+        const text = carrierDetails.map((c) => `${c.label} (${Math.round(c.pct * 100)}% de chance)`).join(", ");
+        reasons.push(`Chance real de filhotes portadores: ${text}.`);
+      }
+      return carrierDetails.length > 0 ? 10 : 5;
     }
 
     case "EXPOSICAO":
