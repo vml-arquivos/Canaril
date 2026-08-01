@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, RefreshCw, Info, Pencil, Trash2 } from "lucide-react";
 import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
 
 function haptic(ms = 30) { try { navigator.vibrate?.(ms); } catch {} }
 
@@ -442,6 +443,18 @@ export default function RotinaDiariaPWA() {
     onError: (e) => toast.error(e.message),
   });
 
+  // "Iniciar Nova Postura" — reaproveita o mesmo endpoint já usado na tela
+  // de Posturas, só que com valores iniciais zerados (o criador ajusta
+  // depois, à medida que a nova choca avança).
+  const startNewPosture = trpc.management.clutches.create.useMutation({
+    onSuccess: (result) => {
+      toast.success("Nova postura iniciada — a Rotina deste casal já está liberada de novo.");
+      if (result?.warning) toast.warning(result.warning, { duration: 8000 });
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const [expanded, setExpanded] = useState<number | null>(null);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const toggleSection = (key: string) => setOpenSections((p) => ({ ...p, [key]: !p[key] }));
@@ -672,8 +685,9 @@ export default function RotinaDiariaPWA() {
                     </div>
                   )}
 
-                  {/* Botões por grupo */}
-                  {EVENT_BUTTONS.map((group) => (
+                  {/* Botões por grupo — só aparecem se a postura ainda está ativa */}
+                  {!(couple as any).isPostureFinalized ? (
+                    EVENT_BUTTONS.map((group) => (
                     <div key={group.group} className="mb-3">
                       <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1.5 px-0.5">{group.title}</p>
                       <div className="grid grid-cols-5 sm:grid-cols-6 gap-x-1 gap-y-2">
@@ -712,7 +726,30 @@ export default function RotinaDiariaPWA() {
                         })}
                       </div>
                     </div>
-                  ))}
+                    ))
+                  ) : (
+                    <div className="text-center py-6 px-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                      <p className="text-sm font-semibold text-emerald-800 mb-1">
+                        🎉 Postura finalizada — {(couple as any).chicksRingedCount} de {(couple as any).chicksExpected} filhotes anilhados
+                      </p>
+                      <p className="text-xs text-emerald-600 mb-3">
+                        Esta postura foi encerrada e não recebe mais registros. Os dados dela continuam disponíveis no
+                        histórico de posturas e na ficha do casal. Pra registrar uma nova choca deste casal, inicie uma nova postura.
+                      </p>
+                      <Button
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        disabled={startNewPosture.isPending}
+                        onClick={() => startNewPosture.mutate({
+                          coupleId: couple.coupleId,
+                          clutchDate: new Date(),
+                          totalEggs: 0,
+                          fertilizedEggs: 0,
+                        })}
+                      >
+                        {startNewPosture.isPending ? "Iniciando..." : "Iniciar Nova Postura"}
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Alertas do casal */}
                   {couple.alerts?.length > 0 && (
