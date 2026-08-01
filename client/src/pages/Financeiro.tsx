@@ -11,7 +11,7 @@
  */
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,7 +62,7 @@ export default function Financeiro() {
     onError:   (e) => toast.error(e.message),
   });
 
-  const emptyForm = { category: "racao", name: "", quantity: "", unit: "kg", unitCost: "", totalCost: "", supplier: "", date: "", notes: "" };
+  const emptyForm = { category: "racao", name: "", quantity: "", unit: "kg", unitCost: "", totalCost: "", supplier: "", date: "", notes: "", appliesToColorCategory: "" };
   const [form, setForm] = useState(emptyForm);
 
   const totalReceitas  = salesSummary?.totalSales ?? 0;
@@ -81,6 +81,7 @@ export default function Financeiro() {
       supplier:  form.supplier || undefined,
       date:      form.date || undefined,
       notes:     form.notes || undefined,
+      appliesToColorCategory: form.appliesToColorCategory ? (form.appliesToColorCategory as "com_fator" | "sem_fator") : undefined,
     });
   };
 
@@ -121,7 +122,12 @@ export default function Financeiro() {
                 <div className="grid grid-cols-3 gap-2">
                   <div className="col-span-2">
                     <Label>Quantidade *</Label>
-                    <Input type="number" min="0" step="0.001" placeholder="0" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })}/>
+                    <Input type="number" min="0" step="0.001" placeholder="0" value={form.quantity}
+                      onChange={(e) => {
+                        const quantity = e.target.value;
+                        const auto = quantity && form.unitCost ? String((Number(quantity) * Number(form.unitCost)).toFixed(2)) : form.totalCost;
+                        setForm({ ...form, quantity, totalCost: auto });
+                      }}/>
                   </div>
                   <div>
                     <Label>Unidade</Label>
@@ -134,8 +140,31 @@ export default function Financeiro() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label>Custo unit. (R$)</Label><Input type="number" min="0" step="0.01" placeholder="0,00" value={form.unitCost} onChange={(e) => setForm({ ...form, unitCost: e.target.value })}/></div>
-                  <div><Label>Total (R$)</Label><Input type="number" min="0" step="0.01" placeholder="0,00" value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })}/></div>
+                  <div>
+                    <Label>Custo unit. (R$)</Label>
+                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={form.unitCost}
+                      onChange={(e) => {
+                        const unitCost = e.target.value;
+                        const auto = unitCost && form.quantity ? String((Number(unitCost) * Number(form.quantity)).toFixed(2)) : form.totalCost;
+                        setForm({ ...form, unitCost, totalCost: auto });
+                      }}/>
+                  </div>
+                  <div>
+                    <Label>Total (R$) <span className="text-gray-400 font-normal">— calculado automaticamente</span></Label>
+                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={form.totalCost} onChange={(e) => setForm({ ...form, totalCost: e.target.value })}/>
+                  </div>
+                </div>
+                <div>
+                  <Label>Este insumo é específico pra algum tipo de pássaro?</Label>
+                  <Select value={form.appliesToColorCategory || "geral"} onValueChange={(v) => setForm({ ...form, appliesToColorCategory: v === "geral" ? "" : v })}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="geral">Geral — vale pra todo o plantel</SelectItem>
+                      <SelectItem value="com_fator">Só "com fator vermelho" (ex.: cantaxantina)</SelectItem>
+                      <SelectItem value="sem_fator">Só "sem fator"/amarelos (ex.: xantofila)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-400 mt-1">Isso permite calcular o custo real de cada pássaro na aba "Custo por Pássaro".</p>
                 </div>
                 <div><Label>Fornecedor</Label><Input placeholder="Nome da loja ou fornecedor" value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })}/></div>
                 <div><Label>Observações</Label><Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}/></div>
@@ -273,7 +302,48 @@ export default function Financeiro() {
             })}
           </div>
         </div>
+
+        <CostPerBirdSection period={period} />
       </div>
     </DashboardLayout>
+  );
+}
+
+// ─── Custo real por pássaro — geral (dividido igual) + específico por pigmento ───
+function CostPerBirdSection({ period }: { period: { dateFrom: string; dateTo: string } }) {
+  const { data, isLoading } = trpc.supplies.costPerBird.useQuery(period);
+
+  if (isLoading) return null;
+  if (!data || data.perBird.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-amber-600" />
+          Custo por Pássaro
+        </CardTitle>
+        <CardDescription>
+          Divide os insumos gerais igualmente entre o plantel e soma os insumos específicos (ex.: cantaxantina só
+          conta pra quem tem fator vermelho) — média de <span className="font-semibold">{currencyBR(data.averagePerBird)}</span> por pássaro no período.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="max-h-80 overflow-y-auto space-y-1.5">
+          {data.perBird.slice(0, 50).map((b: any) => (
+            <div key={b.birdId} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-1.5">
+              <span className="font-mono font-semibold">{b.ring}</span>
+              <span className="text-xs text-gray-400">
+                Geral {currencyBR(b.generalCost)}{b.specificCost > 0 && ` + específico ${currencyBR(b.specificCost)}`}
+              </span>
+              <span className="font-semibold text-gray-800">{currencyBR(b.totalCost)}</span>
+            </div>
+          ))}
+        </div>
+        {data.perBird.length > 50 && (
+          <p className="text-xs text-gray-400 mt-2">Mostrando os 50 pássaros de maior custo, de {data.perBird.length} no total.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

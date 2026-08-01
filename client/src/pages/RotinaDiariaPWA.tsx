@@ -646,9 +646,9 @@ export default function RotinaDiariaPWA() {
 
                   {/* Botões por grupo */}
                   {EVENT_BUTTONS.map((group) => (
-                    <div key={group.group} className="mb-4">
-                      <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2 px-0.5">{group.title}</p>
-                      <div className="grid grid-cols-4 gap-2">
+                    <div key={group.group} className="mb-3">
+                      <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1.5 px-0.5">{group.title}</p>
+                      <div className="grid grid-cols-4 gap-1.5">
                         {group.events.map((ev) => {
                           const cnt   = localCnt[ev.type] ?? 0;
                           const key   = `${couple.coupleId}-${ev.type}`;
@@ -659,7 +659,7 @@ export default function RotinaDiariaPWA() {
                             <button
                               key={ev.type}
                               disabled={busy}
-                              className={`relative flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 ${ev.bg} ${ev.border} active:scale-95 active:brightness-90 transition-all duration-100 touch-manipulation select-none ${busy ? "opacity-50" : ""}`}
+                              className={`relative flex flex-col items-center gap-1 py-2 px-1.5 rounded-lg border ${ev.bg} ${ev.border} active:scale-95 active:brightness-95 transition-all duration-100 touch-manipulation select-none ${busy ? "opacity-50" : ""}`}
                               onClick={() => {
                                 if (isCamera) {
                                   openCamera(couple.coupleId, clutch?.id ?? null);
@@ -668,12 +668,12 @@ export default function RotinaDiariaPWA() {
                                 }
                               }}
                             >
-                              <Icon size={38}/>
-                              <span className="text-center text-gray-700 leading-tight" style={{ fontSize: "10px" }}>
+                              <Icon size={24}/>
+                              <span className="text-center text-gray-600 leading-tight" style={{ fontSize: "9px" }}>
                                 {ev.label}
                               </span>
                               {cnt > 0 && (
-                                <span className={`absolute -top-1.5 -right-1.5 w-5 h-5 ${ev.badge} text-white text-xs font-bold rounded-full flex items-center justify-center shadow-sm`}>
+                                <span className={`absolute -top-1 -right-1 w-4 h-4 ${ev.badge} text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-sm`}>
                                   {cnt}
                                 </span>
                               )}

@@ -418,6 +418,10 @@ export const supply_records = pgTable("supply_records", {
   supplier:  varchar("supplier", { length: 200 }),
   date:      timestamp("date").notNull().defaultNow(),
   notes:     text("notes"),
+  // Insumo específico por pigmento (ex.: cantaxantina só pra "com fator
+  // vermelho", xantofila só pra "sem fator") — null = geral, vale pra todo
+  // o plantel. Migration 0024, aditiva.
+  appliesToColorCategory: varchar("appliesToColorCategory", { length: 20 }),
   tenantId:  integer("tenantId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   createdBy: integer("createdBy"),

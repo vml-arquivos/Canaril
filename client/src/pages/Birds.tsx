@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { SEXES } from "@shared/constants";
-import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag, Dna, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag, Dna, ChevronsUpDown, Check, Search } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
@@ -145,7 +145,25 @@ export default function Birds() {
   // Genótipo draft — usado apenas no modal de CRIAÇÃO (sem birdId ainda)
   const [genotypeDraft, setGenotypeDraft] = useState<GenotypeDraft>(EMPTY_GENOTYPE_DRAFT);
 
-  const { data: birds, refetch } = trpc.birds.list.useQuery({});
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterSpecialty, setFilterSpecialty] = useState("");
+  const [filterColor, setFilterColor] = useState("");
+  const [filterSex, setFilterSex] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+
+  // Lista SEM filtro — usada só pra alimentar os seletores de Pai/Mãe no
+  // formulário. Não pode ser filtrada pela busca da tela, senão o criador
+  // não conseguiria escolher um pai/mãe fora do que está sendo buscado.
+  const { data: allBirdsForSelects } = trpc.birds.list.useQuery({});
+
+  // Lista FILTRADA — usada na grade/lista principal da tela.
+  const { data: birds, refetch } = trpc.birds.list.useQuery({
+    search: searchTerm || undefined,
+    specialty_code: filterSpecialty || undefined,
+    color_code: filterColor || undefined,
+    sex: filterSex || undefined,
+    status: filterStatus || undefined,
+  });
   const { data: officialClassResults } = trpc.catalog.searchOfficialClasses.useQuery(
     {
       query: officialClassSearch || undefined,
@@ -586,7 +604,7 @@ export default function Birds() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">Não informado</SelectItem>
-                          {(birds ?? []).filter((b) => b.id !== editingId && b.sex !== "fêmea").map((b) => (
+                          {(allBirdsForSelects ?? []).filter((b) => b.id !== editingId && b.sex !== "fêmea").map((b) => (
                             <SelectItem key={b.id} value={String(b.id)}>
                               {(b.displayTitle || b.ring)}
                             </SelectItem>
@@ -602,7 +620,7 @@ export default function Birds() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">Não informado</SelectItem>
-                          {(birds ?? []).filter((b) => b.id !== editingId && b.sex !== "macho").map((b) => (
+                          {(allBirdsForSelects ?? []).filter((b) => b.id !== editingId && b.sex !== "macho").map((b) => (
                             <SelectItem key={b.id} value={String(b.id)}>
                               {(b.displayTitle || b.ring)}
                             </SelectItem>
@@ -855,6 +873,58 @@ export default function Birds() {
             </DialogContent>
           </Dialog>
           </div>
+        </div>
+
+        {/* Busca e filtros */}
+        <div className="flex flex-wrap items-center gap-2 bg-white border rounded-xl p-3">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              placeholder="Buscar por anilha ou apelido..."
+              className="pl-9 h-9"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Select value={filterSpecialty || "__all__"} onValueChange={(v) => setFilterSpecialty(v === "__all__" ? "" : v)}>
+            <SelectTrigger className="w-40 h-9 text-xs"><SelectValue placeholder="Especialidade" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Todas as especialidades</SelectItem>
+              {specialtiesList.map((s) => <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterColor || "__all__"} onValueChange={(v) => setFilterColor(v === "__all__" ? "" : v)}>
+            <SelectTrigger className="w-40 h-9 text-xs"><SelectValue placeholder="Cor" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Todas as cores</SelectItem>
+              {colorsList.map((c) => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterSex || "__all__"} onValueChange={(v) => setFilterSex(v === "__all__" ? "" : v)}>
+            <SelectTrigger className="w-32 h-9 text-xs"><SelectValue placeholder="Sexo" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Ambos</SelectItem>
+              <SelectItem value="macho">♂ Macho</SelectItem>
+              <SelectItem value="fêmea">♀ Fêmea</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus || "__all__"} onValueChange={(v) => setFilterStatus(v === "__all__" ? "" : v)}>
+            <SelectTrigger className="w-32 h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Todos</SelectItem>
+              <SelectItem value="active">Ativo</SelectItem>
+              <SelectItem value="sold">Vendido</SelectItem>
+              <SelectItem value="deceased">Falecido</SelectItem>
+              <SelectItem value="transferred">Transferido</SelectItem>
+            </SelectContent>
+          </Select>
+          {(searchTerm || filterSpecialty || filterColor || filterSex || filterStatus) && (
+            <Button variant="ghost" size="sm" className="h-9 text-xs text-gray-500"
+              onClick={() => { setSearchTerm(""); setFilterSpecialty(""); setFilterColor(""); setFilterSex(""); setFilterStatus(""); }}>
+              Limpar filtros
+            </Button>
+          )}
+          <span className="text-xs text-gray-400 ml-auto shrink-0">{birds?.length ?? 0} resultado{(birds?.length ?? 0) === 1 ? "" : "s"}</span>
         </div>
 
         {/* Visualização em blocos (grade com avatar) ou lista (tabela) */}
