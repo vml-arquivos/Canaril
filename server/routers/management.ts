@@ -4,6 +4,7 @@ import { getDb, getPool } from "../db";
 import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
 import { and, eq, desc, sql, isNull, gte, lte } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
+import { getNextAvailableRing } from "../_core/ringAllocator";
 import { getCurrentTenantId } from "../_core/tenant";
 
 async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, year: number, startNumber: number, endNumber: number) {
@@ -480,6 +481,89 @@ export const managementRouter = router({
 
   // ===== FILHOTES =====
   chicks: router({
+    /**
+     * Anilha um filhote automaticamente e já cria o cadastro dele em
+     * "Pássaros" — puxando anilha (próxima disponível no lote), pai, mãe
+     * e gaiola do próprio casal. Cor e especialidade vêm de um valor
+     * inicial (herdado do pai) só pra não deixar campo obrigatório vazio;
+     * o criador completa o resto direto na ficha do pássaro recém-criado
+     * (é exatamente o "preencher os dados restantes" pedido).
+     *
+     * O campo `birdId` em `chicks` já existia no schema, comentado como
+     * "quando o filhote é promovido ao plantel" — mas nenhum endpoint
+     * fazia isso de fato até agora.
+     */
+    ringAndPromote: protectedProcedure
+      .input(z.object({
+        clutchId: z.number().int().positive(),
+        sex: z.enum(["macho", "fêmea", "indefinido"]).default("indefinido"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+
+        const [clutch] = await db.select().from(clutches).where(eq(clutches.id, input.clutchId)).limit(1);
+        if (!clutch) throw new Error("Postura não encontrada.");
+        if (tenantId !== null && clutch.tenantId !== tenantId) throw new Error("Esta postura não pertence ao seu criadouro.");
+
+        const [couple] = await db.select().from(couples).where(eq(couples.id, clutch.coupleId)).limit(1);
+        if (!couple) throw new Error("Casal desta postura não encontrado.");
+
+        const [father] = await db.select().from(birds).where(eq(birds.id, couple.maleId)).limit(1);
+        const [mother] = await db.select().from(birds).where(eq(birds.id, couple.femaleId)).limit(1);
+
+        const nextRing = await getNextAvailableRing(db, {
+          speciesName: father?.speciesName ?? undefined,
+          breedName: father?.breedName ?? undefined,
+          modality: (father?.modality as any) ?? undefined,
+          tenantId,
+        });
+        if (!nextRing) {
+          throw new Error("Sem anilhas disponíveis no momento. Cadastre um novo lote em Anilhas antes de anilhar este filhote.");
+        }
+
+        const birthDate = clutch.clutchDate; // melhor dado disponível — a postura é o evento mais próximo do nascimento real
+        const inheritedSpecialty = father?.specialty_code ?? mother?.specialty_code ?? "a_definir";
+
+        const [createdBird] = await db.insert(birds).values({
+          ring: nextRing.fullCode,
+          specialty_code: inheritedSpecialty,
+          sex: input.sex,
+          color_code: "a_definir", // placeholder — o criador completa na ficha logo em seguida
+          birthDate,
+          fatherId: couple.maleId,
+          motherId: couple.femaleId,
+          status: "active",
+          speciesName: father?.speciesName ?? mother?.speciesName ?? null,
+          breedName: father?.breedName ?? mother?.breedName ?? null,
+          modality: father?.modality ?? mother?.modality ?? null,
+          tenantId: tenantId ?? null,
+        } as any).returning();
+
+        const [createdChick] = await db.insert(chicks).values({
+          clutchId: input.clutchId,
+          ring: nextRing.fullCode,
+          sex: input.sex,
+          color_code: "a_definir",
+          birthDate,
+          ringDate: new Date(),
+          status: "active",
+          birdId: createdBird.id,
+          tenantId: tenantId ?? null,
+        }).returning();
+
+        await markRingAsUsed(db, nextRing.ring.number, { birdId: createdBird.id, chickId: createdChick.id });
+
+        return {
+          bird: createdBird,
+          chick: createdChick,
+          ring: nextRing.fullCode,
+          father: father ? { id: father.id, ring: father.ring } : null,
+          mother: mother ? { id: mother.id, ring: mother.ring } : null,
+        };
+      }),
+
     list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];

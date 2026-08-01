@@ -431,6 +431,17 @@ export default function RotinaDiariaPWA() {
     onError: (e) => toast.error(e.message),
   });
 
+  const ringAndPromote = trpc.management.chicks.ringAndPromote.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        `Filhote anilhado: ${result.ring} — cadastro criado em Pássaros. Complete a cor dele quando puder.`,
+        { duration: 8000 }
+      );
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const [expanded, setExpanded] = useState<number | null>(null);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const toggleSection = (key: string) => setOpenSections((p) => ({ ...p, [key]: !p[key] }));
@@ -479,6 +490,23 @@ export default function RotinaDiariaPWA() {
       haptic(40);
       const key = `${coupleId}-${eventType}`;
       setPending((p) => ({ ...p, [key]: true }));
+
+      // "Anilhado" não é só um contador — anilha de verdade (puxa a
+      // próxima anilha disponível) e já cria o cadastro em Pássaros com
+      // pai/mãe/gaiola preenchidos. Precisa de uma postura real (não dá
+      // pra anilhar sem saber de qual ninho o filhote veio).
+      if (eventType === "CHICK_RINGED") {
+        if (!clutchId) {
+          toast.error("Registre uma postura pra este casal antes de anilhar um filhote dela.");
+          setPending((p) => ({ ...p, [key]: false }));
+          return;
+        }
+        ringAndPromote.mutate({ clutchId, sex: "indefinido" }, {
+          onSettled: () => setPending((p) => ({ ...p, [key]: false })),
+        });
+        return;
+      }
+
       logEvent.mutate({
         coupleId,
         clutchId: clutchId ?? undefined,
@@ -489,7 +517,7 @@ export default function RotinaDiariaPWA() {
         onSettled: () => setPending((p) => ({ ...p, [key]: false })),
       });
     },
-    [logEvent]
+    [logEvent, ringAndPromote]
   );
 
   const today = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
