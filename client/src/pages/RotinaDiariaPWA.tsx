@@ -13,7 +13,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, RefreshCw, Info, Pencil, Trash2 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 
 function haptic(ms = 30) { try { navigator.vibrate?.(ms); } catch {} }
@@ -425,6 +425,7 @@ function TodayLogsList({ coupleId, onChanged, isOpen, onToggle }: { coupleId: nu
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function RotinaDiariaPWA() {
+  const [, navigate] = useLocation();
   const { data: couples, isLoading, refetch } = trpc.dailyCare.listActiveCouples.useQuery();
   const { data: ringReminders } = trpc.dailyCare.nextRingReminders.useQuery();
   const logEvent = trpc.dailyCare.logEvent.useMutation({
@@ -434,11 +435,8 @@ export default function RotinaDiariaPWA() {
 
   const ringAndPromote = trpc.management.chicks.ringAndPromote.useMutation({
     onSuccess: (result) => {
-      toast.success(
-        `Filhote anilhado: ${result.ring} — cadastro criado em Pássaros. Complete a cor dele quando puder.`,
-        { duration: 8000 }
-      );
-      refetch();
+      toast.success(`Filhote anilhado: ${result.ring} — abrindo a ficha pra completar os dados.`);
+      navigate(`/birds?edit=${result.bird.id}`);
     },
     onError: (e) => toast.error(e.message),
   });

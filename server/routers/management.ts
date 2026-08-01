@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
-import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders } from "../../drizzle/schema";
+import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders, cages } from "../../drizzle/schema";
 import { and, eq, desc, sql, isNull, gte, lte } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
 import { getNextAvailableRing } from "../_core/ringAllocator";
@@ -513,6 +513,22 @@ export const managementRouter = router({
         const [father] = await db.select().from(birds).where(eq(birds.id, couple.maleId)).limit(1);
         const [mother] = await db.select().from(birds).where(eq(birds.id, couple.femaleId)).limit(1);
 
+        // Gaiola do casal (couples.cageNumber é o código, cages.code é a
+        // chave real) — se existir uma gaiola cadastrada com esse código,
+        // o pássaro já nasce vinculado a ela.
+        let cageId: number | null = null;
+        if (couple.cageNumber) {
+          const [cage] = await db.select({ id: cages.id }).from(cages).where(eq(cages.code, couple.cageNumber)).limit(1);
+          cageId = cage?.id ?? null;
+        }
+
+        // Avós (linhagem) — só pra devolver no retorno, pra ficha do
+        // pássaro já mostrar de onde ele vem, sem precisar ir atrás.
+        const grandparentIds = [father?.fatherId, father?.motherId, mother?.fatherId, mother?.motherId].filter((id): id is number => !!id);
+        const grandparents = grandparentIds.length
+          ? await db.select({ id: birds.id, ring: birds.ring, displayTitle: birds.displayTitle }).from(birds).where(sql`${birds.id} IN (${sql.join(grandparentIds, sql`, `)})`)
+          : [];
+
         const nextRing = await getNextAvailableRing(db, {
           speciesName: father?.speciesName ?? undefined,
           breedName: father?.breedName ?? undefined,
@@ -534,6 +550,7 @@ export const managementRouter = router({
           birthDate,
           fatherId: couple.maleId,
           motherId: couple.femaleId,
+          cageId,
           status: "active",
           speciesName: father?.speciesName ?? mother?.speciesName ?? null,
           breedName: father?.breedName ?? mother?.breedName ?? null,
@@ -561,6 +578,7 @@ export const managementRouter = router({
           ring: nextRing.fullCode,
           father: father ? { id: father.id, ring: father.ring } : null,
           mother: mother ? { id: mother.id, ring: mother.ring } : null,
+          grandparents,
         };
       }),
 

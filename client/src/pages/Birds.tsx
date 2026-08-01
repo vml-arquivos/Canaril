@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { trpc } from "@/lib/trpc";
 import { SEXES } from "@shared/constants";
 import { Plus, Edit2, Trash2, GitBranch, Eye, LayoutGrid, List, Bird as BirdIcon, Sparkles, Tag, Dna, ChevronsUpDown, Check, Search } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { toast } from "sonner";
 import { PhotoUploader } from "@/components/PhotoUploader";
 import { BirdPhotoRecognition } from "@/components/BirdPhotoRecognition";
@@ -383,6 +383,23 @@ export default function Birds() {
     setIsDirty(false);
     setOpen(true);
   };
+
+  // Abre automaticamente a edição de um pássaro recém-anilhado pela
+  // Rotina Diária, que redireciona pra cá com ?edit=ID — assim o criador
+  // já cai direto no formulário pra completar cor/especialidade, sem
+  // precisar procurar o pássaro na lista.
+  const searchParams = useSearch();
+  const autoOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const editId = new URLSearchParams(searchParams).get("edit");
+    if (!editId || autoOpenedRef.current === editId || !allBirdsForSelects) return;
+    const bird = allBirdsForSelects.find((b: any) => b.id === Number(editId));
+    if (bird) {
+      autoOpenedRef.current = editId;
+      openEdit(bird);
+      toast.info("Complete a cor e a especialidade deste pássaro recém-anilhado.");
+    }
+  }, [searchParams, allBirdsForSelects]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
