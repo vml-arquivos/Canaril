@@ -419,6 +419,16 @@ function ParIdeal() {
         O sistema avalia <strong>genética (Punnett), COI, histórico reprodutivo e objetivo</strong> — retornando os melhores pares ranqueados por pontuação (0–100).
       </InlineAlert>
 
+      <details className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 [&_summary]:cursor-pointer">
+        <summary className="text-gray-600 font-medium">O que significam os números e siglas?</summary>
+        <div className="mt-2 space-y-1.5 text-gray-600">
+          <p><span className="font-semibold text-purple-700">Genética X/35</span> — quanto o cruzamento genético em si contribui pra pontuação (mutações compatíveis, sem gene letal, plumagem complementar). Quanto mais alto, melhor a combinação genética específica desse par.</p>
+          <p><span className="font-semibold text-blue-700">COI X/20</span> — Coeficiente de Endogamia: quanto os dois pássaros são aparentados. Quanto mais alto o número aqui (mais próximo de 20), <strong>menor</strong> o parentesco — ou seja, mais seguro.</p>
+          <p><span className="font-semibold">Baixo / Moderado / Alto</span> (ao lado do COI em %) — classificação de risco de parentesco. "Alto" significa os dois têm ancestrais em comum recentes — evite.</p>
+          <p><span className="font-semibold">Pontuação final (0–100)</span> — soma de genética + COI + saúde + histórico + objetivo escolhido. Não existe "nota perfeita" universal — é sempre relativa aos outros candidatos do seu plantel.</p>
+        </div>
+      </details>
+
       <div className="space-y-3">
         <div className="min-w-0">
           <p className="text-xs text-gray-500 mb-1.5">Pássaro base</p>
@@ -500,23 +510,36 @@ function ParIdeal() {
                         </span>
                       </div>
 
+                      {i === 0 && (
+                        <p className="text-xs font-semibold text-emerald-800 bg-emerald-100/70 rounded px-2 py-1 mb-1.5">
+                          ⭐ Este é o par ideal entre os avaliados — maior pontuação combinando genética, parentesco e o objetivo escolhido.
+                        </p>
+                      )}
+
                       {c.reasons?.length > 0 && (
                         <div className="space-y-0.5">
-                          {c.reasons.slice(0, 2).map((r: string, j: number) => (
-                            <p key={j} className="text-xs text-emerald-700 flex items-center gap-1">
-                              <CheckCircle className="w-3 h-3 shrink-0" />{r}
+                          <p className="text-xs font-semibold text-emerald-700 mt-1">Por que é uma boa opção:</p>
+                          {c.reasons.slice(0, 3).map((r: string, j: number) => (
+                            <p key={j} className="text-xs text-emerald-700 flex items-start gap-1">
+                              <CheckCircle className="w-3 h-3 shrink-0 mt-0.5" />{r}
                             </p>
                           ))}
                         </div>
                       )}
                       {c.warnings?.length > 0 && (
-                        <div className="space-y-0.5 mt-0.5">
-                          {c.warnings.slice(0, 2).map((w: string, j: number) => (
-                            <p key={j} className="text-xs text-amber-700 flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3 shrink-0" />{w}
+                        <div className="space-y-0.5 mt-1">
+                          <p className="text-xs font-semibold text-amber-700">Ponto de atenção — por que não é a opção ideal:</p>
+                          {c.warnings.slice(0, 3).map((w: string, j: number) => (
+                            <p key={j} className="text-xs text-amber-700 flex items-start gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />{w}
                             </p>
                           ))}
                         </div>
+                      )}
+                      {(!c.reasons || c.reasons.length === 0) && (!c.warnings || c.warnings.length === 0) && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Sem dado genético suficiente pra explicar o motivo — cadastre o Genótipo Avançado deste pássaro pra uma análise completa.
+                        </p>
                       )}
                     </div>
                     <div className="text-right shrink-0">
@@ -854,7 +877,8 @@ function ModoGuiado() {
               ))}
 
               {report.missingData.length > 0 && (
-                <InlineAlert variant="warning" title="Para resultados mais precisos:">
+                <InlineAlert variant="warning" title="Por que a confiança está baixa — o que falta pra melhorar:">
+                  <p className="mb-1">O sistema ainda calcula o parentesco (COI) mesmo sem esses dados, mas não consegue prever a genética da cor/mutação da prole sem o Genótipo Avançado dos dois pássaros. Falta:</p>
                   {report.missingData.join(" · ")}
                 </InlineAlert>
               )}
@@ -941,6 +965,7 @@ function ModoTecnico() {
     <div className="space-y-5">
       <InlineAlert variant="info">
         Configure manualmente os genótipos de macho e fêmea. O motor aplica Punnett quadrado para cada mutação com base nas regras de herança de canários.
+        Este modo é pra quem já conhece os termos de genótipo/zigosidade — se preferir uma explicação passo a passo em linguagem simples, use o <strong>Modo Guiado</strong> na aba ao lado.
       </InlineAlert>
 
       <div className="grid md:grid-cols-2 gap-5">

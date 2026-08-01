@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { SexBadge, CoiRiskBadge } from "@/components/ui-premium";
+import { SexBadge, CoiRiskBadge, HelpTooltip } from "@/components/ui-premium";
 
 function labelFor(list: readonly { id: string; name: string }[], code: string) {
   return list.find((i) => i.id === code)?.name ?? code;
@@ -669,7 +669,7 @@ function TabConfronto() {
           <Card>
             <CardContent className="p-4 flex items-center gap-6">
               <div>
-                <p className="text-xs text-gray-500 mb-1">Coeficiente de Consanguinidade (COI)</p>
+                <p className="text-xs text-gray-500 mb-1 flex items-center">Coeficiente de Consanguinidade (COI)<HelpTooltip text="Mede o quanto os dois pássaros escolhidos são aparentados entre si. Quanto MAIOR a porcentagem, mais próximo é o parentesco — e maior o risco genético pros filhotes." technical="Fórmula de Wright aplicada sobre o pedigree calculado." /></p>
                 <p className="text-3xl font-bold text-gray-900">{(data.coi * 100).toFixed(2)}%</p>
               </div>
               <div><CoiRiskBadge risk={data.coiRisk} /></div>
@@ -1236,8 +1236,8 @@ function TabPopulacional() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Pássaros ativos analisados</p><p className="text-2xl font-bold">{data.totalActive}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Machos / Fêmeas reprodutores</p><p className="text-2xl font-bold">{data.breedingMales} / {data.breedingFemales}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Tamanho Efetivo (Ne)</p><p className="text-2xl font-bold">{data.effectivePopulationSize}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Mean Kinship médio do plantel</p><p className="text-2xl font-bold">{(data.plantelAverageMeanKinship * 100).toFixed(2)}%</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500 flex items-center">Tamanho Efetivo (Ne)<HelpTooltip text="Estimativa de quantos reprodutores 'genuinamente diferentes' seu plantel tem, na prática — não é o total de pássaros. Quanto MAIOR o número, mais diversidade genética o plantel tem pra trabalhar." technical="Fórmula de Wright (1938): Ne = 4·Nm·Nf/(Nm+Nf), baseada na proporção de sexos reprodutores." /></p><p className="text-2xl font-bold">{data.effectivePopulationSize}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500 flex items-center">Mean Kinship médio do plantel<HelpTooltip text="O quanto, em média, cada pássaro do seu plantel é aparentado com o resto do plantel — não com um parceiro específico. Quanto MENOR a porcentagem, mais diverso geneticamente é o seu plantel como um todo." /></p><p className="text-2xl font-bold">{(data.plantelAverageMeanKinship * 100).toFixed(2)}%</p></CardContent></Card>
       </div>
 
       <Card>
