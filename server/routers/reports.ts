@@ -417,22 +417,27 @@ export const reportsRouter = router({
 
       // Alertas genéticos básicos
       const alerts: string[] = [];
+      const generalGuidance: string[] = [];
       const maleMutations = (maleGenotype?.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [];
       const femaleMutations = (femaleGenotype?.mutations as Array<{ mutation: string; zygosity: string }> | null) ?? [];
 
       if (maleGenotype?.hasCrest && femaleGenotype?.hasCrest) {
         alerts.push("RISCO LETAL: crista × crista — 25% dos filhotes podem ser letais (NN+NN)");
+        generalGuidance.push("Procure um parceiro SEM crista (ex.: Gloster Consort, ou qualquer pássaro plainhead) — crista × crista nunca deve ser feito, independente do plantel.");
       }
       const maleBD = maleMutations.find((m) => m.mutation === "branco_dominante" && m.zygosity !== "homozygous_normal");
       const femaleBD = femaleMutations.find((m) => m.mutation === "branco_dominante" && m.zygosity !== "homozygous_normal");
       if (maleBD && femaleBD) {
         alerts.push("RISCO LETAL: branco dominante × branco dominante — pode produzir filhotes inviáveis");
+        generalGuidance.push("Procure um parceiro sem a mutação branco dominante, ou de outra cor/mutação — nunca cruze dois brancos dominantes entre si.");
       }
       if (maleGenotype?.featherType === "nevado" && femaleGenotype?.featherType === "nevado") {
         alerts.push("Atenção: nevado × nevado — plumagem pode ser problemática em alguns filhotes");
+        generalGuidance.push("A combinação ideal de plumagem é intenso × nevado — procure um parceiro com plumagem intensa.");
       }
       if (coiRisk === "high") {
         alerts.push(`COI alto (${(coi * 100).toFixed(1)}%) — considere um casal menos consanguíneo`);
+        generalGuidance.push("Procure um pássaro sem ancestrais em comum nas últimas gerações — idealmente de outra linhagem ou adquirido de outro criador.");
       } else if (coiRisk === "moderate") {
         alerts.push(`COI moderado (${(coi * 100).toFixed(1)}%) — aceitável com monitoramento`);
       }
@@ -473,12 +478,18 @@ export const reportsRouter = router({
         };
       }
 
+      const hasFatalAlert = alerts.some((a) => a.includes("RISCO LETAL"));
+      const verdict: "IDEAL" | "ATENCAO" | "NAO_RECOMENDADO" =
+        hasFatalAlert || coiRisk === "high" ? "NAO_RECOMENDADO" : alerts.length > 0 ? "ATENCAO" : "IDEAL";
+
       return {
         male: { bird: male, genotype: maleGenotype ?? null, profile: maleProfile ?? null },
         female: { bird: female, genotype: femaleGenotype ?? null, profile: femaleProfile ?? null },
         coi,
         coiRisk,
         alerts,
+        verdict,
+        generalGuidance,
         betterAlternatives,
         hasBothGenotypes: !!maleGenotype && !!femaleGenotype,
         generatedAt: new Date(),

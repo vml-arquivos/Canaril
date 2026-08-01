@@ -527,6 +527,18 @@ function TabConfronto() {
 
       {data && (
         <div className="space-y-4">
+          {/* Veredito */}
+          <div className={`flex items-center gap-2 rounded-lg p-3 text-sm font-semibold border ${
+            data.verdict === "IDEAL" ? "bg-green-50 border-green-200 text-green-800" :
+            data.verdict === "ATENCAO" ? "bg-amber-50 border-amber-200 text-amber-800" :
+            "bg-red-50 border-red-200 text-red-800"
+          }`}>
+            {data.verdict === "IDEAL" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+            {data.verdict === "IDEAL" ? "Casal ideal — nenhum problema genético identificado" :
+             data.verdict === "ATENCAO" ? "Casal aceitável, com pontos de atenção" :
+             "Casal não recomendado — risco genético relevante"}
+          </div>
+
           {/* Alertas */}
           {data.alerts.length > 0 && (
             <div className="space-y-2">
@@ -543,6 +555,27 @@ function TabConfronto() {
               <CheckCircle2 className="w-4 h-4" />
               Nenhum alerta crítico para este casal.
             </div>
+          )}
+
+          {/* Orientação geral — sempre mostrada quando há problema, mesmo sem alternativa no próprio plantel */}
+          {data.generalGuidance.length > 0 && (
+            <Card className="border-purple-100 bg-purple-50/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">O que buscar para um cruzamento ideal</CardTitle>
+                <CardDescription className="text-xs">
+                  {data.betterAlternatives && (data.betterAlternatives.forMale.length > 0 || data.betterAlternatives.forFemale.length > 0)
+                    ? "Além das alternativas do seu plantel acima, de forma geral:"
+                    : "Não encontramos uma alternativa melhor no seu plantel atual — de forma geral, pra este tipo de problema:"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {data.generalGuidance.map((tip: string, i: number) => (
+                  <p key={i} className="text-sm text-gray-700 flex items-start gap-1.5">
+                    <span className="text-purple-500 shrink-0">•</span>{tip}
+                  </p>
+                ))}
+              </CardContent>
+            </Card>
           )}
 
           {/* Alternativas — quando o casal escolhido não é ideal, mostra com quem seria */}

@@ -250,6 +250,8 @@ export default function Financeiro() {
           </Card>
         )}
 
+        <CostPerBirdSection period={period} />
+
         {/* Lista de insumos */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -302,8 +304,6 @@ export default function Financeiro() {
             })}
           </div>
         </div>
-
-        <CostPerBirdSection period={period} />
       </div>
     </DashboardLayout>
   );
@@ -313,35 +313,46 @@ export default function Financeiro() {
 function CostPerBirdSection({ period }: { period: { dateFrom: string; dateTo: string } }) {
   const { data, isLoading } = trpc.supplies.costPerBird.useQuery(period);
 
-  if (isLoading) return null;
-  if (!data || data.perBird.length === 0) return null;
-
   return (
-    <Card>
+    <Card className="border-amber-100">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2">
           <DollarSign className="w-4 h-4 text-amber-600" />
           Custo por Pássaro
         </CardTitle>
-        <CardDescription>
-          Divide os insumos gerais igualmente entre o plantel e soma os insumos específicos (ex.: cantaxantina só
-          conta pra quem tem fator vermelho) — média de <span className="font-semibold">{currencyBR(data.averagePerBird)}</span> por pássaro no período.
-        </CardDescription>
+        {data && data.perBird.length > 0 ? (
+          <CardDescription>
+            Divide os insumos gerais igualmente entre o plantel e soma os insumos específicos (ex.: cantaxantina só
+            conta pra quem tem fator vermelho) — média de <span className="font-semibold">{currencyBR(data.averagePerBird)}</span> por pássaro no período.
+          </CardDescription>
+        ) : (
+          <CardDescription>Divide o custo dos insumos registrados igualmente entre o plantel ativo.</CardDescription>
+        )}
       </CardHeader>
       <CardContent>
-        <div className="max-h-80 overflow-y-auto space-y-1.5">
-          {data.perBird.slice(0, 50).map((b: any) => (
-            <div key={b.birdId} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-1.5">
-              <span className="font-mono font-semibold">{b.ring}</span>
-              <span className="text-xs text-gray-400">
-                Geral {currencyBR(b.generalCost)}{b.specificCost > 0 && ` + específico ${currencyBR(b.specificCost)}`}
-              </span>
-              <span className="font-semibold text-gray-800">{currencyBR(b.totalCost)}</span>
+        {isLoading && <p className="text-sm text-gray-400">Calculando...</p>}
+        {!isLoading && (!data || data.perBird.length === 0) && (
+          <p className="text-sm text-gray-400">
+            Nenhum pássaro ativo ou nenhum insumo registrado neste período ainda. Registre um insumo acima pra ver o custo calculado aqui.
+          </p>
+        )}
+        {!isLoading && data && data.perBird.length > 0 && (
+          <>
+            <div className="max-h-80 overflow-y-auto space-y-1.5">
+              {data.perBird.slice(0, 50).map((b: any) => (
+                <div key={b.birdId} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-1.5">
+                  <span className="font-mono font-semibold">{b.ring}</span>
+                  <span className="text-xs text-gray-400">
+                    Geral {currencyBR(b.generalCost)}{b.specificCost > 0 && ` + específico ${currencyBR(b.specificCost)}`}
+                  </span>
+                  <span className="font-semibold text-gray-800">{currencyBR(b.totalCost)}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        {data.perBird.length > 50 && (
-          <p className="text-xs text-gray-400 mt-2">Mostrando os 50 pássaros de maior custo, de {data.perBird.length} no total.</p>
+            {data.perBird.length > 50 && (
+              <p className="text-xs text-gray-400 mt-2">Mostrando os 50 pássaros de maior custo, de {data.perBird.length} no total.</p>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
