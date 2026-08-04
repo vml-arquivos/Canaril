@@ -68,6 +68,13 @@ export async function getNextAvailableRing(
   if (criteria.speciesName) {
     batchConditions.push(eq(ring_batches.speciesName, criteria.speciesName));
   }
+  if (criteria.breedName) {
+    // Antes: breedName era aceito no tipo RingCriteria mas NUNCA aplicado
+    // como filtro — o sistema não conseguia distinguir, por exemplo, um
+    // lote de Roller de um lote de Gloster na hora de escolher a próxima
+    // anilha automaticamente.
+    batchConditions.push(eq(ring_batches.breedName, criteria.breedName));
+  }
   if (criteria.modality) {
     batchConditions.push(eq(ring_batches.modality, criteria.modality));
   }
@@ -273,7 +280,8 @@ export async function generateRingsForBatch(
     formatPattern: string;
     startNumber: number;
     endNumber: number;
-  }
+  },
+  tenantId?: number | null
 ): Promise<number> {
   const codes = generateBatchCodes({
     year: batch.year,
@@ -301,6 +309,7 @@ export async function generateRingsForBatch(
       sequence: c.sequence,
       status: "available" as const,
       ringSource: "BATCH" as const,
+      tenantId: tenantId ?? null,
     }));
 
     await db.insert(rings).values(values).onConflictDoNothing();
@@ -322,6 +331,7 @@ export async function createManualRing(
     fullCode: string;
     batchId: number; // lote "manual" — deve existir um lote especial com id fixo
     notes?: string;
+    tenantId?: number | null;
   }
 ): Promise<typeof rings.$inferSelect> {
   // Verifica duplicidade
@@ -347,6 +357,7 @@ export async function createManualRing(
       status: "available",
       ringSource: "MANUAL",
       notes: params.notes,
+      tenantId: params.tenantId ?? null,
     })
     .returning();
 

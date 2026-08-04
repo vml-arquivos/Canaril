@@ -147,9 +147,95 @@ export const ringsRouter = router({
           formatPattern: batch.formatPattern,
           startNumber:   batch.startNumber,
           endNumber:     batch.endNumber,
-        });
+        }, tenantId);
 
         return { success: true, batch, generated };
+      }),
+
+    /**
+     * Cria um "pedido anual" já dividido por raça/bitola de uma vez — em
+     * vez de o criador ter que criar cada lote manualmente e calcular a
+     * faixa de numeração de cada um na mão. Ex.: pedir 200 anilhas no ano,
+     * sendo 50 pra Roller (bitola menor) e 150 pra Gloster (bitola maior):
+     * gera 2 lotes automaticamente, com faixas de numeração sequenciais
+     * SEM sobreposição (1–50 pro primeiro, 51–200 pro segundo), cada um já
+     * com a raça e a bitola certas — é isso que faz a seleção automática
+     * de anilha (getNextAvailableRing) escolher a bitola certa pra cada
+     * pássaro sozinha, sem o criador escolher manualmente.
+     */
+    createSplitOrder: protectedProcedure
+      .input(z.object({
+        year:            z.number().int().min(2000).max(2100),
+        startNumber:     z.number().int().min(1).default(1),
+        breederCode:     z.string().max(50).optional(),
+        associationName: z.string().max(100).optional(),
+        speciesName:     z.string().max(50).optional(),
+        month:           z.number().int().min(1).max(12).optional(),
+        prefix:          z.string().max(20).optional(),
+        suffix:          z.string().max(20).optional(),
+        formatPattern:   z.string().max(100).default("{breederCode}-{year}-{seq}"),
+        splits: z.array(z.object({
+          color:       z.string().min(1).max(50),
+          breedName:   z.string().max(100),
+          modality:    z.enum(["COR", "PORTE", "CANTO", "OUTRA"]).optional(),
+          ringGaugeMm: z.number().min(1).max(10),
+          quantity:    z.number().int().min(1).max(5000),
+          notes:       z.string().max(500).optional(),
+        })).min(1).max(20),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+
+        const createdBatches: Array<{ batch: typeof ring_batches.$inferSelect; generated: number; range: string }> = [];
+        let cursor = input.startNumber;
+
+        for (let i = 0; i < input.splits.length; i++) {
+          const split = input.splits[i];
+          const startNumber = cursor;
+          const endNumber = cursor + split.quantity - 1;
+          cursor = endNumber + 1; // próximo split começa exatamente onde este termina — nunca sobrepõe
+
+          const [batch] = await db.insert(ring_batches).values({
+            batch_number:    `${input.year}-${i + 1}`,
+            year:            input.year,
+            color:           split.color,
+            quantity_total:  split.quantity,
+            quantity_used:   0,
+            status:          "available",
+            breederCode:     input.breederCode,
+            associationName: input.associationName,
+            speciesName:     input.speciesName,
+            breedName:       split.breedName,
+            modality:        split.modality,
+            ringGaugeMm:     split.ringGaugeMm,
+            month:           input.month,
+            prefix:          input.prefix,
+            suffix:          input.suffix,
+            startNumber,
+            endNumber,
+            currentNumber:   startNumber,
+            formatPattern:   input.formatPattern,
+            notes:           split.notes,
+            tenantId,
+          }).returning();
+
+          const generated = await generateRingsForBatch(db, batch.id, {
+            year:          batch.year,
+            month:         batch.month,
+            breederCode:   batch.breederCode,
+            prefix:        batch.prefix,
+            suffix:        batch.suffix,
+            formatPattern: batch.formatPattern,
+            startNumber:   batch.startNumber,
+            endNumber:     batch.endNumber,
+          }, tenantId);
+
+          createdBatches.push({ batch, generated, range: `${startNumber}–${endNumber}` });
+        }
+
+        return { success: true, batches: createdBatches, totalGenerated: createdBatches.reduce((s, b) => s + b.generated, 0) };
       }),
 
     update: protectedProcedure
@@ -519,12 +605,8 @@ export const ringsRouter = router({
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-        const ring = await createManualRing(db, input);
-        // Se usuário operacional, atualiza o tenantId da anilha manual para o tenant da sessão
         const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-        if (tenantId !== null && tenantId !== undefined) {
-          await db.update(rings).set({ tenantId }).where(eq(rings.id, ring.id));
-        }
+        const ring = await createManualRing(db, { ...input, tenantId });
         return { success: true, ring };
       }),
 

@@ -214,7 +214,9 @@ export default function RingBatches() {
               Controle profissional de lotes, bitolas e alocação transacional
             </p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <div className="flex gap-2">
+            <SplitOrderDialog onCreated={() => { refetchStats(); refetchBatches(); }} />
+            <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button className="bg-amber-600 hover:bg-amber-700">
                 <Plus className="h-4 w-4 mr-2" /> Novo Lote
@@ -493,6 +495,7 @@ export default function RingBatches() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Estatísticas */}
@@ -667,5 +670,160 @@ export default function RingBatches() {
         </Card>
       </div>
     </DashboardLayout>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Pedido Dividido — pede um total de anilhas já dividido por raça/bitola de
+// uma vez, com numeração sequencial automática (sem sobreposição) e a
+// bitola de cada raça sugerida sozinha, reaproveitando gaugeRules.suggest
+// (a mesma regra já usada no "Novo Lote" normal).
+// ────────────────────────────────────────────────────────────────────────────
+type SplitRow = { breedName: string; modality: string; ringGaugeMm: string; quantity: string; color: string };
+
+function emptySplitRow(): SplitRow {
+  return { breedName: "", modality: "COR", ringGaugeMm: "", quantity: "", color: "verde" };
+}
+
+function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [breederCode, setBreederCode] = useState("");
+  const [rows, setRows] = useState<SplitRow[]>([emptySplitRow(), emptySplitRow()]);
+  const utils = trpc.useUtils();
+
+  const createSplit = trpc.ringsV2.batches.createSplitOrder.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.batches.length} lote(s) criado(s), ${data.totalGenerated} anilhas geradas ao todo.`);
+      setOpen(false);
+      setRows([emptySplitRow(), emptySplitRow()]);
+      onCreated();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateRow = (i: number, patch: Partial<SplitRow>) => {
+    setRows((r) => r.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+  };
+
+  // Sugere a bitola automaticamente assim que a raça de uma linha é escolhida
+  // (ao sair do campo) — reaproveita a mesma regra (gaugeRules.suggest) já
+  // usada no formulário de Novo Lote comum, sem duplicar lógica.
+  const suggestGaugeFor = async (i: number, breedName: string) => {
+    if (!breedName) return;
+    try {
+      const rule = await utils.ringsV2.gaugeRules.suggest.fetch({ speciesName: "Canário", breedName });
+      if (rule?.recommendedGaugeMm) {
+        setRows((r) => r.map((row, idx) => (idx === i && !row.ringGaugeMm ? { ...row, ringGaugeMm: String(rule.recommendedGaugeMm) } : row)));
+      }
+    } catch {
+      // Sem regra cadastrada pra essa raça ainda — o criador preenche manualmente, sem quebrar o fluxo.
+    }
+  };
+
+  const totalQuantity = rows.reduce((s, r) => s + (parseInt(r.quantity) || 0), 0);
+
+  // Preview das faixas de numeração — mostra pro criador exatamente como vai
+  // ficar dividido ANTES de confirmar, pra não ter surpresa.
+  const preview = useMemo(() => {
+    let cursor = 1;
+    return rows.map((r) => {
+      const qty = parseInt(r.quantity) || 0;
+      const start = cursor;
+      const end = cursor + Math.max(qty, 0) - 1;
+      if (qty > 0) cursor = end + 1;
+      return { ...r, start, end: qty > 0 ? end : start - 1, qty };
+    });
+  }, [rows]);
+
+  const handleSubmit = () => {
+    const validRows = rows.filter((r) => r.breedName && r.ringGaugeMm && parseInt(r.quantity) > 0);
+    if (validRows.length === 0) {
+      toast.error("Preencha raça, bitola e quantidade de pelo menos uma linha.");
+      return;
+    }
+    createSplit.mutate({
+      year: parseInt(year),
+      breederCode: breederCode || undefined,
+      splits: validRows.map((r) => ({
+        breedName:   r.breedName,
+        modality:    r.modality as any,
+        ringGaugeMm: parseFloat(r.ringGaugeMm),
+        quantity:    parseInt(r.quantity),
+        color:       r.color,
+      })),
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <Plus className="h-4 w-4 mr-2" /> Pedido Dividido (por raça)
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Pedido de Anilhas Dividido por Raça/Bitola</DialogTitle>
+          <DialogDescription>
+            Peça o total do ano de uma vez, já separado por raça e bitola — a numeração de cada faixa é calculada
+            automaticamente, sem sobrepor. Depois disso, o sistema escolhe sozinho a anilha certa pra cada pássaro
+            na hora de anilhar, de acordo com a raça dele.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Ano *</Label>
+            <Input type="number" value={year} onChange={(e) => setYear(e.target.value)} />
+          </div>
+          <div>
+            <Label>Código do criador (opcional)</Label>
+            <Input value={breederCode} onChange={(e) => setBreederCode(e.target.value)} placeholder="Ex: GF-003" />
+          </div>
+        </div>
+
+        <div className="space-y-3 mt-2">
+          {rows.map((row, i) => (
+            <div key={i} className="grid grid-cols-12 gap-2 items-end bg-gray-50 rounded-lg p-3">
+              <div className="col-span-4">
+                <Label className="text-xs">Raça</Label>
+                <Input value={row.breedName} onChange={(e) => updateRow(i, { breedName: e.target.value })} onBlur={(e) => suggestGaugeFor(i, e.target.value)} placeholder="Ex: Gloster, Roller" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Bitola (mm)</Label>
+                <Input type="number" step="0.1" value={row.ringGaugeMm} onChange={(e) => updateRow(i, { ringGaugeMm: e.target.value })} placeholder="Ex: 2.9" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Quantidade</Label>
+                <Input type="number" value={row.quantity} onChange={(e) => updateRow(i, { quantity: e.target.value })} placeholder="Ex: 50" />
+              </div>
+              <div className="col-span-3">
+                <Label className="text-xs">Faixa gerada</Label>
+                <div className="h-9 flex items-center text-xs text-gray-500 font-mono">
+                  {preview[i].qty > 0 ? `${preview[i].start}–${preview[i].end}` : "—"}
+                </div>
+              </div>
+              <div className="col-span-1">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setRows((r) => r.filter((_, idx) => idx !== i))} disabled={rows.length <= 1}>
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Button type="button" variant="outline" size="sm" onClick={() => setRows((r) => [...r, emptySplitRow()])}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" /> Adicionar raça
+        </Button>
+
+        <div className="flex items-center justify-between border-t pt-3 mt-2">
+          <p className="text-sm text-gray-600">Total do pedido: <span className="font-bold">{totalQuantity}</span> anilhas</p>
+          <Button onClick={handleSubmit} disabled={createSplit.isPending} className="bg-amber-600 hover:bg-amber-700">
+            {createSplit.isPending ? "Criando..." : "Confirmar Pedido"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
