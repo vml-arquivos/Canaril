@@ -6,6 +6,7 @@
  * desempatar lotes equivalentes, sem rejeitar um lote fisicamente correto só
  * porque foi catalogado em outra modalidade de canário.
  */
+import { resolveOfficialRingGuide } from "../../shared/ringGuide.ts";
 
 export type RingSubject = {
   speciesName?: string | null;
@@ -80,6 +81,9 @@ export function findRecommendedRingGauge(
 ): number | null {
   const explicit = finiteGauge(subject.ringGaugeMm);
   if (explicit !== null) return explicit;
+
+  const official = resolveOfficialRingGuide(subject);
+  if (official) return official.recommendedGaugeMm;
 
   let best: { score: number; gauge: number } | null = null;
   for (const rule of rules) {

@@ -36,6 +36,7 @@ import { parseRingCode } from "../_core/ringParser";
 import { TRPCError } from "@trpc/server";
 import { getCurrentTenantId, requireTenantId } from "../_core/tenant";
 import { createRingBatchesAtomic, deleteUnusedRingBatchAtomic } from "../_core/ringBatchService";
+import { resolveOfficialRingGuide } from "@shared/ringGuide";
 
 // ─── Schema Zod para criação de lote ────────────────────────────────────────
 const createBatchSchema = z.object({
@@ -626,6 +627,23 @@ export const ringsRouter = router({
         modality:    z.string().optional(),
       }))
       .query(async ({ input }) => {
+        const official = resolveOfficialRingGuide(input);
+        if (official) {
+          return {
+            id: 0,
+            speciesName: input.speciesName,
+            breedName: input.breedName ?? null,
+            modality: input.modality ?? null,
+            recommendedGaugeMm: official.recommendedGaugeMm,
+            minGaugeMm: official.minGaugeMm,
+            maxGaugeMm: official.maxGaugeMm,
+            notes: official.notes ?? official.title,
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        }
+
         const db = await getDb();
         if (!db) return null;
 

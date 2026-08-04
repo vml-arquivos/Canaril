@@ -111,8 +111,8 @@ export async function ringAndPromoteChick(pool: Pool, input: RingPromotionInput)
     const motherGauge = findRecommendedRingGauge(motherSubject, gaugeRules);
     if (fatherGauge !== null && motherGauge !== null && Math.abs(fatherGauge - motherGauge) > 0.051) {
       throw new Error(
-        `Os reprodutores exigem bitolas diferentes (${fatherGauge.toFixed(1)} mm e ${motherGauge.toFixed(1)} mm). ` +
-        "Revise a classificação do casal antes de anilhar o filhote.",
+        `Os reprodutores estão cadastrados com bitolas oficiais diferentes (${fatherGauge.toFixed(1)} mm e ${motherGauge.toFixed(1)} mm). ` +
+        "Revise a classificação/raça do casal em Pássaros antes de anilhar o filhote.",
       );
     }
 
