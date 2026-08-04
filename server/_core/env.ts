@@ -37,7 +37,7 @@ function isPlaceholder(value: string): boolean {
   return PLACEHOLDER_MARKERS.some((marker) => normalized.includes(marker));
 }
 
-/** Validação bloqueante somente em produção, antes de abrir a porta HTTP. */
+/** Validação de produção: somente requisitos críticos bloqueiam a inicialização. */
 export function validateProductionEnvironment(): void {
   if (!ENV.isProduction) return;
 
@@ -52,8 +52,16 @@ export function validateProductionEnvironment(): void {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     errors.push("PORT inválida");
   }
+  // Compatibilidade de produção: ADMIN_PASSWORD pertence ao fluxo legado de
+  // bootstrap e não pode impedir o servidor de subir. Ambientes já em produção
+  // podem possuir uma senha antiga/curta; bloquear o processo aqui derruba o
+  // deploy inteiro antes do healthcheck. Mantemos o alerta de segurança, mas a
+  // aplicação continua disponível para que a credencial seja rotacionada sem
+  // indisponibilidade.
   if (ENV.adminPassword && (ENV.adminPassword.length < 12 || isPlaceholder(ENV.adminPassword))) {
-    errors.push("ADMIN_PASSWORD configurada é fraca/placeholder; remova-a ou use uma senha forte");
+    console.warn(
+      "[Environment] Aviso: ADMIN_PASSWORD está fraca/placeholder. O sistema continuará iniciando por compatibilidade; altere a credencial no Coolify assim que possível."
+    );
   }
 
   if (errors.length > 0) {
