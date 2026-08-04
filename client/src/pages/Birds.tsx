@@ -152,6 +152,7 @@ export default function Birds() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [autoSuggestedRing, setAutoSuggestedRing] = useState<string | null>(null);
   const [officialClassSearch, setOfficialClassSearch] = useState("");
   const [officialClassPopoverOpen, setOfficialClassPopoverOpen] = useState(false);
   const [specialtyCustom, setSpecialtyCustom] = useState(false);
@@ -286,16 +287,24 @@ export default function Birds() {
 
   // Sugestão automática de próxima anilha disponível
   const { data: nextRing } = trpc.ringsV2.rings.getNext.useQuery(
-    {},
+    {
+      speciesName: formData.speciesName || undefined,
+      breedName: formData.breedName || undefined,
+      modality: (formData.modality || undefined) as "COR" | "PORTE" | "CANTO" | "OUTRA" | undefined,
+    },
     { enabled: open && !editingId }
   );
 
-  // Preenche automaticamente o campo de anilha ao abrir o formulário de criação
+  // Preenche e atualiza somente uma sugestão automática. Depois que o
+  // criador digita uma anilha manualmente, alterações de raça/modalidade não
+  // sobrescrevem o que ele informou.
   useEffect(() => {
-    if (open && !editingId && nextRing?.fullCode && !formData.ring) {
+    if (!open || editingId || !nextRing?.fullCode) return;
+    if (!formData.ring || formData.ring === autoSuggestedRing) {
       setFormData(prev => ({ ...prev, ring: nextRing.fullCode }));
+      setAutoSuggestedRing(nextRing.fullCode);
     }
-  }, [open, editingId, nextRing, formData.ring]);
+  }, [open, editingId, nextRing?.fullCode, formData.ring, autoSuggestedRing]);
 
   const selectedOfficialClass = officialClassResults?.items.find((cls) => String(cls.id) === formData.officialClassId);
 
@@ -332,6 +341,7 @@ export default function Birds() {
     setOpen(false);
     setEditingId(null);
     setFormData(emptyForm);
+    setAutoSuggestedRing(null);
     setPendingPhoto(null);
     setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
     setOfficialClassSearch("");
@@ -354,6 +364,7 @@ export default function Birds() {
   const openCreate = () => {
     setEditingId(null);
     setFormData(emptyForm);
+    setAutoSuggestedRing(null);
     setGenotypeDraft(EMPTY_GENOTYPE_DRAFT);
     setOfficialClassSearch("");
     setIsDirty(false);
@@ -692,7 +703,7 @@ export default function Birds() {
                       <Input
                         id="ring"
                         value={formData.ring}
-                        onChange={(e) => patchForm({ ring: e.target.value })}
+                        onChange={(e) => { setAutoSuggestedRing(null); patchForm({ ring: e.target.value }); }}
                         placeholder="Ex: 2026-001"
                         className="flex-1"
                       />
@@ -702,7 +713,7 @@ export default function Birds() {
                           variant="outline"
                           size="sm"
                           className="text-green-600 border-green-300 hover:bg-green-50 shrink-0"
-                          onClick={() => { setFormData(prev => ({ ...prev, ring: nextRing.fullCode })); setIsDirty(true); }}
+                          onClick={() => { setAutoSuggestedRing(null); setFormData(prev => ({ ...prev, ring: nextRing.fullCode })); setIsDirty(true); }}
                           title={`Usar próxima anilha disponível: ${nextRing.fullCode}`}
                         >
                           <Sparkles className="h-3.5 w-3.5" />

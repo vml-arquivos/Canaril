@@ -6,16 +6,16 @@
  * Ornitológica do Brasil, data efetiva 02/02/2026), fornecida pelo criador.
  *
  * Só as classes de Canário (Cor, Canto, Porte) são semeadas — é o escopo
- * do sistema. Raças de Porte SEM correspondência clara e seura na tabela
+ * do sistema. Raças de Porte SEM correspondência clara e segura na tabela
  * oficial (ex.: nomes que não aparecem lá, ou que o catálogo interno já
  * separa em variações que a tabela trata como uma só linha) foram
  * deliberadamente DEIXADAS DE FORA em vez de receber um valor adivinhado —
  * errar uma bitola tem custo real pro criador (anilha que não serve, ou
  * que aperta o pássaro).
  *
- * Idempotente: roda em todo boot, só insere o que ainda não existe (nunca
- * sobrescreve um valor que o próprio criador já tenha ajustado manualmente
- * depois — reconhecido pela flag `notes` começando com "FOB/OBJO 2026").
+ * Idempotente: roda em todo boot. Insere regras ausentes e corrige somente regras
+ * previamente semeadas pela própria fonte oficial (`notes` começando com
+ * "FOB/OBJO 2026"). Valores ajustados manualmente pelo criador são preservados.
  * ============================================================================
  */
 import { getDb } from "../db";
@@ -25,8 +25,8 @@ import { eq, and, isNull } from "drizzle-orm";
 const SOURCE_TAG = "FOB/OBJO 2026 (Federação Ornitológica do Brasil, oficial)";
 
 // Nome da raça EXATAMENTE como está em shared/constants.ts (SPECIALTIES),
-// pra bater 1:1 com birds.breedName / ring_batches.breedName sem precisar
-// de nenhuma normalização/fuzzy-match em tempo de execução.
+// Mantém os nomes do catálogo principal. A camada de compatibilidade também
+// tolera apenas variações seguras, como “Gloster” e “Gloster Corona”.
 const PORTE_GAUGES: Array<{ breedName: string; gaugeMm: number }> = [
   { breedName: "Arlequim Português", gaugeMm: 3.2 },
   { breedName: "Benacus", gaugeMm: 3.0 },
@@ -84,15 +84,27 @@ export async function seedOfficialRingGauges(): Promise<void> {
 
   for (const rule of generalRules) {
     const existing = await db
-      .select({ id: ring_gauge_rules.id })
+      .select({
+        id: ring_gauge_rules.id,
+        notes: ring_gauge_rules.notes,
+        recommendedGaugeMm: ring_gauge_rules.recommendedGaugeMm,
+      })
       .from(ring_gauge_rules)
       .where(and(
         eq(ring_gauge_rules.speciesName, rule.speciesName),
         eq(ring_gauge_rules.modality, rule.modality),
         isNull(ring_gauge_rules.breedName),
-      ))
-      .limit(1);
-    if (existing.length > 0) continue;
+      ));
+    if (existing.length > 0) {
+      for (const row of existing) {
+        if (row.notes?.startsWith("FOB/OBJO 2026") && row.recommendedGaugeMm !== rule.gaugeMm) {
+          await db.update(ring_gauge_rules)
+            .set({ recommendedGaugeMm: rule.gaugeMm, notes: SOURCE_TAG, active: true, updatedAt: new Date() })
+            .where(eq(ring_gauge_rules.id, row.id));
+        }
+      }
+      continue;
+    }
 
     await db.insert(ring_gauge_rules).values({
       speciesName: rule.speciesName,
@@ -107,14 +119,26 @@ export async function seedOfficialRingGauges(): Promise<void> {
   // Canário de Porte — bitola específica por raça
   for (const { breedName, gaugeMm } of PORTE_GAUGES) {
     const existing = await db
-      .select({ id: ring_gauge_rules.id })
+      .select({
+        id: ring_gauge_rules.id,
+        notes: ring_gauge_rules.notes,
+        recommendedGaugeMm: ring_gauge_rules.recommendedGaugeMm,
+      })
       .from(ring_gauge_rules)
       .where(and(
         eq(ring_gauge_rules.speciesName, "Canário"),
         eq(ring_gauge_rules.breedName, breedName),
-      ))
-      .limit(1);
-    if (existing.length > 0) continue;
+      ));
+    if (existing.length > 0) {
+      for (const row of existing) {
+        if (row.notes?.startsWith("FOB/OBJO 2026") && row.recommendedGaugeMm !== gaugeMm) {
+          await db.update(ring_gauge_rules)
+            .set({ modality: "PORTE", recommendedGaugeMm: gaugeMm, notes: SOURCE_TAG, active: true, updatedAt: new Date() })
+            .where(eq(ring_gauge_rules.id, row.id));
+        }
+      }
+      continue;
+    }
 
     await db.insert(ring_gauge_rules).values({
       speciesName: "Canário",

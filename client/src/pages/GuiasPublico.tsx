@@ -186,7 +186,7 @@ Se a anilha não passar ou ficar muito apertada, aguarde mais um dia ou use o ta
 
 ## Tamanhos de anilha
 
-Cada raça tem um tamanho de anilha recomendado. Para canários de cor, o tamanho padrão mais comum é 2,7 mm. Para raças de porte (Padovano, Gloster, Yorkshire), consulte o padrão da raça.
+Cada raça tem uma bitola oficial. Na tabela FOB/OBJO 2026, canários de cor e Gloster usam 3,0 mm; Fife Fancy e Hoso Japonês usam 2,7 mm; Border, Norwich e Yorkshire usam 3,4 mm. Sempre confirme a espécie, a raça e o ano da norma antes do anilhamento.
 
 ## Registro no sistema
 

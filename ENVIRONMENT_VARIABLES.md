@@ -9,9 +9,9 @@ Copie e cole essas variáveis no Coolify (Environment Variables):
 ## 📋 VARIÁVEIS ESSENCIAIS (OBRIGATÓRIAS)
 
 ```
-DATABASE_URL=postgresql://postgis:postgis@postgres:5432/canario_lima_db
+DATABASE_URL=postgresql://USUARIO:SENHA@postgres:5432/BANCO
 VITE_APP_TITLE=Canário Gestão Pro
-JWT_SECRET=TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
+JWT_SECRET=GERAR_COM_OPENSSL_RAND_BASE64_48
 ```
 
 ---
@@ -22,13 +22,13 @@ JWT_SECRET=TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
 NODE_ENV=production
 VITE_APP_ID=canario-gestao-pro-001
 VITE_APP_LOGO=https://canarillima.casadf.com.br/logo.png
-CSRF_SECRET=26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
-SESSION_SECRET=BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
+CSRF_SECRET=<GERE_UM_SEGREDO_CSRF_UNICO_COM_64_CARACTERES_HEXADECIMAIS>
+SESSION_SECRET=<GERE_UM_SEGREDO_DE_SESSAO_UNICO_COM_NO_MINIMO_32_CARACTERES>
 OWNER_NAME=Canário Lima
 OWNER_OPEN_ID=canario-lima-001
 ADMIN_NAME=Vilson Marcio
 ADMIN_EMAIL=vilsonmarcio@gmail.com
-ADMIN_PASSWORD=Senha@123
+ADMIN_PASSWORD=DEFINA_UMA_SENHA_FORTE
 CORS_ORIGIN=https://canarillima.casadf.com.br
 LOG_LEVEL=info
 PORT=3000
@@ -69,13 +69,13 @@ VITE_ANALYTICS_WEBSITE_ID=seu-website-id
 ### Passo 3: Adicione cada variável
 ```
 KEY: DATABASE_URL
-VALUE: postgresql://postgis:postgis@postgres:5432/canario_lima_db
+VALUE: postgresql://USUARIO:SENHA@postgres:5432/BANCO
 
 KEY: VITE_APP_TITLE
 VALUE: Canário Gestão Pro
 
 KEY: JWT_SECRET
-VALUE: TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
+VALUE: GERAR_COM_OPENSSL_RAND_BASE64_48
 
 ... (repita para todas as outras)
 ```
@@ -139,19 +139,19 @@ openssl rand -base64 32
 **Copie e Cole Tudo Isso nas Environment Variables do Coolify:**
 
 ```
-DATABASE_URL=postgresql://postgis:postgis@postgres:5432/canario_lima_db
+DATABASE_URL=postgresql://USUARIO:SENHA@postgres:5432/BANCO
 VITE_APP_TITLE=Canário Gestão Pro
-JWT_SECRET=TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
+JWT_SECRET=GERAR_COM_OPENSSL_RAND_BASE64_48
 NODE_ENV=production
 VITE_APP_ID=canario-gestao-pro-001
 VITE_APP_LOGO=https://canarillima.casadf.com.br/logo.png
-CSRF_SECRET=26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
-SESSION_SECRET=BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
+CSRF_SECRET=<GERE_UM_SEGREDO_CSRF_UNICO_COM_64_CARACTERES_HEXADECIMAIS>
+SESSION_SECRET=<GERE_UM_SEGREDO_DE_SESSAO_UNICO_COM_NO_MINIMO_32_CARACTERES>
 OWNER_NAME=Canário Lima
 OWNER_OPEN_ID=canario-lima-001
 ADMIN_NAME=Vilson Marcio
 ADMIN_EMAIL=vilsonmarcio@gmail.com
-ADMIN_PASSWORD=Senha@123
+ADMIN_PASSWORD=DEFINA_UMA_SENHA_FORTE
 CORS_ORIGIN=https://canarillima.casadf.com.br
 LOG_LEVEL=info
 PORT=3000

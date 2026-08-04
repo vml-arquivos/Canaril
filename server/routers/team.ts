@@ -5,10 +5,9 @@
  * gerencie membros da sua própria equipe (CANARIL_MEMBER / VIEWER), sem
  * precisar de um PLATFORM_ADMIN para cada usuário novo.
  *
- * Reaproveita exatamente o mesmo esquema de hash de senha (scrypt + sal fixo
- * "canaril-salt") já usado em server/routers.ts (verificação de login) e
- * server/routers/admin.ts (criação de usuário pelo admin da plataforma) —
- * criar um usuário aqui com um hash diferente quebraria o login dele.
+ * Usa o mesmo helper versionado de senha do login, com sal aleatório por usuário,
+ * mantendo compatibilidade transparente com contas legadas e com a criação
+ * administrativa de usuários.
  *
  * Restrições de segurança deliberadas:
  *   - Só CANARIL_MANAGER (ou PLATFORM_ADMIN) pode convidar/gerenciar.
@@ -25,6 +24,7 @@ import { z } from "zod";
 import { and, eq, isNull } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { hashPassword } from "../_core/password";
 import { users, audit_logs } from "../../drizzle/schema";
 
 const INVITABLE_ROLES = ["CANARIL_MEMBER", "VIEWER"] as const;
@@ -46,15 +46,6 @@ function requireTeamManager(ctx: any): { tenantId: number; userId: number } {
   return { tenantId, userId: caller.id };
 }
 
-async function hashPassword(password: string): Promise<string> {
-  const crypto = await import("crypto");
-  return new Promise((resolve, reject) => {
-    crypto.scrypt(password, "canaril-salt", 64, (err: any, derivedKey: Buffer) => {
-      if (err) return reject(err);
-      resolve(derivedKey.toString("hex"));
-    });
-  });
-}
 
 async function writeAudit(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,

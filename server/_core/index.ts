@@ -8,7 +8,8 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic } from "./staticServe";
-import { ensureDatabaseReady } from "../db";
+import { ensureDatabaseReady, getPool } from "../db";
+import { validateProductionEnvironment } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -30,6 +31,8 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  validateProductionEnvironment();
+
   // Garante conexão com o banco e aplica migrations pendentes ANTES de
   // aceitar qualquer requisição. Se falhar, o processo encerra com código
   // de saída != 0 — isso faz o Coolify mostrar o deploy como falho de forma
@@ -80,7 +83,17 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   // Health check endpoint
-  app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.get("/health", (_req, res) => res.status(200).json({ ok: true, service: "vittabird" }));
+  app.get("/ready", async (_req, res) => {
+    const pool = getPool();
+    if (!pool) return res.status(503).json({ ok: false, database: "unavailable" });
+    try {
+      await pool.query("SELECT 1");
+      return res.status(200).json({ ok: true, database: "ready" });
+    } catch {
+      return res.status(503).json({ ok: false, database: "unavailable" });
+    }
+  });
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -106,16 +119,35 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const preferredPort = Number.parseInt(process.env.PORT || "3000", 10);
+  const port = process.env.NODE_ENV === "production"
+    ? preferredPort
+    : await findAvailablePort(preferredPort);
 
-  if (port !== preferredPort) {
+  if (process.env.NODE_ENV !== "production" && port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`[Shutdown] ${signal} recebido; encerrando servidor HTTP.`);
+    server.close((error) => {
+      if (error) {
+        console.error("[Shutdown] Falha ao encerrar servidor:", error);
+        process.exit(1);
+      }
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
-startServer().catch(console.error);
+startServer().catch((error) => {
+  console.error("[Startup] Falha fatal:", error);
+  process.exit(1);
+});

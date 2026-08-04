@@ -75,7 +75,7 @@ Adicione CADA variável clicando em **"Add Variable"**:
 ### Variável 1
 ```
 KEY: DATABASE_URL
-VALUE: postgresql://postgis:postgis@postgres:5432/canario_lima_db
+VALUE: postgresql://USUARIO:SENHA@postgres:5432/BANCO
 ```
 
 ### Variável 2
@@ -87,7 +87,7 @@ VALUE: Canário Gestão Pro
 ### Variável 3
 ```
 KEY: JWT_SECRET
-VALUE: TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
+VALUE: GERAR_COM_OPENSSL_RAND_BASE64_48
 ```
 
 ### Variável 4
@@ -105,13 +105,13 @@ VALUE: canario-gestao-pro-001
 ### Variável 6
 ```
 KEY: CSRF_SECRET
-VALUE: 26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
+VALUE: <GERE_UM_SEGREDO_CSRF_UNICO_COM_64_CARACTERES_HEXADECIMAIS>
 ```
 
 ### Variável 7
 ```
 KEY: SESSION_SECRET
-VALUE: BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
+VALUE: <GERE_UM_SEGREDO_DE_SESSAO_UNICO_COM_NO_MINIMO_32_CARACTERES>
 ```
 
 ### Variável 8
@@ -155,12 +155,12 @@ canario_lima_db
 
 ### Campo 3: Database User
 ```
-postgis
+vittabird
 ```
 
 ### Campo 4: Database Password
 ```
-postgis
+<SEGREDO_CONFIGURADO_NO_AMBIENTE>
 ```
 
 ### Campo 5: Database Version
@@ -279,8 +279,8 @@ always (reinicia se cair)
 ### Tela 4: Database
 - [ ] PostgreSQL selecionado
 - [ ] Database Name = canario_lima_db
-- [ ] User = postgis
-- [ ] Password = postgis
+- [ ] User = vittabird
+- [ ] Password = <SEGREDO_CONFIGURADO_NO_AMBIENTE>
 
 ### Tela 5: Destination
 - [ ] Servidor/VPS selecionado

@@ -38,7 +38,18 @@ async function seed() {
     await db.execute(sql`
       INSERT INTO breed_knowledge ("code","speciesCode","modality","name","aliases","hasCrest","hasPorteStandard","hasColorStandard","defaultRingGaugeMm","description","active")
       VALUES (${b.code},${b.speciesCode},${b.modality},${b.name},${JSON.stringify(b.aliases)},${b.hasCrest},${b.hasPorteStandard},${b.hasColorStandard},${b.defaultRingGaugeMm},${b.description},${b.active})
-      ON CONFLICT ("code") DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = NOW()
+      ON CONFLICT ("code") DO UPDATE SET
+        "speciesCode" = EXCLUDED."speciesCode",
+        "modality" = EXCLUDED."modality",
+        "name" = EXCLUDED."name",
+        "aliases" = EXCLUDED."aliases",
+        "hasCrest" = EXCLUDED."hasCrest",
+        "hasPorteStandard" = EXCLUDED."hasPorteStandard",
+        "hasColorStandard" = EXCLUDED."hasColorStandard",
+        "defaultRingGaugeMm" = EXCLUDED."defaultRingGaugeMm",
+        "description" = EXCLUDED."description",
+        "active" = EXCLUDED."active",
+        "updatedAt" = NOW()
     `);
   }
   console.log(`[seed] breeds: ${BREED_KNOWLEDGE.length} records`);

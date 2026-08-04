@@ -11,10 +11,11 @@
  *   - Toda operação de escrita usa transação explícita
  */
 
-import { and, eq, asc, isNull, sql, notInArray, or } from "drizzle-orm";
-import { ring_batches, rings, birds } from "../../drizzle/schema";
-import { generateRingCode, generateBatchCodes } from "./ringParser";
+import { and, eq, asc, isNull, sql } from "drizzle-orm";
+import { ring_batches, ring_gauge_rules, rings } from "../../drizzle/schema";
+import { generateBatchCodes } from "./ringParser";
 import type { Pool } from "pg";
+import { assessRingCompatibility, type RingGaugeRuleLike } from "./ringCompatibility";
 
 type DB = NonNullable<Awaited<ReturnType<typeof import("../db").getDb>>>;
 
@@ -50,94 +51,83 @@ export async function getNextAvailableRing(
   db: DB,
   criteria: RingCriteria
 ): Promise<NextRingResult | null> {
-  // Coleta todos os códigos já usados em birds.ring para exclusão
-  const usedRings = await db.select({ ring: birds.ring }).from(birds);
-  const usedCodes = new Set(usedRings.map((b) => b.ring));
-
-  // Monta condições de filtro para o lote
   const batchConditions = [
     eq(ring_batches.status, "available"),
+    isNull(ring_batches.deletedAt),
   ];
-
-  if (criteria.batchId) {
-    batchConditions.push(eq(ring_batches.id, criteria.batchId));
-  }
-  if (criteria.year) {
-    batchConditions.push(eq(ring_batches.year, criteria.year));
-  }
-  // Em todos os critérios abaixo: um lote SEM aquele campo preenchido é
-  // tratado como "universal" (serve pra qualquer pássaro nesse critério) —
-  // não como "não bate com nada". Sem isso, um lote genérico (sem raça
-  // definida, como o lote-padrão que a maioria dos criadores usa) nunca
-  // seria encontrado assim que qualquer critério específico fosse pedido —
-  // foi exatamente o bug que reapareceu ao ligar o filtro de raça.
-  if (criteria.speciesName) {
-    batchConditions.push(or(isNull(ring_batches.speciesName), eq(ring_batches.speciesName, criteria.speciesName))!);
-  }
-  if (criteria.breedName) {
-    batchConditions.push(or(isNull(ring_batches.breedName), eq(ring_batches.breedName, criteria.breedName))!);
-  }
-  if (criteria.modality) {
-    batchConditions.push(or(isNull(ring_batches.modality), eq(ring_batches.modality, criteria.modality))!);
-  }
-  if (criteria.ringGaugeMm) {
-    batchConditions.push(or(isNull(ring_batches.ringGaugeMm), eq(ring_batches.ringGaugeMm, criteria.ringGaugeMm))!);
-  }
-  // Filtra por tenant se especificado (usuários operacionais)
+  if (criteria.batchId) batchConditions.push(eq(ring_batches.id, criteria.batchId));
+  if (criteria.year) batchConditions.push(eq(ring_batches.year, criteria.year));
   if (criteria.tenantId !== null && criteria.tenantId !== undefined) {
     batchConditions.push(eq(ring_batches.tenantId, criteria.tenantId));
   }
 
-  // Busca lotes compatíveis ordenados por ano asc (mais antigo com vagas primeiro)
-  const compatibleBatches = await db
-    .select()
-    .from(ring_batches)
-    .where(and(...batchConditions))
-    .orderBy(asc(ring_batches.year));
+  const [batches, rules] = await Promise.all([
+    db.select().from(ring_batches).where(and(...batchConditions)),
+    db.select({
+      speciesName: ring_gauge_rules.speciesName,
+      breedName: ring_gauge_rules.breedName,
+      modality: ring_gauge_rules.modality,
+      recommendedGaugeMm: ring_gauge_rules.recommendedGaugeMm,
+      active: ring_gauge_rules.active,
+    }).from(ring_gauge_rules).where(eq(ring_gauge_rules.active, true)),
+  ]);
 
-  // Entre os lotes compatíveis, prioriza o mais ESPECÍFICO pra essa raça —
-  // um lote com breedName batendo exatamente vem antes de um lote
-  // universal (sem raça definida), mesmo que o universal seja mais antigo.
-  // Sem isso, um lote genérico "roubaria" a vez de um lote feito sob
-  // medida pra raça certa.
-  if (criteria.breedName) {
-    compatibleBatches.sort((a, b) => {
-      const aMatch = a.breedName === criteria.breedName ? 0 : 1;
-      const bMatch = b.breedName === criteria.breedName ? 0 : 1;
-      return aMatch - bMatch;
-    });
-  }
+  const target = {
+    speciesName: criteria.speciesName,
+    breedName: criteria.breedName,
+    modality: criteria.modality,
+    ringGaugeMm: criteria.ringGaugeMm,
+  };
 
-  for (const batch of compatibleBatches) {
-    // Busca as próximas anilhas disponíveis do lote (pega algumas para filtrar)
-    const candidates = await db
+  const compatibleBatches = batches
+    .map((batch) => ({
+      batch,
+      assessment: assessRingCompatibility(target, {
+        speciesName: batch.speciesName,
+        breedName: batch.breedName,
+        modality: batch.modality,
+        ringGaugeMm: batch.ringGaugeMm,
+      }, rules as RingGaugeRuleLike[]),
+    }))
+    .filter(({ assessment }) => assessment.compatible)
+    .sort((left, right) =>
+      right.assessment.score - left.assessment.score
+      || left.batch.year - right.batch.year
+      || left.batch.id - right.batch.id,
+    );
+
+  // Consulta somente a primeira anilha de cada lote compatível. Evita carregar
+  // milhares de códigos em memória e elimina o antigo corte arbitrário de 50.
+  for (const { batch } of compatibleBatches) {
+    const ringConditions = [
+      eq(rings.batchId, batch.id),
+      eq(rings.status, "available"),
+      isNull(rings.deletedAt),
+      isNull(rings.birdId),
+      isNull(rings.chickId),
+      sql`NOT EXISTS (
+        SELECT 1
+          FROM "birds" AS used_bird
+         WHERE used_bird."ring" = COALESCE(${rings.fullCode}, ${rings.number})
+           AND used_bird."deletedAt" IS NULL
+      )`,
+    ];
+    if (criteria.tenantId !== null && criteria.tenantId !== undefined) {
+      ringConditions.push(eq(rings.tenantId, criteria.tenantId));
+    }
+
+    const [ring] = await db
       .select()
       .from(rings)
-      .where(
-        and(
-          eq(rings.batchId, batch.id),
-          eq(rings.status, "available"),
-          isNull(rings.birdId),
-          // Filtra por tenant do lote se tenantId estiver presente (para segurança redundante)
-          (criteria.tenantId !== null && criteria.tenantId !== undefined
-            ? eq(rings.tenantId, criteria.tenantId)
-            : sql`true`)
-        )
-      )
-      .orderBy(asc(rings.sequence))
-      .limit(50); // pega até 50 candidatas para filtrar as já usadas em birds
+      .where(and(...ringConditions))
+      .orderBy(asc(rings.sequence), asc(rings.id))
+      .limit(1);
 
-    // Filtra excluindo códigos já presentes em birds.ring
-    const firstFree = candidates.find((r) => {
-      const code = r.fullCode ?? r.number;
-      return !usedCodes.has(code);
-    });
-
-    if (firstFree) {
+    if (ring) {
       return {
-        ring: firstFree,
+        ring,
         batch,
-        fullCode: firstFree.fullCode ?? firstFree.number,
+        fullCode: ring.fullCode ?? ring.number,
       };
     }
   }
@@ -155,81 +145,181 @@ export async function assignRingToBird(
   db: DB,
   pool: Pool,
   ringId: number,
-  birdId: number
+  birdId: number,
+  tenantId?: number | null,
 ): Promise<string> {
+  void db; // Mantido na assinatura pública para compatibilidade com os chamadores existentes.
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Bloqueia a linha para evitar corrida (SELECT FOR UPDATE)
+    // Bloqueia a anilha para impedir dupla alocação concorrente.
     const lockResult = await client.query<{
       id: number;
+      batchId: number;
       status: string;
-      "birdId": number | null;
-      "fullCode": string | null;
+      birdId: number | null;
+      chickId: number | null;
+      fullCode: string | null;
       number: string;
+      tenantId: number | null;
+      ringDeletedAt: Date | null;
+      batchStatus: string;
+      batchDeletedAt: Date | null;
+      speciesName: string | null;
+      breedName: string | null;
+      modality: string | null;
+      ringGaugeMm: number | null;
     }>(
-      `SELECT id, status, "birdId", "fullCode", number
-       FROM rings
-       WHERE id = $1
-       FOR UPDATE`,
-      [ringId]
+      `SELECT r.id, r."batchId" AS "batchId", r.status,
+              r."birdId" AS "birdId", r."chickId" AS "chickId",
+              r."fullCode" AS "fullCode", r.number,
+              r."tenantId" AS "tenantId", r."deletedAt" AS "ringDeletedAt",
+              rb.status AS "batchStatus", rb."deletedAt" AS "batchDeletedAt",
+              rb."speciesName" AS "speciesName", rb."breedName" AS "breedName",
+              rb.modality, rb."ringGaugeMm" AS "ringGaugeMm"
+         FROM rings r
+         JOIN ring_batches rb ON rb.id = r."batchId"
+        WHERE r.id = $1
+          AND ($2::integer IS NULL OR r."tenantId" = $2)
+          AND ($2::integer IS NULL OR rb."tenantId" = $2)
+        FOR UPDATE OF r`,
+      [ringId, tenantId ?? null],
     );
 
     if (lockResult.rows.length === 0) {
-      await client.query("ROLLBACK");
       throw new Error(`Anilha #${ringId} não encontrada.`);
     }
 
     const ring = lockResult.rows[0];
+    const fullCode = ring.fullCode ?? ring.number;
 
+    if (ring.ringDeletedAt !== null || ring.batchDeletedAt !== null) {
+      throw new Error(`Anilha "${fullCode}" pertence a um lote arquivado e não pode ser utilizada.`);
+    }
+    if (ring.batchStatus !== "available") {
+      throw new Error(`O lote da anilha "${fullCode}" não está disponível (status: ${ring.batchStatus}).`);
+    }
     if (ring.status !== "available") {
-      await client.query("ROLLBACK");
+      throw new Error(`Anilha "${fullCode}" não está disponível (status: ${ring.status}).`);
+    }
+    if (ring.birdId !== null || ring.chickId !== null) {
+      throw new Error(`Anilha "${fullCode}" já possui vínculo operacional e não pode ser reutilizada.`);
+    }
+
+    const birdResult = await client.query<{
+      id: number;
+      ring: string;
+      speciesName: string | null;
+      breedName: string | null;
+      modality: string | null;
+    }>(
+      `SELECT id, ring, "speciesName" AS "speciesName", "breedName" AS "breedName", modality
+         FROM birds
+        WHERE id = $1
+          AND "deletedAt" IS NULL
+          AND ($2::integer IS NULL OR "tenantId" = $2)
+        FOR UPDATE`,
+      [birdId, tenantId ?? null],
+    );
+    if (birdResult.rows.length === 0) {
+      throw new Error("Pássaro não encontrado neste criadouro.");
+    }
+    if (birdResult.rows[0].ring !== fullCode) {
       throw new Error(
-        `Anilha "${ring.fullCode ?? ring.number}" não está disponível (status: ${ring.status}).`
+        `Inconsistência de anilha: o pássaro está cadastrado com "${birdResult.rows[0].ring}", ` +
+        `mas a anilha selecionada é "${fullCode}".`,
       );
     }
 
-    if (ring.birdId !== null) {
-      await client.query("ROLLBACK");
-      throw new Error(
-        `Anilha "${ring.fullCode ?? ring.number}" já está vinculada ao pássaro #${ring.birdId}.`
-      );
+    const gaugeRules = (await client.query<RingGaugeRuleLike>(
+      `SELECT "speciesName", "breedName", modality,
+              "recommendedGaugeMm" AS "recommendedGaugeMm", active
+         FROM ring_gauge_rules
+        WHERE active = TRUE`,
+    )).rows;
+    const compatibility = assessRingCompatibility({
+      speciesName: birdResult.rows[0].speciesName,
+      breedName: birdResult.rows[0].breedName,
+      modality: birdResult.rows[0].modality,
+    }, {
+      speciesName: ring.speciesName,
+      breedName: ring.breedName,
+      modality: ring.modality,
+      ringGaugeMm: ring.ringGaugeMm,
+    }, gaugeRules);
+    if (!compatibility.compatible) {
+      throw new Error(`A anilha "${fullCode}" não é compatível com o pássaro. ${compatibility.reason}`);
     }
 
-    // Marca como USED e vincula ao pássaro
-    await client.query(
+    // Defesa adicional para bancos legados onde o índice único ainda não
+    // tenha sido aplicado: um pássaro não pode possuir duas anilhas físicas.
+    const existingLink = await client.query<{ id: number }>(
+      `SELECT id FROM rings
+        WHERE "birdId" = $1 AND id <> $2
+        LIMIT 1
+        FOR UPDATE`,
+      [birdId, ringId],
+    );
+    if (existingLink.rows.length > 0) {
+      throw new Error("O pássaro já está vinculado a outra anilha no estoque.");
+    }
+
+    const updateResult = await client.query(
       `UPDATE rings
-       SET status = 'in_use', "birdId" = $1, "usedAt" = NOW(), "updatedAt" = NOW()
-       WHERE id = $2`,
-      [birdId, ringId]
+          SET status = 'in_use', "birdId" = $1, "usedAt" = NOW(), "updatedAt" = NOW()
+        WHERE id = $2
+          AND status = 'available'
+          AND "birdId" IS NULL
+          AND "chickId" IS NULL`,
+      [birdId, ringId],
     );
+    if ((updateResult.rowCount ?? 0) !== 1) {
+      throw new Error(`A anilha "${fullCode}" deixou de estar disponível durante a operação.`);
+    }
 
-    // Incrementa o contador do lote
+    // Deriva os contadores do estado real das anilhas. O lock do lote ocorre
+    // depois do lock da anilha, mantendo a mesma ordem usada nos demais fluxos
+    // e garantindo uma fotografia atual após qualquer espera concorrente.
     await client.query(
-      `UPDATE ring_batches
-       SET quantity_used = quantity_used + 1,
-           "currentNumber" = "currentNumber" + 1,
-           "updatedAt" = NOW()
-       WHERE id = (SELECT "batchId" FROM rings WHERE id = $1)`,
-      [ringId]
+      `SELECT id FROM ring_batches
+        WHERE id = $1 AND ($2::integer IS NULL OR "tenantId" = $2)
+        FOR UPDATE`,
+      [ring.batchId, tenantId ?? null],
     );
-
-    // Marca o lote como EXHAUSTED se não houver mais anilhas disponíveis
     await client.query(
-      `UPDATE ring_batches
-       SET status = 'exhausted', "updatedAt" = NOW()
-       WHERE id = (SELECT "batchId" FROM rings WHERE id = $1)
-         AND NOT EXISTS (
-           SELECT 1 FROM rings
-           WHERE "batchId" = ring_batches.id
-             AND status = 'available'
-         )`,
-      [ringId]
+      `UPDATE ring_batches rb
+          SET quantity_used = (
+                SELECT COUNT(*)::integer
+                  FROM rings r
+                 WHERE r."batchId" = rb.id
+                   AND (r.status IN ('in_use', 'used') OR r."usedAt" IS NOT NULL)
+              ),
+              "currentNumber" = COALESCE((
+                SELECT MIN(r.sequence)::integer
+                  FROM rings r
+                 WHERE r."batchId" = rb.id
+                   AND r.status = 'available'
+                   AND r."birdId" IS NULL
+                   AND r."chickId" IS NULL
+              ), rb."endNumber" + 1),
+              status = CASE
+                WHEN EXISTS (
+                  SELECT 1 FROM rings r
+                   WHERE r."batchId" = rb.id
+                     AND r.status = 'available'
+                     AND r."birdId" IS NULL
+                     AND r."chickId" IS NULL
+                ) THEN 'available'
+                ELSE 'exhausted'
+              END,
+              "updatedAt" = NOW()
+        WHERE rb.id = $1`,
+      [ring.batchId],
     );
 
     await client.query("COMMIT");
-    return ring.fullCode ?? ring.number;
+    return fullCode;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
@@ -239,44 +329,23 @@ export async function assignRingToBird(
 }
 
 /**
- * Libera uma anilha que foi vinculada a um pássaro (ex: exclusão do pássaro).
- * Só funciona se o pássaro ainda não foi confirmado como anilhado.
+ * Compatibilidade de API: a liberação foi deliberadamente bloqueada.
+ * Depois de aplicada, a anilha permanece no histórico mesmo se o pássaro
+ * for arquivado ou excluído logicamente.
  */
 export async function releaseRingFromBird(
   db: DB,
   pool: Pool,
-  birdId: number
+  birdId: number,
+  tenantId?: number | null,
 ): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    await client.query(
-      `UPDATE rings
-       SET status = 'available', "birdId" = NULL, "usedAt" = NULL, "updatedAt" = NOW()
-       WHERE "birdId" = $1 AND status = 'in_use'`,
-      [birdId]
-    );
-
-    // Decrementa o contador do lote
-    await client.query(
-      `UPDATE ring_batches
-       SET quantity_used = GREATEST(0, quantity_used - 1),
-           status = 'available',
-           "updatedAt" = NOW()
-       WHERE id IN (
-         SELECT "batchId" FROM rings WHERE "birdId" = $1
-       )`,
-      [birdId]
-    );
-
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
+  void db;
+  void pool;
+  void birdId;
+  void tenantId;
+  throw new Error(
+    "Uma anilha aplicada não pode voltar ao estoque. Corrija os dados do pássaro mantendo a rastreabilidade histórica.",
+  );
 }
 
 /**
@@ -327,8 +396,12 @@ export async function generateRingsForBatch(
       tenantId: tenantId ?? null,
     }));
 
-    await db.insert(rings).values(values).onConflictDoNothing();
-    inserted += chunk.length;
+    const created = await db
+      .insert(rings)
+      .values(values)
+      .onConflictDoNothing()
+      .returning({ id: rings.id });
+    inserted += created.length;
   }
 
   return inserted;
@@ -353,7 +426,12 @@ export async function createManualRing(
   const existing = await db
     .select({ id: rings.id })
     .from(rings)
-    .where(eq(rings.fullCode, params.fullCode))
+    .where(and(
+      eq(rings.fullCode, params.fullCode),
+      params.tenantId === null || params.tenantId === undefined
+        ? isNull(rings.tenantId)
+        : eq(rings.tenantId, params.tenantId),
+    ))
     .limit(1);
 
   if (existing.length > 0) {

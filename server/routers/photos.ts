@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
-import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { canarilManagerProcedure, protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb } from "../db";
-import { photos, birds, chicks, championship_entries } from "../../drizzle/schema";
+import { photos, birds, chicks, championship_entries, championships } from "../../drizzle/schema";
 import { storagePut } from "../storage";
+import { getCurrentTenantId } from "../_core/tenant";
 
 const entityTypeSchema = z.enum(["bird", "chick", "breeder", "championship_entry"]);
 
@@ -13,13 +14,19 @@ function parseDataUrl(dataUrl: string): { contentType: string; buffer: Buffer; e
     throw new Error("Formato de imagem inválido. Envie uma imagem em base64/dataURL.");
   }
 
-  const contentType = match[1];
-  const extension = contentType.split("/")[1]?.replace("jpeg", "jpg") || "bin";
-  return {
-    contentType,
-    buffer: Buffer.from(match[2], "base64"),
-    extension,
-  };
+  const contentType = match[1].toLowerCase();
+  const allowed = new Map([
+    ["image/jpeg", "jpg"],
+    ["image/png", "png"],
+    ["image/webp", "webp"],
+  ]);
+  const extension = allowed.get(contentType);
+  if (!extension) throw new Error("Formato não permitido. Use JPG, PNG ou WEBP.");
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.byteLength === 0 || buffer.byteLength > 10 * 1024 * 1024) {
+    throw new Error("A imagem deve ter no máximo 10 MB.");
+  }
+  return { contentType, buffer, extension };
 }
 
 /**
@@ -91,21 +98,48 @@ export const photosRouter = router({
   // este endpoint só devolve um mapa id→url, sem dado sensível adicional.
   primaryByEntityType: protectedProcedure
     .input(z.object({ entityType: entityTypeSchema }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return {} as Record<number, string>;
+      const tenantId = getCurrentTenantId(ctx);
+      let entityIds: number[] = [];
 
-      const rows = await db
-        .select()
-        .from(photos)
-        .where(and(eq(photos.entityType, input.entityType), eq(photos.isPrimary, true)));
+      if (input.entityType === "breeder") {
+        if (tenantId === null) return {};
+        entityIds = [tenantId];
+      } else if (input.entityType === "bird") {
+        const rows = await db.select({ id: birds.id }).from(birds).where(and(
+          ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+          isNull(birds.deletedAt),
+        ));
+        entityIds = rows.map((row) => row.id);
+      } else if (input.entityType === "chick") {
+        const rows = await db.select({ id: chicks.id }).from(chicks).where(and(
+          ...(tenantId === null ? [] : [eq(chicks.tenantId, tenantId)]),
+          isNull(chicks.deletedAt),
+        ));
+        entityIds = rows.map((row) => row.id);
+      } else {
+        const rows = await db.select({ id: championship_entries.id })
+          .from(championship_entries)
+          .innerJoin(championships, and(
+            eq(championships.id, championship_entries.championshipId),
+            ...(tenantId === null ? [] : [eq(championships.tenantId, tenantId)]),
+            isNull(championships.deletedAt),
+          ));
+        entityIds = rows.map((row) => row.id);
+      }
 
-      const map: Record<number, string> = {};
-      for (const row of rows) map[row.entityId] = row.url;
-      return map;
+      if (entityIds.length === 0) return {};
+      const rows = await db.select().from(photos).where(and(
+        eq(photos.entityType, input.entityType),
+        eq(photos.isPrimary, true),
+        inArray(photos.entityId, entityIds),
+      ));
+      return Object.fromEntries(rows.map((row) => [row.entityId, row.url]));
     }),
 
-  create: protectedProcedure
+  create: canarilManagerProcedure
     .input(
       z.object({
         entityType: entityTypeSchema,
@@ -164,7 +198,7 @@ export const photosRouter = router({
       return created;
     }),
 
-  setPrimary: protectedProcedure
+  setPrimary: canarilManagerProcedure
     .input(z.object({ id: z.number(), entityType: entityTypeSchema, entityId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -188,7 +222,7 @@ export const photosRouter = router({
       return updated ?? null;
     }),
 
-  delete: protectedProcedure
+  delete: canarilManagerProcedure
     .input(z.number())
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();

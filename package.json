@@ -11,7 +11,11 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
-    "seed:knowledge": "tsx server/_core/canarilIntelligence/seeds/canaryKnowledgeSeed.ts"
+    "seed:knowledge": "tsx server/_core/canarilIntelligence/seeds/canaryKnowledgeSeed.ts",
+    "validate:hardening": "node scripts/validate-hardening.mjs",
+    "validate:genetics": "node --experimental-strip-types scripts/validate-genetics.mjs",
+    "validate:security": "node --experimental-strip-types scripts/validate-security.mjs",
+    "validate:rings": "node --experimental-strip-types scripts/validate-ring-compatibility.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",

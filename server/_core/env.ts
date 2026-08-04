@@ -28,3 +28,35 @@ export const ENV = {
   // a cada novo deploy/restart do container.
   uploadsDir: process.env.UPLOADS_DIR ?? "/app/uploads",
 };
+
+
+const PLACEHOLDER_MARKERS = ["troque", "change-me", "changeme", "example", "senha@123"];
+
+function isPlaceholder(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return PLACEHOLDER_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+/** Validação bloqueante somente em produção, antes de abrir a porta HTTP. */
+export function validateProductionEnvironment(): void {
+  if (!ENV.isProduction) return;
+
+  const errors: string[] = [];
+  if (!ENV.databaseUrl || isPlaceholder(ENV.databaseUrl)) {
+    errors.push("DATABASE_URL ausente ou com valor de exemplo");
+  }
+  if (!ENV.cookieSecret || ENV.cookieSecret.length < 32 || isPlaceholder(ENV.cookieSecret)) {
+    errors.push("JWT_SECRET deve possuir pelo menos 32 caracteres e não pode ser placeholder");
+  }
+  const port = Number(process.env.PORT ?? "3000");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    errors.push("PORT inválida");
+  }
+  if (ENV.adminPassword && (ENV.adminPassword.length < 12 || isPlaceholder(ENV.adminPassword))) {
+    errors.push("ADMIN_PASSWORD configurada é fraca/placeholder; remova-a ou use uma senha forte");
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`[Environment] Configuração de produção inválida: ${errors.join("; ")}`);
+  }
+}

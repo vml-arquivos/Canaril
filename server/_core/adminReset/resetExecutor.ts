@@ -14,26 +14,54 @@ export interface ResetSummary {
   durationMs: number;
 }
 
-// Safe delete — returns 0 if table doesn't exist, never throws
-async function safeDelete(client: any, table: string, where = "1=1"): Promise<number> {
+let optionalStatementSequence = 0;
+
+function assertSafeIdentifier(identifier: string): void {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(identifier)) {
+    throw new Error(`Identificador SQL inválido: ${identifier}`);
+  }
+}
+
+/**
+ * Executa uma instrução opcional sem inutilizar a transação externa.
+ *
+ * No PostgreSQL, capturar a exceção em JavaScript não recupera uma transação
+ * após uma instrução SQL falhar. O SAVEPOINT garante que tabelas opcionais de
+ * instalações antigas possam ser ignoradas sem fazer o COMMIT final falhar.
+ */
+async function runOptionalStatement(
+  client: any,
+  statement: string,
+  params: unknown[] = [],
+): Promise<number> {
+  optionalStatementSequence += 1;
+  const savepoint = `optional_statement_${optionalStatementSequence}`;
+  await client.query(`SAVEPOINT ${savepoint}`);
   try {
-    const { rowCount } = await client.query(`DELETE FROM "${table}" WHERE ${where}`);
+    const { rowCount } = await client.query(statement, params);
+    await client.query(`RELEASE SAVEPOINT ${savepoint}`);
     return rowCount ?? 0;
   } catch {
+    await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+    await client.query(`RELEASE SAVEPOINT ${savepoint}`);
     return 0;
   }
 }
 
-// Soft delete — sets deletedAt
-async function softDelete(client: any, table: string, where = "1=1"): Promise<number> {
-  try {
-    const { rowCount } = await client.query(
-      `UPDATE "${table}" SET "deletedAt" = NOW() WHERE ${where} AND ("deletedAt" IS NULL)`
-    );
-    return rowCount ?? 0;
-  } catch {
-    return 0;
-  }
+// Safe delete — returns 0 if an optional table/column does not exist.
+async function safeDelete(client: any, table: string, where = "1=1", params: unknown[] = []): Promise<number> {
+  assertSafeIdentifier(table);
+  return runOptionalStatement(client, `DELETE FROM "${table}" WHERE ${where}`, params);
+}
+
+// Soft delete — sets deletedAt without aborting the surrounding transaction.
+async function softDelete(client: any, table: string, where = "1=1", params: unknown[] = []): Promise<number> {
+  assertSafeIdentifier(table);
+  return runOptionalStatement(
+    client,
+    `UPDATE "${table}" SET "deletedAt" = NOW() WHERE ${where} AND ("deletedAt" IS NULL)`,
+    params,
+  );
 }
 
 /**
@@ -175,20 +203,20 @@ export async function executeTestCleanup(
       }
 
       // Rings and batches with prefix
-      rowsDeleted["rings"]        = await safeDelete(client, "rings",       `"number" ILIKE $1`, );
-      rowsDeleted["ring_batches"] = await safeDelete(client, "ring_batches",`batch_number ILIKE $1`);
+      rowsDeleted["rings"]        = await safeDelete(client, "rings",       `"number" ILIKE $1`, [pat]);
+      rowsDeleted["ring_batches"] = await safeDelete(client, "ring_batches",`batch_number ILIKE $1`, [pat]);
       // Cages with prefix
-      rowsDeleted["cages"]        = await safeDelete(client, "cages",       `code ILIKE $1`);
+      rowsDeleted["cages"]        = await safeDelete(client, "cages",       `code ILIKE $1`, [pat]);
 
       // championships with prefix
-      rowsDeleted["championships"] = await safeDelete(client, "championships", `name ILIKE $1`);
+      rowsDeleted["championships"] = await safeDelete(client, "championships", `name ILIKE $1`, [pat]);
 
     } else {
       // Soft delete: just set deletedAt
-      rowsDeleted["birds"]         = await softDelete(client, "birds",        `ring ILIKE '${pat}'`);
-      rowsDeleted["ring_batches"]  = await softDelete(client, "ring_batches", `batch_number ILIKE '${pat}'`);
-      rowsDeleted["cages"]         = await softDelete(client, "cages",        `code ILIKE '${pat}'`);
-      rowsDeleted["championships"] = await softDelete(client, "championships",`name ILIKE '${pat}'`);
+      rowsDeleted["birds"]         = await softDelete(client, "birds",        `ring ILIKE $1`, [pat]);
+      rowsDeleted["ring_batches"]  = await softDelete(client, "ring_batches", `batch_number ILIKE $1`, [pat]);
+      rowsDeleted["cages"]         = await softDelete(client, "cages",        `code ILIKE $1`, [pat]);
+      rowsDeleted["championships"] = await softDelete(client, "championships",`name ILIKE $1`, [pat]);
     }
 
     await client.query(
@@ -226,47 +254,60 @@ export async function forceDeleteRingBatch(
   try {
     await client.query("BEGIN");
 
-    if (mode === "archive") {
-      // Just soft-delete the batch
-      await client.query(`UPDATE ring_batches SET "deletedAt" = NOW() WHERE id = $1`, [batchId]);
-      rowsDeleted["ring_batches"] = 1;
-    } else if (mode === "free_rings") {
-      // Set all rings to available, clear birdId link
-      const { rowCount } = await client.query(
-        `UPDATE rings SET status = 'available', "birdId" = NULL, "chickId" = NULL, "usedAt" = NULL WHERE "batchId" = $1`,
-        [batchId]
-      );
-      rowsDeleted["rings_freed"] = rowCount ?? 0;
-      // Now delete the batch
-      await client.query(`DELETE FROM ring_batches WHERE id = $1`, [batchId]);
-      rowsDeleted["ring_batches"] = 1;
-      await client.query(`DELETE FROM rings WHERE "batchId" = $1`, [batchId]);
-      rowsDeleted["rings"] = rowsDeleted["rings_freed"];
-    } else {
-      // delete_all: delete genotype/profiles for birds using these rings, then birds, then rings, then batch
-      const { rows: batchRings } = await client.query<{ birdId: number | null }>(
-        `SELECT "birdId" FROM rings WHERE "batchId" = $1 AND "birdId" IS NOT NULL`, [batchId]
-      );
-      const birdIds = batchRings.map((r) => r.birdId).filter((id): id is number => id !== null);
+    const batchResult = await client.query<{ id: number }>(
+      `SELECT id FROM ring_batches WHERE id = $1 FOR UPDATE`,
+      [batchId],
+    );
+    if (batchResult.rows.length === 0) {
+      throw new Error(`Lote de anilhas #${batchId} não encontrado.`);
+    }
 
-      if (birdIds.length > 0) {
-        const idList = birdIds.join(",");
-        await safeDelete(client, "bird_genotype",               `"birdId" IN (${idList})`);
-        await safeDelete(client, "bird_genetic_profiles",       `"birdId" IN (${idList})`);
-        await safeDelete(client, "bird_photo_analyses",         `"birdId" IN (${idList})`);
-        await safeDelete(client, "ai_judge_analyses",           `"birdId" IN (${idList})`);
-        await safeDelete(client, "bird_genetic_inference_logs", `"birdId" IN (${idList})`);
-        await safeDelete(client, "health_records",              `"birdId" IN (${idList})`);
-        rowsDeleted["birds"] = await safeDelete(client, "birds", `id IN (${idList})`);
+    const dependencyResult = await client.query<{ applied: string }>(
+      `SELECT COUNT(*)::text AS applied
+         FROM rings r
+        WHERE r."batchId" = $1
+          AND (
+            r."birdId" IS NOT NULL OR r."chickId" IS NOT NULL OR
+            r.status IN ('in_use', 'used', 'reserved') OR r."usedAt" IS NOT NULL
+          )`,
+      [batchId],
+    );
+    const applied = Number(dependencyResult.rows[0]?.applied ?? 0);
+
+    if (mode === "archive") {
+      const { rowCount } = await client.query(
+        `UPDATE ring_batches
+            SET status = 'archived', "updatedAt" = NOW()
+          WHERE id = $1`,
+        [batchId],
+      );
+      rowsDeleted["ring_batches_archived"] = rowCount ?? 0;
+    } else {
+      // Nunca apagar ou desvincular histórico de aves/filhotes. Os modos
+      // destrutivos permanecem disponíveis somente para lotes 100% sem uso.
+      if (applied > 0) {
+        throw new Error(
+          `O lote possui ${applied} anilha(s) aplicada(s), reservada(s) ou vinculada(s). ` +
+          `Para preservar rastreabilidade, arquive o lote em vez de apagá-lo.`,
+        );
       }
-      rowsDeleted["rings"]        = await safeDelete(client, "rings",        `"batchId" = ${batchId}`);
-      rowsDeleted["ring_batches"] = await safeDelete(client, "ring_batches", `id = ${batchId}`);
+
+      const { rowCount: ringCount } = await client.query(
+        `DELETE FROM rings WHERE "batchId" = $1`,
+        [batchId],
+      );
+      const { rowCount: batchCount } = await client.query(
+        `DELETE FROM ring_batches WHERE id = $1`,
+        [batchId],
+      );
+      rowsDeleted["rings"] = ringCount ?? 0;
+      rowsDeleted["ring_batches"] = batchCount ?? 0;
     }
 
     await client.query(
-      `INSERT INTO audit_logs ("userId","action","entityType","entityId","reason")
-       VALUES ($1,'delete_ring_batch','ring_batch',$2,$3)`,
-      [userId, batchId, `mode=${mode}`]
+      `INSERT INTO audit_logs ("userId","action","entityType","entityId","reason","newValueJson")
+       VALUES ($1,'delete_ring_batch','ring_batch',$2,$3,$4)`,
+      [userId, batchId, `mode=${mode}`, JSON.stringify({ mode, applied })],
     );
 
     await client.query("COMMIT");
@@ -291,10 +332,19 @@ export async function reconcileRings(pool: Pool, userId: number): Promise<{ fixe
 
     const { rowCount } = await client.query(`
       UPDATE rings
-      SET status = 'available', "birdId" = NULL, "chickId" = NULL, "usedAt" = NULL
+      SET status = 'used', "usedAt" = COALESCE("usedAt", NOW()), "updatedAt" = NOW(),
+          notes = CASE
+            WHEN notes IS NULL OR notes = '' THEN 'Vínculo histórico órfão preservado pela reconciliação administrativa.'
+            WHEN notes NOT LIKE '%Vínculo histórico órfão preservado%' THEN notes || E'\nVínculo histórico órfão preservado pela reconciliação administrativa.'
+            ELSE notes
+          END
       WHERE status = 'in_use'
-        AND "birdId" IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM birds b WHERE b.id = rings."birdId")
+        AND ("birdId" IS NULL OR NOT EXISTS (
+          SELECT 1 FROM birds b WHERE b.id = rings."birdId" AND b."deletedAt" IS NULL
+        ))
+        AND ("chickId" IS NULL OR NOT EXISTS (
+          SELECT 1 FROM chicks c WHERE c.id = rings."chickId" AND c."deletedAt" IS NULL
+        ))
     `);
 
     await client.query(
@@ -375,9 +425,20 @@ export async function fixOrphans(
     // Fix orphan rings
     if (tables.includes("rings")) {
       const { rowCount } = await client.query(`
-        UPDATE rings SET status='available',"birdId"=NULL,"chickId"=NULL,"usedAt"=NULL
-        WHERE status='in_use' AND "birdId" IS NOT NULL
-          AND NOT EXISTS(SELECT 1 FROM birds b WHERE b.id=rings."birdId")
+        UPDATE rings
+           SET status='used',"usedAt"=COALESCE("usedAt",NOW()),"updatedAt"=NOW(),
+               notes = CASE
+                 WHEN notes IS NULL OR notes = '' THEN 'Vínculo histórico órfão preservado pela reconciliação administrativa.'
+                 WHEN notes NOT LIKE '%Vínculo histórico órfão preservado%' THEN notes || E'\nVínculo histórico órfão preservado pela reconciliação administrativa.'
+                 ELSE notes
+               END
+         WHERE status='in_use'
+           AND ("birdId" IS NULL OR NOT EXISTS(
+             SELECT 1 FROM birds b WHERE b.id=rings."birdId" AND b."deletedAt" IS NULL
+           ))
+           AND ("chickId" IS NULL OR NOT EXISTS(
+             SELECT 1 FROM chicks c WHERE c.id=rings."chickId" AND c."deletedAt" IS NULL
+           ))
       `);
       details["rings"] = rowCount ?? 0;
       total += details["rings"];

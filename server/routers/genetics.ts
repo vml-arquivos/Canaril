@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { birds, genetic_rules, couples, scores, championship_entries, bird_genotype } from "../../drizzle/schema";
-import { eq, or, and } from "drizzle-orm";
+import { eq, or, and, isNull, inArray } from "drizzle-orm";
 import {
   buildPedigreeTree,
   calculateCOI,
@@ -37,9 +37,9 @@ const parentGenotypesSchema = z.object({
   marfim:    sexLinkedSchema.optional(),
   acetinado: sexLinkedSchema.optional(),
   asasCinza: sexLinkedSchema.optional(),
-  opalino:   sexLinkedSchema.optional(),
+  pastel:    sexLinkedSchema.optional(),
   // Autossômicas recessivas
-  pastel:         autosomalRecessiveSchema.optional(),
+  opalino:        autosomalRecessiveSchema.optional(),
   opala:          autosomalRecessiveSchema.optional(),
   brancorecessivo: autosomalRecessiveSchema.optional(),
   onix:           autosomalRecessiveSchema.optional(),
@@ -53,8 +53,11 @@ const parentGenotypesSchema = z.object({
   plumagem:        dominantRiskSchema.optional(),
 });
 
-async function loadBirdMap(db: NonNullable<Awaited<ReturnType<typeof getDb>>>): Promise<Map<number, PedigreeBird>> {
-  const all = await db.select().from(birds);
+async function loadBirdMap(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  tenantId: number,
+): Promise<Map<number, PedigreeBird>> {
+  const all = await db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt)));
   return new Map(
     all.map((b) => [
       b.id,
@@ -75,10 +78,13 @@ export const geneticsRouter = router({
   // Árvore genealógica visual de até 5 gerações
   pedigree: protectedProcedure
     .input(z.object({ birdId: z.number(), generations: z.number().min(1).max(5).default(5) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
-      const birdMap = await loadBirdMap(db);
+      const tenantId = getCurrentTenantId(ctx);
+      if (tenantId === null) throw new Error("Selecione um criadouro.");
+      const birdMap = await loadBirdMap(db, tenantId);
+      if (!birdMap.has(input.birdId)) throw new Error("Pássaro não encontrado neste criadouro.");
       const tree = buildPedigreeTree(input.birdId, birdMap, input.generations);
       const coiCache = new Map<number, number>();
       const coi = calculateCOI(input.birdId, birdMap, 5, coiCache);
@@ -88,10 +94,13 @@ export const geneticsRouter = router({
   // COI de um pássaro já cadastrado
   coi: protectedProcedure
     .input(z.number())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { coi: 0, risk: "low" as const };
-      const birdMap = await loadBirdMap(db);
+      const tenantId = getCurrentTenantId(ctx);
+      if (tenantId === null) throw new Error("Selecione um criadouro.");
+      const birdMap = await loadBirdMap(db, tenantId);
+      if (!birdMap.has(input)) throw new Error("Pássaro não encontrado neste criadouro.");
       const coi = calculateCOI(input, birdMap, 5);
       return { coi, risk: classifyCOIRisk(coi) };
     }),
@@ -100,10 +109,13 @@ export const geneticsRouter = router({
   // confirmar o casal, para alertar com antecedência.
   coiForPair: protectedProcedure
     .input(z.object({ maleId: z.number(), femaleId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { coi: 0, risk: "low" as const };
-      const birdMap = await loadBirdMap(db);
+      const tenantId = getCurrentTenantId(ctx);
+      if (tenantId === null) throw new Error("Selecione um criadouro.");
+      const birdMap = await loadBirdMap(db, tenantId);
+      if (!birdMap.has(input.maleId) || !birdMap.has(input.femaleId)) throw new Error("Um dos reprodutores não pertence a este criadouro.");
       const coi = calculateCOIForPair(input.maleId, input.femaleId, birdMap, 5);
       return { coi, risk: classifyCOIRisk(coi) };
     }),
@@ -157,7 +169,8 @@ export const geneticsRouter = router({
       if (!db) throw new Error("Database not available");
 
       const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-      const target = (await db.select().from(birds).where(eq(birds.id, input.birdId)))[0];
+      if (tenantId === null) throw new Error("Selecione um criadouro.");
+      const target = (await db.select().from(birds).where(and(eq(birds.id, input.birdId), eq(birds.tenantId, tenantId))))[0];
       if (!target) throw new Error("Pássaro não encontrado");
 
       const oppositeSex = target.sex === "macho" ? "fêmea" : "macho";
@@ -175,10 +188,13 @@ export const geneticsRouter = router({
         }])
       );
 
-      const activeCouples = await db.select().from(couples).where(eq(couples.status, "active"));
+      const activeCouples = await db.select().from(couples).where(and(eq(couples.status, "active"), eq(couples.tenantId, tenantId)));
       const pairedIds = new Set(activeCouples.flatMap((c) => [c.maleId, c.femaleId]));
 
-      const allGenotypes = await db.select().from(bird_genotype);
+      const tenantBirdIds = allBirds.map((bird) => bird.id);
+      const allGenotypes = tenantBirdIds.length
+        ? await db.select().from(bird_genotype).where(inArray(bird_genotype.birdId, tenantBirdIds))
+        : [];
       const genoByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
 
       // Map frontend objective to Objective enum
@@ -457,7 +473,9 @@ export const geneticsRouter = router({
   // Lista de mutações disponíveis para a calculadora
   // =========================================================================
   listMutations: protectedProcedure.query(() => {
-    return Object.entries(MUTATION_CONFIG).map(([id, cfg]) => ({
+    return Object.entries(MUTATION_CONFIG)
+      .filter(([, cfg]) => cfg.selectable !== false)
+      .map(([id, cfg]) => ({
       id,
       label: cfg.label,
       labelEn: cfg.labelEn,
@@ -466,6 +484,7 @@ export const geneticsRouter = router({
       description: cfg.description,
       phenotypeEffect: cfg.phenotypeEffect,
       isLethalHomozygous: cfg.isLethalHomozygous ?? false,
+      evidenceStatus: cfg.evidenceStatus ?? "documented",
     }));
   }),
 

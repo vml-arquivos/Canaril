@@ -18,7 +18,7 @@
  */
 
 import { z } from "zod";
-import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
+import { protectedProcedure, platformAdminProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
 import {
   ring_batches,
@@ -30,13 +30,12 @@ import { and, eq, desc, asc, isNull, or, ilike, sql } from "drizzle-orm";
 import {
   getNextAvailableRing,
   assignRingToBird,
-  releaseRingFromBird,
-  generateRingsForBatch,
   createManualRing,
 } from "../_core/ringAllocator";
-import { generateRingCode, parseRingCode } from "../_core/ringParser";
+import { parseRingCode } from "../_core/ringParser";
 import { TRPCError } from "@trpc/server";
-import { getCurrentTenantId } from "../_core/tenant";
+import { getCurrentTenantId, requireTenantId } from "../_core/tenant";
+import { createRingBatchesAtomic, deleteUnusedRingBatchAtomic } from "../_core/ringBatchService";
 
 // ─── Schema Zod para criação de lote ────────────────────────────────────────
 const createBatchSchema = z.object({
@@ -101,55 +100,31 @@ export const ringsRouter = router({
     create: protectedProcedure
       .input(createBatchSchema)
       .mutation(async ({ ctx, input }) => {
-        const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        await getDb();
+        const pool = getPool();
+        if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-        const quantity_total = input.endNumber - input.startNumber + 1;
-        if (quantity_total <= 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "endNumber deve ser maior que startNumber." });
-        }
+        const tenantId = requireTenantId(ctx);
+        const [created] = await createRingBatchesAtomic(pool, tenantId, [{
+          batch_number: input.batch_number,
+          year: input.year,
+          color: input.color,
+          startNumber: input.startNumber,
+          endNumber: input.endNumber,
+          breederCode: input.breederCode,
+          associationName: input.associationName,
+          speciesName: input.speciesName,
+          breedName: input.breedName,
+          modality: input.modality,
+          ringGaugeMm: input.ringGaugeMm,
+          month: input.month,
+          prefix: input.prefix,
+          suffix: input.suffix,
+          formatPattern: input.formatPattern,
+          notes: input.notes,
+        }]);
 
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-        const [batch] = await db
-          .insert(ring_batches)
-          .values({
-            batch_number:    input.batch_number,
-            year:            input.year,
-            color:           input.color,
-            quantity_total,
-            quantity_used:   0,
-            status:          "available",
-            breederCode:     input.breederCode,
-            associationName: input.associationName,
-            speciesName:     input.speciesName,
-            breedName:       input.breedName,
-            modality:        input.modality,
-            ringGaugeMm:     input.ringGaugeMm,
-            month:           input.month,
-            prefix:          input.prefix,
-            suffix:          input.suffix,
-            startNumber:     input.startNumber,
-            endNumber:       input.endNumber,
-            currentNumber:   input.startNumber,
-            formatPattern:   input.formatPattern,
-            notes:           input.notes,
-            tenantId:        tenantId,
-          })
-          .returning();
-
-        // Gera anilhas individuais
-        const generated = await generateRingsForBatch(db, batch.id, {
-          year:          batch.year,
-          month:         batch.month,
-          breederCode:   batch.breederCode,
-          prefix:        batch.prefix,
-          suffix:        batch.suffix,
-          formatPattern: batch.formatPattern,
-          startNumber:   batch.startNumber,
-          endNumber:     batch.endNumber,
-        }, tenantId);
-
-        return { success: true, batch, generated };
+        return { success: true, batch: created.batch, generated: created.generated };
       }),
 
     /**
@@ -184,58 +159,42 @@ export const ringsRouter = router({
         })).min(1).max(20),
       }))
       .mutation(async ({ ctx, input }) => {
-        const db = await getDb();
-        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+        await getDb();
+        const pool = getPool();
+        if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        const tenantId = requireTenantId(ctx);
 
-        const createdBatches: Array<{ batch: typeof ring_batches.$inferSelect; generated: number; range: string }> = [];
         let cursor = input.startNumber;
-
-        for (let i = 0; i < input.splits.length; i++) {
-          const split = input.splits[i];
+        const specs = input.splits.map((split, index) => {
           const startNumber = cursor;
           const endNumber = cursor + split.quantity - 1;
-          cursor = endNumber + 1; // próximo split começa exatamente onde este termina — nunca sobrepõe
-
-          const [batch] = await db.insert(ring_batches).values({
-            batch_number:    `${input.year}-${i + 1}`,
-            year:            input.year,
-            color:           split.color,
-            quantity_total:  split.quantity,
-            quantity_used:   0,
-            status:          "available",
-            breederCode:     input.breederCode,
-            associationName: input.associationName,
-            speciesName:     input.speciesName,
-            breedName:       split.breedName,
-            modality:        split.modality,
-            ringGaugeMm:     split.ringGaugeMm,
-            month:           input.month,
-            prefix:          input.prefix,
-            suffix:          input.suffix,
+          cursor = endNumber + 1;
+          return {
+            batch_number: `${input.year}-${index + 1}`,
+            year: input.year,
+            color: split.color,
             startNumber,
             endNumber,
-            currentNumber:   startNumber,
-            formatPattern:   input.formatPattern,
-            notes:           split.notes,
-            tenantId,
-          }).returning();
+            breederCode: input.breederCode,
+            associationName: input.associationName,
+            speciesName: input.speciesName,
+            breedName: split.breedName,
+            modality: split.modality,
+            ringGaugeMm: split.ringGaugeMm,
+            month: input.month,
+            prefix: input.prefix,
+            suffix: input.suffix,
+            formatPattern: input.formatPattern,
+            notes: split.notes,
+          };
+        });
 
-          const generated = await generateRingsForBatch(db, batch.id, {
-            year:          batch.year,
-            month:         batch.month,
-            breederCode:   batch.breederCode,
-            prefix:        batch.prefix,
-            suffix:        batch.suffix,
-            formatPattern: batch.formatPattern,
-            startNumber:   batch.startNumber,
-            endNumber:     batch.endNumber,
-          }, tenantId);
-
-          createdBatches.push({ batch, generated, range: `${startNumber}–${endNumber}` });
-        }
-
-        return { success: true, batches: createdBatches, totalGenerated: createdBatches.reduce((s, b) => s + b.generated, 0) };
+        const created = await createRingBatchesAtomic(pool, tenantId, specs);
+        return {
+          success: true,
+          batches: created,
+          totalGenerated: created.reduce((sum, item) => sum + item.generated, 0),
+        };
       }),
 
     update: protectedProcedure
@@ -247,32 +206,40 @@ export const ringsRouter = router({
         notes:           z.string().max(500).optional(),
         ringGaugeMm:     z.number().min(1).max(10).optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um criadouro." });
 
         const { id, ...fields } = input;
         const filtered = Object.fromEntries(
           Object.entries(fields).filter(([, v]) => v !== undefined)
         );
 
-        await db
+        const updated = await db
           .update(ring_batches)
           .set({ ...filtered, updatedAt: new Date() })
-          .where(eq(ring_batches.id, id));
+          .where(and(eq(ring_batches.id, id), eq(ring_batches.tenantId, tenantId)))
+          .returning({ id: ring_batches.id });
 
+        if (updated.length !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado neste criadouro." });
         return { success: true };
       }),
 
     // ── Prévia antes de excluir — mostra o que está bloqueando ──────────────
     previewDelete: protectedProcedure
       .input(z.number().int().positive())
-      .query(async ({ input: id }) => {
+      .query(async ({ input: id, ctx }) => {
         const db = await getDb();
         const pool = getPool();
         if (!db || !pool) return null;
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) return null;
+        const [ownedBatch] = await db.select({ id: ring_batches.id }).from(ring_batches).where(and(eq(ring_batches.id, id), eq(ring_batches.tenantId, tenantId))).limit(1);
+        if (!ownedBatch) throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado neste criadouro." });
 
-        const batchRings = await db.select().from(rings).where(eq(rings.batchId, id));
+        const batchRings = await db.select().from(rings).where(and(eq(rings.batchId, id), eq(rings.tenantId, tenantId)));
         const total = batchRings.length;
         const inUseRows = batchRings.filter((r) => r.status === "in_use");
 
@@ -281,16 +248,19 @@ export const ringsRouter = router({
         const activeRings: typeof batchRings = [];
 
         for (const ring of inUseRows) {
-          if (!ring.birdId) {
-            orphanRings.push(ring);
-            continue;
-          }
-          const { rows } = await pool.query<{ id: number }>(
-            `SELECT id FROM birds WHERE id = $1 AND "deletedAt" IS NULL LIMIT 1`,
-            [ring.birdId]
+          const { rows } = await pool.query<{ active: boolean }>(
+            `SELECT (
+               ($1::integer IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM birds WHERE id=$1 AND "tenantId"=$3 AND "deletedAt" IS NULL
+               )) OR
+               ($2::integer IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM chicks WHERE id=$2 AND "tenantId"=$3 AND "deletedAt" IS NULL
+               ))
+             ) AS active`,
+            [ring.birdId, ring.chickId, tenantId],
           );
-          if (rows.length === 0) orphanRings.push(ring);
-          else activeRings.push(ring);
+          if (rows[0]?.active) activeRings.push(ring);
+          else orphanRings.push(ring);
         }
 
         const available = batchRings.filter((r) => r.status === "available").length;
@@ -304,33 +274,38 @@ export const ringsRouter = router({
           orphanNumbers: orphanRings.map((r) => r.number),
           activelyUsed: activeRings.length,
           activeNumbers: activeRings.map((r) => r.number),
-          canSafeDelete: activeRings.length === 0,
-          canReconcileAndDelete: orphanRings.length > 0 && activeRings.length === 0,
+          canSafeDelete: inUseRows.length === 0,
+          canReconcileAndDelete: false,
           message: activeRings.length > 0
             ? `${activeRings.length} anilha(s) vinculada(s) a pássaro(s) ativo(s): ${activeRings.map((r) => r.number).join(", ")}`
             : orphanRings.length > 0
-              ? `${orphanRings.length} anilha(s) marcada(s) como em uso sem pássaro ativo (órfãs). Podem ser corrigidas automaticamente.`
-              : "Lote pode ser excluído com segurança.",
+              ? `${orphanRings.length} anilha(s) possuem histórico de uso sem vínculo ativo. Serão preservadas como usadas; o lote deve ser arquivado.`
+              : "Lote nunca utilizado e apto à exclusão segura.",
         };
       }),
 
     delete: protectedProcedure
       .input(z.number().int().positive())
-      .mutation(async ({ input: id }) => {
+      .mutation(async ({ input: id, ctx }) => {
         const db = await getDb();
         const pool = getPool();
         if (!db || !pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um criadouro." });
+        const [ownedBatch] = await db.select({ id: ring_batches.id }).from(ring_batches).where(and(eq(ring_batches.id, id), eq(ring_batches.tenantId, tenantId))).limit(1);
+        if (!ownedBatch) throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado neste criadouro." });
 
         // Check for rings in_use that have an ACTIVE bird (not deleted)
         const { rows: activeRows } = await pool.query<{ id: number; number: string }>(
           `SELECT r.id, r."number"
-           FROM rings r
-           JOIN birds b ON b.id = r."birdId"
-           WHERE r."batchId" = $1
-             AND r.status = 'in_use'
-             AND r."birdId" IS NOT NULL
-             AND b."deletedAt" IS NULL
-           LIMIT 5`,
+             FROM rings r
+            WHERE r."batchId" = $1
+              AND (
+                r."usedAt" IS NOT NULL OR r.status IN ('in_use','used','reserved') OR
+                EXISTS (SELECT 1 FROM birds b WHERE b.id=r."birdId" AND b."deletedAt" IS NULL) OR
+                EXISTS (SELECT 1 FROM chicks c WHERE c.id=r."chickId" AND c."deletedAt" IS NULL)
+              )
+            LIMIT 5`,
           [id]
         );
 
@@ -342,11 +317,8 @@ export const ringsRouter = router({
           });
         }
 
-        // Safe to delete — any remaining "in_use" are orphans (bird deleted)
-        await db.delete(rings).where(eq(rings.batchId, id));
-        await db.delete(ring_batches).where(eq(ring_batches.id, id));
-
-        return { success: true, message: "Lote excluído com sucesso." };
+        const deleted = await deleteUnusedRingBatchAtomic(pool, tenantId, id);
+        return { success: true, deleted, message: "Lote não utilizado excluído com sucesso." };
       }),
 
     // ── Reconciliar anilhas órfãs de um lote ──────────────────────────────
@@ -356,30 +328,34 @@ export const ringsRouter = router({
         const db = await getDb();
         const pool = getPool();
         if (!db || !pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um criadouro." });
+        const [ownedBatch] = await db.select({ id: ring_batches.id }).from(ring_batches).where(and(eq(ring_batches.id, batchId), eq(ring_batches.tenantId, tenantId))).limit(1);
+        if (!ownedBatch) throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado neste criadouro." });
 
-        // Find in_use rings whose bird is deleted or doesn't exist
+        // Corrige estado órfão sem devolver uma identidade já aplicada ao
+        // estoque. A referência e a data de uso são preservadas para auditoria.
         const { rowCount } = await pool.query(
           `UPDATE rings
-           SET status = 'available', "birdId" = NULL, "chickId" = NULL, "usedAt" = NULL, "updatedAt" = NOW()
-           WHERE "batchId" = $1
+           SET status = 'used', "usedAt" = COALESCE("usedAt", NOW()), "updatedAt" = NOW()
+           WHERE "batchId" = $1 AND "tenantId"=$2
              AND status = 'in_use'
-             AND (
-               "birdId" IS NULL
-               OR NOT EXISTS (
-                 SELECT 1 FROM birds b WHERE b.id = rings."birdId" AND b."deletedAt" IS NULL
-               )
-             )`,
-          [batchId]
+             AND ("birdId" IS NULL OR NOT EXISTS (
+               SELECT 1 FROM birds b WHERE b.id = rings."birdId" AND b."tenantId"=$2 AND b."deletedAt" IS NULL
+             ))
+             AND ("chickId" IS NULL OR NOT EXISTS (
+               SELECT 1 FROM chicks c WHERE c.id = rings."chickId" AND c."tenantId"=$2 AND c."deletedAt" IS NULL
+             ))`,
+          [batchId, tenantId]
         );
 
-        // Recalculate quantity_used on the batch
         await pool.query(
           `UPDATE ring_batches
            SET quantity_used = (
-             SELECT COUNT(*) FROM rings WHERE "batchId" = $1 AND status = 'in_use'
-           )
-           WHERE id = $1`,
-          [batchId]
+             SELECT COUNT(*) FROM rings WHERE "batchId" = $1 AND status IN ('in_use','used')
+           ), "updatedAt"=NOW()
+           WHERE id = $1 AND "tenantId"=$2`,
+          [batchId, tenantId]
         );
 
         const fixed = rowCount ?? 0;
@@ -388,111 +364,117 @@ export const ringsRouter = router({
         await pool.query(
           `INSERT INTO audit_logs ("userId","action","entityType","entityId","reason")
            VALUES ($1, 'reconcile_rings', 'ring_batch', $2, $3)`,
-          [(ctx as any)?.userId ?? null, batchId, `Fixed ${fixed} orphan ring(s)`]
+          [ctx.user.id ?? null, batchId, `Fixed ${fixed} orphan ring(s)`]
         ).catch(() => {});
 
-        return { fixed, message: fixed > 0 ? `${fixed} anilha(s) órfã(s) corrigida(s). Lote pode ser excluído agora.` : "Nenhuma anilha órfã encontrada." };
+        return { fixed, message: fixed > 0 ? `${fixed} anilha(s) órfã(s) preservada(s) como usadas. Arquive o lote para manter a rastreabilidade.` : "Nenhuma anilha órfã encontrada." };
       }),
 
     // ── Exclusão forçada (admin) ───────────────────────────────────────────
-    forceDelete: protectedProcedure
+    forceDelete: platformAdminProcedure
       .input(z.object({
         batchId: z.number().int().positive(),
         mode: z.enum(["RECONCILE_AND_DELETE", "DELETE_AVAILABLE_ONLY", "FORCE_DELETE_ALL"]),
         confirmationText: z.literal("EXCLUIR LOTE"),
       }))
       .mutation(async ({ input, ctx }) => {
-        const db = await getDb();
         const pool = getPool();
-        if (!db || !pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        if (input.mode === "FORCE_DELETE_ALL") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Exclusão destrutiva de anilhas aplicadas foi desativada para preservar a rastreabilidade. Arquive o lote.",
+          });
+        }
 
         const client = await pool.connect();
-        let deleted = 0;
-
         try {
           await client.query("BEGIN");
+          const batch = await client.query(`SELECT id FROM ring_batches WHERE id=$1 FOR UPDATE`, [input.batchId]);
+          if (batch.rows.length !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado." });
 
           if (input.mode === "RECONCILE_AND_DELETE") {
-            // Fix orphans first, then delete all
             await client.query(
-              `UPDATE rings
-               SET status='available',"birdId"=NULL,"chickId"=NULL,"usedAt"=NULL
-               WHERE "batchId"=$1 AND status='in_use'
-               AND ("birdId" IS NULL OR NOT EXISTS(SELECT 1 FROM birds b WHERE b.id=rings."birdId" AND b."deletedAt" IS NULL))`,
-              [input.batchId]
+              `UPDATE rings SET status='used',"usedAt"=COALESCE("usedAt",NOW()),"updatedAt"=NOW()
+                WHERE "batchId"=$1 AND status='in_use'
+                  AND ("birdId" IS NULL OR NOT EXISTS (SELECT 1 FROM birds b WHERE b.id=rings."birdId" AND b."deletedAt" IS NULL))
+                  AND ("chickId" IS NULL OR NOT EXISTS (SELECT 1 FROM chicks c WHERE c.id=rings."chickId" AND c."deletedAt" IS NULL))`,
+              [input.batchId],
             );
-            const { rowCount: rc } = await client.query(`DELETE FROM rings WHERE "batchId"=$1`, [input.batchId]);
-            const { rowCount: rb } = await client.query(`DELETE FROM ring_batches WHERE id=$1`, [input.batchId]);
-            deleted = (rc ?? 0) + (rb ?? 0);
+          }
 
-          } else if (input.mode === "DELETE_AVAILABLE_ONLY") {
-            const { rowCount: rc } = await client.query(
-              `DELETE FROM rings WHERE "batchId"=$1 AND status='available'`,
-              [input.batchId]
-            );
-            deleted = rc ?? 0;
-            // Recalculate batch totals
+          const applied = await client.query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM rings
+              WHERE "batchId"=$1 AND (
+                "usedAt" IS NOT NULL OR "birdId" IS NOT NULL OR "chickId" IS NOT NULL OR
+                status IN ('in_use','used','reserved')
+              )`,
+            [input.batchId],
+          );
+          if (Number(applied.rows[0]?.count ?? 0) > 0) {
+            throw new TRPCError({ code: "CONFLICT", message: "O lote possui histórico de uso. Arquive-o; não é permitido apagar rastreabilidade." });
+          }
+
+          let deleted = 0;
+          if (input.mode === "DELETE_AVAILABLE_ONLY") {
+            const result = await client.query(`DELETE FROM rings WHERE "batchId"=$1 AND status='available'`, [input.batchId]);
+            deleted = result.rowCount ?? 0;
             await client.query(
-              `UPDATE ring_batches SET quantity_total=(SELECT COUNT(*) FROM rings WHERE "batchId"=$1) WHERE id=$1`,
-              [input.batchId]
+              `UPDATE ring_batches SET quantity_total=(SELECT COUNT(*) FROM rings WHERE "batchId"=$1), "updatedAt"=NOW() WHERE id=$1`,
+              [input.batchId],
             );
-
           } else {
-            // FORCE_DELETE_ALL — remove linked birds' ring references first
-            await client.query(
-              `UPDATE birds SET ring=ring WHERE id IN (SELECT "birdId" FROM rings WHERE "batchId"=$1 AND "birdId" IS NOT NULL)`,
-              [input.batchId]
-            );
-            const { rowCount: rc } = await client.query(`DELETE FROM rings WHERE "batchId"=$1`, [input.batchId]);
-            const { rowCount: rb } = await client.query(`DELETE FROM ring_batches WHERE id=$1`, [input.batchId]);
-            deleted = (rc ?? 0) + (rb ?? 0);
+            const ringResult = await client.query(`DELETE FROM rings WHERE "batchId"=$1`, [input.batchId]);
+            const batchResult = await client.query(`DELETE FROM ring_batches WHERE id=$1`, [input.batchId]);
+            deleted = (ringResult.rowCount ?? 0) + (batchResult.rowCount ?? 0);
           }
 
           await client.query(
-            `INSERT INTO audit_logs ("userId","action","entityType","entityId","reason")
-             VALUES ($1,'force_delete_ring_batch','ring_batch',$2,$3)`,
-            [(ctx as any)?.userId ?? null, input.batchId, `mode=${input.mode}, deleted=${deleted}`]
+            `INSERT INTO audit_logs ("userId","action","entityType","entityId","reason") VALUES ($1,'force_delete_ring_batch','ring_batch',$2,$3)`,
+            [ctx.user.id, input.batchId, `safe_mode=${input.mode}, deleted=${deleted}`],
           );
-
           await client.query("COMMIT");
-        } catch (err) {
-          await client.query("ROLLBACK");
-          throw err;
+          return { success: true, deleted, mode: input.mode };
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          throw error;
         } finally {
           client.release();
         }
-
-        return { success: true, deleted, mode: input.mode };
       }),
 
     // ── Reconciliar TODAS as anilhas órfãs (global) ───────────────────────
-    reconcileAllOrphans: protectedProcedure
+    reconcileAllOrphans: platformAdminProcedure
       .mutation(async ({ ctx }) => {
         const pool = getPool();
         if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Pool indisponível." });
 
         const { rowCount: fixed } = await pool.query(
           `UPDATE rings
-           SET status='available',"birdId"=NULL,"chickId"=NULL,"usedAt"=NULL,"updatedAt"=NOW()
+           SET status='used',"usedAt"=COALESCE("usedAt",NOW()),"updatedAt"=NOW()
            WHERE status='in_use'
            AND ("birdId" IS NULL OR NOT EXISTS(
              SELECT 1 FROM birds b WHERE b.id=rings."birdId" AND b."deletedAt" IS NULL
+           ))
+           AND ("chickId" IS NULL OR NOT EXISTS(
+             SELECT 1 FROM chicks c WHERE c.id=rings."chickId" AND c."deletedAt" IS NULL
            ))`
         );
 
         // Recalculate all batches' quantity_used
         await pool.query(
           `UPDATE ring_batches rb
-           SET quantity_used=(SELECT COUNT(*) FROM rings WHERE "batchId"=rb.id AND status='in_use')`
+           SET quantity_used=(SELECT COUNT(*) FROM rings WHERE "batchId"=rb.id AND status IN ('in_use','used')),
+               "updatedAt"=NOW()`
         );
 
         await pool.query(
           `INSERT INTO audit_logs ("userId","action","entityType","reason")
-           VALUES ($1,'reconcile_rings','rings','Global orphan reconciliation')`,
-          [(ctx as any)?.userId ?? null]
+           VALUES ($1,'reconcile_rings','rings','Global orphan preservation')`,
+          [ctx.user.id ?? null]
         ).catch(() => {});
 
-        return { fixed: fixed ?? 0, message: `${fixed ?? 0} anilha(s) órfã(s) corrigida(s) em todos os lotes.` };
+        return { fixed: fixed ?? 0, message: `${fixed ?? 0} anilha(s) órfã(s) preservada(s) como usadas em todos os lotes.` };
       }),
   }), // end batches router
 
@@ -505,11 +487,15 @@ export const ringsRouter = router({
         page:     z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(500).default(50),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) return { items: [], total: 0 };
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) return { items: [], total: 0 };
+        const [batch] = await db.select({ id: ring_batches.id }).from(ring_batches).where(and(eq(ring_batches.id, input.batchId), eq(ring_batches.tenantId, tenantId))).limit(1);
+        if (!batch) throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado neste criadouro." });
 
-        const conditions = [eq(rings.batchId, input.batchId)];
+        const conditions = [eq(rings.batchId, input.batchId), eq(rings.tenantId, tenantId)];
         if (input.status) conditions.push(eq(rings.status, input.status));
 
         const offset = (input.page - 1) * input.pageSize;
@@ -571,7 +557,8 @@ export const ringsRouter = router({
           requireTenantAccess(ctx, birdRow.tenantId);
         }
 
-        const fullCode = await assignRingToBird(db, pool, input.ringId, input.birdId);
+        if (tenantId === null) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um criadouro." });
+        const fullCode = await assignRingToBird(db, pool, input.ringId, input.birdId, tenantId);
         return { success: true, fullCode };
       }),
 
@@ -579,20 +566,17 @@ export const ringsRouter = router({
       .input(z.number().int().positive())
       .mutation(async ({ ctx, input: birdId }) => {
         const db = await getDb();
-        const pool = getPool();
-        if (!db || !pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
-        // Verifica se o pássaro pertence ao tenant do usuário
-        const [birdRow] = await db.select().from(birds).where(eq(birds.id, birdId)).limit(1);
-        if (!birdRow) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado." });
-        }
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-        if (tenantId !== null && tenantId !== undefined) {
-          requireTenantAccess(ctx, birdRow.tenantId);
-        }
-
-        await releaseRingFromBird(db, pool, birdId);
-        return { success: true };
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+        const tenantId = requireTenantId(ctx);
+        const [birdRow] = await db.select({ id: birds.id }).from(birds).where(and(
+          eq(birds.id, birdId),
+          eq(birds.tenantId, tenantId),
+        )).limit(1);
+        if (!birdRow) throw new TRPCError({ code: "NOT_FOUND", message: "Pássaro não encontrado neste criadouro." });
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Uma anilha aplicada é identidade permanente e não pode voltar ao estoque. Corrija o cadastro do pássaro sem reutilizar a anilha.",
+        });
       }),
 
     createManual: protectedProcedure
@@ -605,7 +589,10 @@ export const ringsRouter = router({
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um criadouro." });
+        const [batch] = await db.select({ id: ring_batches.id }).from(ring_batches).where(and(eq(ring_batches.id, input.batchId), eq(ring_batches.tenantId, tenantId))).limit(1);
+        if (!batch) throw new TRPCError({ code: "NOT_FOUND", message: "Lote não encontrado neste criadouro." });
         const ring = await createManualRing(db, { ...input, tenantId });
         return { success: true, ring };
       }),

@@ -1,183 +1,219 @@
 /**
- * movements.ts — Movimentação do plantel (entradas e saídas de pássaros)
+ * movements.ts — Movimentação auditável do plantel.
  *
- * Tipos ENTRADA: bought | bred | donated_in | transferred_in
- * Tipos SAÍDA:   sold | died | escaped | donated_out | transferred_out | culled
- *
- * Ao registrar uma SAÍDA, o status do pássaro é atualizado automaticamente.
+ * Cada entrada/saída e a atualização correspondente do pássaro são gravadas
+ * na mesma transação para impedir histórico parcial.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { canarilManagerProcedure, protectedProcedure, router } from "../_core/trpc";
+import { getDb, getPool } from "../db";
 import { bird_movements, birds } from "../../drizzle/schema";
-import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
-import { getCurrentTenantId } from "../_core/tenant";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { getCurrentTenantId, requireTenantId } from "../_core/tenant";
 
 const ENTRY_TYPES = ["bought", "bred", "donated_in", "transferred_in"] as const;
-const EXIT_TYPES  = ["sold", "died", "escaped", "donated_out", "transferred_out", "culled"] as const;
-const ALL_TYPES   = [...ENTRY_TYPES, ...EXIT_TYPES] as const;
+const EXIT_TYPES = ["sold", "died", "escaped", "donated_out", "transferred_out", "culled"] as const;
+const ALL_TYPES = [...ENTRY_TYPES, ...EXIT_TYPES] as const;
 
-const EXIT_STATUS: Record<string, string> = {
-  sold:           "sold",
-  died:           "dead",
-  escaped:        "escaped",
-  donated_out:    "donated",
-  transferred_out:"transferred",
-  culled:         "inactive",
+const EXIT_STATUS: Record<(typeof EXIT_TYPES)[number], string> = {
+  sold: "sold",
+  died: "dead",
+  escaped: "escaped",
+  donated_out: "donated",
+  transferred_out: "transferred",
+  culled: "inactive",
 };
 
 export const TYPE_LABELS: Record<string, string> = {
-  bought:          "Compra",
-  bred:            "Nascimento/Plantel",
-  donated_in:      "Doação (entrada)",
-  transferred_in:  "Transferência (entrada)",
-  sold:            "Venda",
-  died:            "Óbito",
-  escaped:         "Fuga",
-  donated_out:     "Doação (saída)",
+  bought: "Compra",
+  bred: "Nascimento/Plantel",
+  donated_in: "Doação (entrada)",
+  transferred_in: "Transferência (entrada)",
+  sold: "Venda",
+  died: "Óbito",
+  escaped: "Fuga",
+  donated_out: "Doação (saída)",
   transferred_out: "Transferência (saída)",
-  culled:          "Descarte",
+  culled: "Descarte",
 };
 
-export const movementsRouter = router({
+function startOfDate(value: string): Date {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) throw new Error("Data inicial inválida.");
+  return date;
+}
 
-  // ── Listar movimentações ──────────────────────────────────────────────────
+function dayAfter(value: string): Date {
+  const date = startOfDate(value);
+  date.setDate(date.getDate() + 1);
+  return date;
+}
+
+const movementInput = z.object({
+  birdId: z.number().int().positive(),
+  date: z.string().optional(),
+  price: z.number().finite().min(0).max(99999999.99).optional(),
+  counterpart: z.string().trim().max(200).optional(),
+  notes: z.string().trim().max(2000).optional(),
+});
+
+async function registerMovement(params: {
+  tenantId: number;
+  userId: number;
+  birdId: number;
+  type: string;
+  date?: string;
+  price?: number;
+  counterpart?: string;
+  notes?: string;
+  direction: "entry" | "exit";
+}) {
+  const pool = getPool();
+  if (!pool) throw new Error("Banco não disponível");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const birdResult = await client.query(
+      `SELECT id, status FROM birds
+        WHERE id = $1 AND "tenantId" = $2 AND "deletedAt" IS NULL
+        FOR UPDATE`,
+      [params.birdId, params.tenantId],
+    );
+    if (birdResult.rowCount !== 1) throw new Error("Pássaro não encontrado neste canaril.");
+
+    const movementDate = params.date ? new Date(params.date) : new Date();
+    if (Number.isNaN(movementDate.getTime())) throw new Error("Data da movimentação inválida.");
+    const price = params.price === undefined ? null : params.price.toFixed(2);
+
+    const movementResult = await client.query(
+      `INSERT INTO bird_movements
+        ("birdId", type, date, price, counterpart, notes, "tenantId", "createdBy")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING *`,
+      [
+        params.birdId,
+        params.type,
+        movementDate,
+        price,
+        params.counterpart?.trim() || null,
+        params.notes?.trim() || null,
+        params.tenantId,
+        params.userId,
+      ],
+    );
+
+    if (params.direction === "entry") {
+      await client.query(
+        `UPDATE birds SET
+          "acquisitionType" = $1,
+          "acquisitionDate" = $2,
+          "purchasePrice" = $3,
+          "supplierName" = $4,
+          status = 'active',
+          "exitDate" = NULL,
+          "exitReason" = NULL,
+          "salePrice" = NULL,
+          "buyerName" = NULL,
+          "updatedAt" = NOW()
+         WHERE id = $5 AND "tenantId" = $6`,
+        [params.type, movementDate, price, params.counterpart?.trim() || null, params.birdId, params.tenantId],
+      );
+    } else {
+      const status = EXIT_STATUS[params.type as keyof typeof EXIT_STATUS] ?? "inactive";
+      await client.query(
+        `UPDATE birds SET
+          status = $1,
+          "exitDate" = $2,
+          "exitReason" = $3,
+          "salePrice" = $4,
+          "buyerName" = $5,
+          "updatedAt" = NOW()
+         WHERE id = $6 AND "tenantId" = $7`,
+        [status, movementDate, params.type, price, params.counterpart?.trim() || null, params.birdId, params.tenantId],
+      );
+    }
+
+    await client.query("COMMIT");
+    return movementResult.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export const movementsRouter = router({
   list: protectedProcedure
     .input(z.object({
-      type:      z.enum([...ALL_TYPES, "all"]).default("all"),
-      dateFrom:  z.string().optional(),
-      dateTo:    z.string().optional(),
-      limit:     z.number().int().max(200).default(100),
+      type: z.enum([...ALL_TYPES, "all"]).default("all"),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+      limit: z.number().int().min(1).max(200).default(100),
     }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-      let q: any = db.select({
-        id:          bird_movements.id,
-        birdId:      bird_movements.birdId,
-        ring:        birds.ring,
-        displayTitle: birds.displayTitle,
-        type:        bird_movements.type,
-        date:        bird_movements.date,
-        price:       bird_movements.price,
-        counterpart: bird_movements.counterpart,
-        notes:       bird_movements.notes,
-        createdAt:   bird_movements.createdAt,
-      })
-        .from(bird_movements)
-        .innerJoin(birds, eq(birds.id, bird_movements.birdId))
-        .orderBy(desc(bird_movements.date));
-
-      const conditions: any[] = [];
+      const tenantId = getCurrentTenantId(ctx);
+      const conditions = [];
       if (tenantId !== null) conditions.push(eq(bird_movements.tenantId, tenantId));
       if (input?.type && input.type !== "all") conditions.push(eq(bird_movements.type, input.type));
-      if (input?.dateFrom) conditions.push(gte(bird_movements.date, new Date(input.dateFrom)));
-      if (input?.dateTo)   conditions.push(lte(bird_movements.date, new Date(input.dateTo)));
+      if (input?.dateFrom) conditions.push(gte(bird_movements.date, startOfDate(input.dateFrom)));
+      if (input?.dateTo) conditions.push(lt(bird_movements.date, dayAfter(input.dateTo)));
 
-      if (conditions.length > 0) q = q.where(and(...conditions));
-
-      return q.limit(input?.limit ?? 100);
+      return db.select({
+        id: bird_movements.id,
+        birdId: bird_movements.birdId,
+        ring: birds.ring,
+        displayTitle: birds.displayTitle,
+        type: bird_movements.type,
+        date: bird_movements.date,
+        price: bird_movements.price,
+        counterpart: bird_movements.counterpart,
+        notes: bird_movements.notes,
+        createdAt: bird_movements.createdAt,
+      })
+        .from(bird_movements)
+        .innerJoin(birds, and(
+          eq(birds.id, bird_movements.birdId),
+          ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+        ))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(bird_movements.date))
+        .limit(input?.limit ?? 100);
     }),
 
-  // ── Registrar entrada ─────────────────────────────────────────────────────
-  registerEntry: protectedProcedure
-    .input(z.object({
-      birdId:      z.number().int().positive(),
-      type:        z.enum(ENTRY_TYPES),
-      date:        z.string().optional(),
-      price:       z.number().min(0).optional(),
-      counterpart: z.string().max(200).optional(),
-      notes:       z.string().max(500).optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("Banco não disponível");
-      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-      const uid = (ctx.user as any)?.id ?? null;
+  registerEntry: canarilManagerProcedure
+    .input(movementInput.extend({ type: z.enum(ENTRY_TYPES) }))
+    .mutation(async ({ ctx, input }) => registerMovement({
+      ...input,
+      tenantId: requireTenantId(ctx),
+      userId: ctx.user.id,
+      direction: "entry",
+    })),
 
-      const [mov] = await db.insert(bird_movements).values({
-        birdId:      input.birdId,
-        type:        input.type,
-        date:        input.date ? new Date(input.date) : new Date(),
-        price:       input.price ? String(input.price) : null,
-        counterpart: input.counterpart ?? null,
-        notes:       input.notes ?? null,
-        tenantId,
-        createdBy:   uid,
-      }).returning();
+  registerExit: canarilManagerProcedure
+    .input(movementInput.extend({ type: z.enum(EXIT_TYPES) }))
+    .mutation(async ({ ctx, input }) => registerMovement({
+      ...input,
+      tenantId: requireTenantId(ctx),
+      userId: ctx.user.id,
+      direction: "exit",
+    })),
 
-      // Atualizar campos de aquisição no pássaro
-      await db.update(birds).set({
-        acquisitionType: input.type,
-        acquisitionDate: mov.date,
-        purchasePrice:   input.price ? String(input.price) : undefined,
-        supplierName:    input.counterpart ?? undefined,
-        status:          "active",
-      } as any).where(eq(birds.id, input.birdId));
-
-      return mov;
-    }),
-
-  // ── Registrar saída ───────────────────────────────────────────────────────
-  registerExit: protectedProcedure
-    .input(z.object({
-      birdId:      z.number().int().positive(),
-      type:        z.enum(EXIT_TYPES),
-      date:        z.string().optional(),
-      price:       z.number().min(0).optional(),   // apenas para venda
-      counterpart: z.string().max(200).optional(),  // comprador, destino
-      notes:       z.string().max(500).optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("Banco não disponível");
-      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-      const uid = (ctx.user as any)?.id ?? null;
-
-      const exitDate = input.date ? new Date(input.date) : new Date();
-
-      const [mov] = await db.insert(bird_movements).values({
-        birdId:      input.birdId,
-        type:        input.type,
-        date:        exitDate,
-        price:       input.price ? String(input.price) : null,
-        counterpart: input.counterpart ?? null,
-        notes:       input.notes ?? null,
-        tenantId,
-        createdBy:   uid,
-      }).returning();
-
-      // Atualizar status e campos de saída no pássaro
-      const newStatus = EXIT_STATUS[input.type] ?? "inactive";
-      await db.update(birds).set({
-        status:      newStatus,
-        exitDate,
-        exitReason:  input.type,
-        salePrice:   input.price ? String(input.price) : undefined,
-        buyerName:   input.counterpart ?? undefined,
-      } as any).where(eq(birds.id, input.birdId));
-
-      return mov;
-    }),
-
-  // ── Sumário financeiro das movimentações ─────────────────────────────────
   financialSummary: protectedProcedure
-    .input(z.object({
-      dateFrom: z.string().optional(),
-      dateTo:   z.string().optional(),
-    }).optional())
+    .input(z.object({ dateFrom: z.string().optional(), dateTo: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { totalSales: 0, totalPurchases: 0, salesCount: 0, purchasesCount: 0 };
-      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-      const conditions: any[] = [];
+      const tenantId = getCurrentTenantId(ctx);
+      const conditions = [];
       if (tenantId !== null) conditions.push(eq(bird_movements.tenantId, tenantId));
-      if (input?.dateFrom) conditions.push(gte(bird_movements.date, new Date(input.dateFrom)));
-      if (input?.dateTo)   conditions.push(lte(bird_movements.date, new Date(input.dateTo)));
+      if (input?.dateFrom) conditions.push(gte(bird_movements.date, startOfDate(input.dateFrom)));
+      if (input?.dateTo) conditions.push(lt(bird_movements.date, dayAfter(input.dateTo)));
 
       const rows = await db.select({
-        type:  bird_movements.type,
+        type: bird_movements.type,
         price: sql<number>`COALESCE(SUM(CAST(${bird_movements.price} AS NUMERIC)), 0)`.as("total"),
         count: sql<number>`COUNT(*)::int`.as("count"),
       })
@@ -185,25 +221,30 @@ export const movementsRouter = router({
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .groupBy(bird_movements.type);
 
-      const sales     = rows.filter((r) => r.type === "sold");
-      const purchases = rows.filter((r) => r.type === "bought");
-
+      const sales = rows.find((row) => row.type === "sold");
+      const purchases = rows.find((row) => row.type === "bought");
       return {
-        totalSales:     Number(sales[0]?.price ?? 0),
-        salesCount:     Number(sales[0]?.count ?? 0),
-        totalPurchases: Number(purchases[0]?.price ?? 0),
-        purchasesCount: Number(purchases[0]?.count ?? 0),
+        totalSales: Number(sales?.price ?? 0),
+        salesCount: Number(sales?.count ?? 0),
+        totalPurchases: Number(purchases?.price ?? 0),
+        purchasesCount: Number(purchases?.count ?? 0),
       };
     }),
 
-  // ── Histórico de um pássaro ───────────────────────────────────────────────
   byBird: protectedProcedure
     .input(z.number().int().positive())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select().from(bird_movements)
-        .where(eq(bird_movements.birdId, input))
-        .orderBy(desc(bird_movements.date));
+      const tenantId = getCurrentTenantId(ctx);
+      const [bird] = await db.select({ id: birds.id }).from(birds).where(and(
+        eq(birds.id, input),
+        ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+      )).limit(1);
+      if (!bird) throw new Error("Pássaro não encontrado ou sem acesso.");
+      return db.select().from(bird_movements).where(and(
+        eq(bird_movements.birdId, input),
+        ...(tenantId === null ? [] : [eq(bird_movements.tenantId, tenantId)]),
+      )).orderBy(desc(bird_movements.date));
     }),
 });

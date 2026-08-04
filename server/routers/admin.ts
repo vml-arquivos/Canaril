@@ -11,24 +11,26 @@
  */
 import { z } from "zod";
 import {
-  protectedProcedure, platformAdminProcedure, router,
-  requirePlatformAdmin, callerIsPlatformAdmin,
+  protectedProcedure, platformAdminProcedure, canarilManagerProcedure, router,
+  callerIsPlatformAdmin,
 } from "../_core/trpc";
 import { getDb } from "../db";
+import { hashPassword } from "../_core/password";
 import {
   users, birds, rings, ring_batches, couples, clutches, chicks, cages,
   championships, tenants, audit_logs,
 } from "../../drizzle/schema";
-import { eq, and, isNull, isNotNull, ilike, or, sql } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, ilike, sql, inArray, or } from "drizzle-orm";
 import { getCurrentTenantId } from "../_core/tenant";
 
 // ─── Helper: registrar auditoria ─────────────────────────────────────────────
 
 async function writeAudit(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-  params: { userId?: number; action: string; entityType: string; entityId?: number; reason?: string; old?: unknown; newVal?: unknown }
+  params: { tenantId?: number | null; userId?: number; action: string; entityType: string; entityId?: number; reason?: string; old?: unknown; newVal?: unknown }
 ) {
   await db.insert(audit_logs).values({
+    tenantId: params.tenantId ?? null,
     userId: params.userId ?? null,
     action: params.action,
     entityType: params.entityType,
@@ -46,6 +48,57 @@ function softDeletePatch(userId?: number) {
 }
 function restorePatch() {
   return { deletedAt: null, deletedBy: null };
+}
+
+
+const safeUserColumns = {
+  id: users.id,
+  openId: users.openId,
+  name: users.name,
+  email: users.email,
+  loginMethod: users.loginMethod,
+  mustChangePassword: users.mustChangePassword,
+  role: users.role,
+  tenantId: users.tenantId,
+  isActive: users.isActive,
+  lastLoginAt: users.lastLoginAt,
+  disabledAt: users.disabledAt,
+  disabledBy: users.disabledBy,
+  disabledReason: users.disabledReason,
+  accessExpiresAt: users.accessExpiresAt,
+  internalNote: users.internalNote,
+  createdAt: users.createdAt,
+  updatedAt: users.updatedAt,
+  lastSignedIn: users.lastSignedIn,
+  deletedAt: users.deletedAt,
+  deletedBy: users.deletedBy,
+};
+
+const operationalTableMap = {
+  bird: birds,
+  ring: rings,
+  ring_batch: ring_batches,
+  couple: couples,
+  clutch: clutches,
+  chick: chicks,
+  cage: cages,
+  championship: championships,
+} as const;
+
+function getOperationalTenantId(ctx: any): number | null {
+  return callerIsPlatformAdmin(ctx) ? null : getCurrentTenantId(ctx);
+}
+
+function operationalEntityCondition(table: any, id: number, tenantId: number | null) {
+  return tenantId === null
+    ? eq(table.id, id)
+    : and(eq(table.id, id), eq(table.tenantId, tenantId));
+}
+
+function tenantDeletedCondition(table: any, tenantId: number | null) {
+  return tenantId === null
+    ? isNotNull(table.deletedAt)
+    : and(eq(table.tenantId, tenantId), isNotNull(table.deletedAt));
 }
 
 export const adminRouter = router({
@@ -73,7 +126,7 @@ export const adminRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
       const [t] = await db.insert(tenants).values({ ...input }).returning();
-      await writeAudit(db, { userId: (ctx as any)?.userId, action: "create", entityType: "tenant", entityId: t.id, newVal: t });
+      await writeAudit(db, { userId: ctx.user.id, action: "create", entityType: "tenant", entityId: t.id, newVal: t });
       return t;
     }),
 
@@ -95,7 +148,7 @@ export const adminRouter = router({
       const { id, ...patch } = input;
       const [old] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1);
       const [updated] = await db.update(tenants).set(patch).where(eq(tenants.id, id)).returning();
-      await writeAudit(db, { userId: (ctx as any)?.userId, action: "update", entityType: "tenant", entityId: id, old, newVal: updated });
+      await writeAudit(db, { userId: ctx.user.id, action: "update", entityType: "tenant", entityId: id, old, newVal: updated });
       return updated;
     }),
 
@@ -104,7 +157,7 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
+      const uid = ctx.user.id;
       await db.update(tenants).set(softDeletePatch(uid)).where(eq(tenants.id, input.id));
       await writeAudit(db, { userId: uid, action: "soft_delete", entityType: "tenant", entityId: input.id, reason: input.reason });
       return { success: true };
@@ -115,7 +168,7 @@ export const adminRouter = router({
   listUsers: platformAdminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(users).where(isNull(users.deletedAt));
+    return db.select(safeUserColumns).from(users).where(isNull(users.deletedAt));
   }),
 
   createUser: platformAdminProcedure
@@ -135,7 +188,7 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
+      const uid = ctx.user.id;
 
       // Verificar se email já existe
       const existing = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
@@ -147,14 +200,7 @@ export const adminRouter = router({
         throw new Error("tenantId é obrigatório para usuários não administradores da plataforma.");
       }
 
-      // Gerar hash da senha (usa Node.js crypto.scrypt)
-      const crypto = await import("crypto");
-      const passwordHash: string = await new Promise((resolve, reject) => {
-        crypto.scrypt(input.password, "canaril-salt", 64, (err: any, derivedKey: Buffer) => {
-          if (err) return reject(err);
-          resolve(derivedKey.toString("hex"));
-        });
-      });
+      const passwordHash = await hashPassword(input.password);
 
       // Gera openId único para usuários criados manualmente
       const openId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -172,7 +218,7 @@ export const adminRouter = router({
         accessExpiresAt: input.accessExpiresAt ? new Date(input.accessExpiresAt as any) : null,
         internalNote: input.internalNote ?? null,
         lastSignedIn: new Date(),
-      }).returning();
+      }).returning(safeUserColumns);
       await writeAudit(db, { userId: uid, action: "create", entityType: "user", entityId: created.id, newVal: created });
       return created;
     }),
@@ -189,7 +235,7 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
+      const uid = ctx.user.id;
       const { id, ...patch } = input;
 
       // Proteção absoluta: verificar se o alvo é o último PLATFORM_ADMIN
@@ -201,17 +247,12 @@ export const adminRouter = router({
         if (admins.length === 1) throw new Error("Não é possível rebaixar o único PLATFORM_ADMIN do sistema.");
       }
 
-      const [updated] = await db.update(users).set(patch as any).where(eq(users.id, id)).returning();
+      const [updated] = await db.update(users).set(patch as any).where(eq(users.id, id)).returning(safeUserColumns);
       await writeAudit(db, { userId: uid, action: "update", entityType: "user", entityId: id, newVal: updated });
       return updated;
     }),
 
-  /**
-   * Reseta a senha de um usuário. Usa exatamente o mesmo esquema de hash
-   * (scrypt + sal fixo "canaril-salt") já usado em createUser acima e na
-   * verificação de login em routers.ts — senão o usuário fica sem conseguir
-   * entrar depois do reset.
-   */
+  /** Reseta a senha usando o mesmo formato seguro e versionado do login. */
   resetPassword: platformAdminProcedure
     .input(z.object({
       id: z.number().int().positive(),
@@ -221,18 +262,12 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
+      const uid = ctx.user.id;
 
       const [target] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, input.id), isNull(users.deletedAt))).limit(1);
       if (!target) throw new Error("Usuário não encontrado.");
 
-      const crypto = await import("crypto");
-      const passwordHash: string = await new Promise((resolve, reject) => {
-        crypto.scrypt(input.newPassword, "canaril-salt", 64, (err: any, derivedKey: Buffer) => {
-          if (err) return reject(err);
-          resolve(derivedKey.toString("hex"));
-        });
-      });
+      const passwordHash = await hashPassword(input.newPassword);
 
       await db.update(users).set({
         passwordHash,
@@ -252,7 +287,7 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
+      const uid = ctx.user.id;
       const { id } = input;
 
       // Proteção: não suspender o último PLATFORM_ADMIN
@@ -280,7 +315,7 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
+      const uid = ctx.user.id;
       await db.update(users).set({
         isActive: true,
         disabledAt: null,
@@ -296,7 +331,7 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
+      const uid = ctx.user.id;
       const { id } = input;
 
       const admins = await db.select({ id: users.id }).from(users)
@@ -312,7 +347,7 @@ export const adminRouter = router({
 
   // ─── SOFT DELETE POR MÓDULO ───────────────────────────────────────────────
 
-  softDelete: protectedProcedure
+  softDelete: canarilManagerProcedure
     .input(z.object({
       entityType: z.enum(["bird","ring","ring_batch","couple","clutch","chick","cage","championship"]),
       id: z.number().int().positive(),
@@ -321,33 +356,59 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
-      const patch = softDeletePatch(uid);
-      const tableMap = { bird: birds, ring: rings, ring_batch: ring_batches, couple: couples, clutch: clutches, chick: chicks, cage: cages, championship: championships };
-      const table = tableMap[input.entityType];
-      // Guard: clutch with chicks
+      const uid = ctx.user.id;
+      const tenantId = getOperationalTenantId(ctx);
+      const table = operationalTableMap[input.entityType] as any;
+      const condition = operationalEntityCondition(table, input.id, tenantId);
+      const [entity] = await (db.select({ id: table.id, tenantId: table.tenantId }).from(table) as any).where(condition).limit(1);
+      if (!entity) throw new Error("Registro não encontrado ou sem acesso para este canaril.");
+
       if (input.entityType === "clutch") {
-        const chickCount = await db.select({ id: chicks.id }).from(chicks).where(and(eq(chicks.clutchId, input.id), isNull(chicks.deletedAt)));
-        if (chickCount.length > 0) throw new Error(`Esta postura tem ${chickCount.length} filhote(s). Use deleteWithDependents para excluir junto ou desvincule os filhotes primeiro.`);
+        const chickCount = await db.select({ id: chicks.id }).from(chicks).where(and(
+          eq(chicks.clutchId, input.id),
+          ...(tenantId === null ? [] : [eq(chicks.tenantId, tenantId)]),
+          isNull(chicks.deletedAt),
+        ));
+        if (chickCount.length > 0) {
+          throw new Error(`Esta postura tem ${chickCount.length} filhote(s). Desvincule ou arquive os filhotes primeiro.`);
+        }
       }
-      // Guard: cage with couple
       if (input.entityType === "cage") {
-        const occupying = await db.select({ id: couples.id }).from(couples).where(and(eq(couples.cageId, input.id), eq(couples.status, "active"), isNull(couples.deletedAt)));
-        if (occupying.length > 0) throw new Error("Gaiola ocupada por casal ativo. Finalize o casal antes de excluir a gaiola.");
+        const occupying = await db.select({ id: couples.id }).from(couples).where(and(
+          eq(couples.cageId, input.id),
+          ...(tenantId === null ? [] : [eq(couples.tenantId, tenantId)]),
+          eq(couples.status, "active"),
+          isNull(couples.deletedAt),
+        ));
+        if (occupying.length > 0) throw new Error("Gaiola ocupada por casal ativo. Finalize o casal antes de arquivar a gaiola.");
       }
-      // Guard: ring in use
       if (input.entityType === "ring") {
-        const [ring] = await db.select().from(rings).where(eq(rings.id, input.id)).limit(1);
-        if (ring?.status === "in_use") throw new Error("Anilha está vinculada a um pássaro. Desvincule primeiro ou excluia junto com o pássaro.");
+        const [ring] = await db.select({ birdId: rings.birdId, chickId: rings.chickId, usedAt: rings.usedAt })
+          .from(rings).where(operationalEntityCondition(rings, input.id, tenantId)).limit(1);
+        if (ring?.birdId || ring?.chickId || ring?.usedAt) {
+          throw new Error("Anilha possui histórico de utilização e não pode ser arquivada. Marque-a como perdida ou danificada.");
+        }
       }
-      await (db.update(table as any) as any).set(patch).where(eq((table as any).id, input.id));
-      await writeAudit(db, { userId: uid, action: "soft_delete", entityType: input.entityType, entityId: input.id, reason: input.reason });
+      if (input.entityType === "ring_batch") {
+        const used = await db.select({ id: rings.id }).from(rings).where(and(
+          eq(rings.batchId, input.id),
+          ...(tenantId === null ? [] : [eq(rings.tenantId, tenantId)]),
+          sql`(${rings.birdId} IS NOT NULL OR ${rings.chickId} IS NOT NULL OR ${rings.usedAt} IS NOT NULL)`,
+        )).limit(1);
+        if (used.length > 0) throw new Error("Lote possui anilhas com histórico de uso e não pode ser arquivado.");
+      }
+
+      await (db.update(table) as any).set(softDeletePatch(uid)).where(condition);
+      await writeAudit(db, {
+        tenantId: entity.tenantId ?? tenantId, userId: uid, action: "soft_delete",
+        entityType: input.entityType, entityId: input.id, reason: input.reason,
+      });
       return { success: true };
     }),
 
   // ─── RESTAURAR ───────────────────────────────────────────────────────────
 
-  restore: protectedProcedure
+  restore: canarilManagerProcedure
     .input(z.object({
       entityType: z.enum(["bird","ring","ring_batch","couple","clutch","chick","cage","championship","user","tenant"]),
       id: z.number().int().positive(),
@@ -355,10 +416,23 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const tableMap: Record<string, any> = { bird: birds, ring: rings, ring_batch: ring_batches, couple: couples, clutch: clutches, chick: chicks, cage: cages, championship: championships, user: users, tenant: tenants };
-      const table = tableMap[input.entityType];
-      await db.update(table).set(restorePatch()).where(eq(table.id, input.id));
-      await writeAudit(db, { userId: (ctx as any)?.userId, action: "restore", entityType: input.entityType, entityId: input.id });
+
+      if (input.entityType === "user" || input.entityType === "tenant") {
+        if (!callerIsPlatformAdmin(ctx)) throw new Error("Somente o administrador da plataforma pode restaurar usuários ou canaris.");
+        const table = input.entityType === "user" ? users : tenants;
+        const [restored] = await db.update(table as any).set(restorePatch()).where(eq((table as any).id, input.id)).returning({ id: (table as any).id });
+        if (!restored) throw new Error("Registro não encontrado.");
+        await writeAudit(db, { userId: ctx.user.id, action: "restore", entityType: input.entityType, entityId: input.id });
+        return { success: true };
+      }
+
+      const tenantId = getOperationalTenantId(ctx);
+      const table = operationalTableMap[input.entityType] as any;
+      const condition = operationalEntityCondition(table, input.id, tenantId);
+      const [entity] = await (db.select({ id: table.id, tenantId: table.tenantId }).from(table) as any).where(condition).limit(1);
+      if (!entity) throw new Error("Registro não encontrado ou sem acesso para este canaril.");
+      await (db.update(table) as any).set(restorePatch()).where(condition);
+      await writeAudit(db, { tenantId: entity.tenantId ?? tenantId, userId: ctx.user.id, action: "restore", entityType: input.entityType, entityId: input.id });
       return { success: true };
     }),
 
@@ -366,20 +440,33 @@ export const adminRouter = router({
 
   listTrash: protectedProcedure
     .input(z.object({ entityType: z.enum(["bird","ring","ring_batch","couple","clutch","chick","cage","championship","user"]).optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return {};
+      const platformAdmin = callerIsPlatformAdmin(ctx);
+      const tenantId = platformAdmin ? null : getCurrentTenantId(ctx);
 
-      async function getDeleted(table: any, label: string) {
-        return db!.select().from(table).where(isNotNull((table as any).deletedAt)).then((rows: any[]) => ({ label, rows }));
+      if (input.entityType === "user" && !platformAdmin) {
+        throw new Error("Somente o administrador da plataforma pode consultar usuários removidos.");
       }
 
-      const allTypes = ["bird","ring","ring_batch","couple","clutch","chick","cage","championship","user"] as const;
-      const toFetch = input.entityType ? [input.entityType] : allTypes;
-      const tableMap: Record<string, any> = { bird: birds, ring: rings, ring_batch: ring_batches, couple: couples, clutch: clutches, chick: chicks, cage: cages, championship: championships, user: users };
+      const allTypes = platformAdmin
+        ? (["bird","ring","ring_batch","couple","clutch","chick","cage","championship","user"] as const)
+        : (["bird","ring","ring_batch","couple","clutch","chick","cage","championship"] as const);
+      const toFetch = input.entityType ? [input.entityType] : [...allTypes];
+      const results: Array<{ label: string; rows: unknown[] }> = [];
 
-      const results = await Promise.all(toFetch.map((t) => getDeleted(tableMap[t], t)));
-      return Object.fromEntries(results.map((r) => [r.label, r.rows]));
+      for (const entityType of toFetch) {
+        if (entityType === "user") {
+          const rows = await db.select(safeUserColumns).from(users).where(isNotNull(users.deletedAt));
+          results.push({ label: entityType, rows });
+          continue;
+        }
+        const table = operationalTableMap[entityType as keyof typeof operationalTableMap] as any;
+        const rows = await (db.select().from(table) as any).where(tenantDeletedCondition(table, tenantId));
+        results.push({ label: entityType, rows });
+      }
+      return Object.fromEntries(results.map((result) => [result.label, result.rows]));
     }),
 
   // ─── AUDITORIA GLOBAL (somente PLATFORM_ADMIN) ────────────────────────────
@@ -421,39 +508,46 @@ export const adminRouter = router({
 
   // ─── PRÉVIA DE LIMPEZA DE TESTES ────────────────────────────────────────
 
-  previewTestCleanup: protectedProcedure
+  previewTestCleanup: canarilManagerProcedure
     .input(z.object({ prefix: z.string().min(1).max(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
+      const tenantId = getOperationalTenantId(ctx);
       const pat = `${input.prefix}%`;
+      const tenantBird = tenantId === null ? [] : [eq(birds.tenantId, tenantId)];
+      const tenantCouple = tenantId === null ? [] : [eq(couples.tenantId, tenantId)];
+      const tenantRing = tenantId === null ? [] : [eq(rings.tenantId, tenantId)];
+      const tenantCage = tenantId === null ? [] : [eq(cages.tenantId, tenantId)];
 
-      const [birdCount, coupleCount, clutchCount, ringCount, cageCount] = await Promise.all([
-        db.select({ id: birds.id }).from(birds).where(and(ilike(birds.ring, pat), isNull(birds.deletedAt))),
-        db.select({ id: couples.id }).from(couples).where(isNull(couples.deletedAt)),
-        db.select({ id: clutches.id }).from(clutches).where(isNull(clutches.deletedAt)),
-        db.select({ id: rings.id }).from(rings).where(ilike(rings.number, pat)),
-        db.select({ id: cages.id }).from(cages).where(and(ilike(cages.code, pat), isNull(cages.deletedAt))),
+      const birdRows = await db.select({ id: birds.id }).from(birds).where(and(ilike(birds.ring, pat), ...tenantBird, isNull(birds.deletedAt)));
+      const birdIds = birdRows.map((row) => row.id);
+      const coupleRows = birdIds.length === 0 ? [] : await db.select({ id: couples.id }).from(couples).where(and(
+        ...tenantCouple,
+        or(inArray(couples.maleId, birdIds), inArray(couples.femaleId, birdIds)),
+        isNull(couples.deletedAt),
+      ));
+      const coupleIds = coupleRows.map((row) => row.id);
+      const clutchRows = coupleIds.length === 0 ? [] : await db.select({ id: clutches.id }).from(clutches).where(and(
+        inArray(clutches.coupleId, coupleIds),
+        ...(tenantId === null ? [] : [eq(clutches.tenantId, tenantId)]),
+        isNull(clutches.deletedAt),
+      ));
+      const [ringRows, cageRows] = await Promise.all([
+        db.select({ id: rings.id }).from(rings).where(and(ilike(rings.number, pat), ...tenantRing, isNull(rings.deletedAt))),
+        db.select({ id: cages.id }).from(cages).where(and(ilike(cages.code, pat), ...tenantCage, isNull(cages.deletedAt))),
       ]);
 
-      const birdIds = new Set(birdCount.map((b) => b.id));
-
-      const couplesToDelete = coupleCount.filter((c: any) => birdIds.has((c as any).maleId) || birdIds.has((c as any).femaleId));
-
       return {
-        prefix: input.prefix,
-        birds: birdCount.length,
-        couples: couplesToDelete.length,
-        clutches: clutchCount.length,
-        rings: ringCount.length,
-        cages: cageCount.length,
-        total: birdCount.length + couplesToDelete.length + ringCount.length + cageCount.length,
+        prefix: input.prefix, birds: birdRows.length, couples: coupleRows.length,
+        clutches: clutchRows.length, rings: ringRows.length, cages: cageRows.length,
+        total: birdRows.length + coupleRows.length + clutchRows.length + ringRows.length + cageRows.length,
       };
     }),
 
   // ─── EXECUTAR LIMPEZA DE TESTES ──────────────────────────────────────────
 
-  executeTestCleanup: protectedProcedure
+  executeTestCleanup: canarilManagerProcedure
     .input(z.object({
       prefix: z.string().min(1).max(50),
       confirm: z.literal("LIMPAR TESTES"),
@@ -462,42 +556,41 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");
-      const uid = (ctx as any)?.userId;
-      const pat = `${input.prefix}%`;
-      const now = new Date();
-
-      const testBirds = await db.select({ id: birds.id, ring: birds.ring })
-        .from(birds).where(and(ilike(birds.ring, pat), isNull(birds.deletedAt)));
-      const birdIds = testBirds.map((b) => b.id);
-
-      let deleted = 0;
-
       if (input.hardDelete) {
-        // Hard delete — rings first to avoid FK issues
-        for (const bid of birdIds) {
-          await db.delete(birds).where(eq(birds.id, bid));
-          deleted++;
-        }
-        // Cages with prefix
-        const testCages = await db.select({ id: cages.id }).from(cages).where(ilike(cages.code, pat));
-        for (const c of testCages) {
-          await db.delete(cages).where(eq(cages.id, c.id));
-          deleted++;
-        }
-      } else {
-        // Soft delete
-        for (const bid of birdIds) {
-          await db.update(birds).set({ deletedAt: now, deletedBy: uid } as any).where(eq(birds.id, bid));
-          deleted++;
-        }
-        const testCages = await db.select({ id: cages.id }).from(cages).where(and(ilike(cages.code, pat), isNull(cages.deletedAt)));
-        for (const c of testCages) {
-          await db.update(cages).set({ deletedAt: now, deletedBy: uid } as any).where(eq(cages.id, c.id));
-          deleted++;
-        }
+        throw new Error("Exclusão física foi desativada para preservar histórico e integridade referencial. Use a limpeza segura (soft delete).");
       }
 
-      await writeAudit(db, { userId: uid, action: "bulk_delete", entityType: "test_data", reason: `Limpeza: prefixo "${input.prefix}", hard=${input.hardDelete}, ${deleted} itens` });
-      return { deleted, prefix: input.prefix, hardDelete: input.hardDelete };
+      const uid = ctx.user.id;
+      const tenantId = getOperationalTenantId(ctx);
+      const pat = `${input.prefix}%`;
+      const now = new Date();
+      const tenantBird = tenantId === null ? [] : [eq(birds.tenantId, tenantId)];
+      const tenantCage = tenantId === null ? [] : [eq(cages.tenantId, tenantId)];
+
+      const testBirds = await db.select({ id: birds.id }).from(birds).where(and(ilike(birds.ring, pat), ...tenantBird, isNull(birds.deletedAt)));
+      const testCages = await db.select({ id: cages.id }).from(cages).where(and(ilike(cages.code, pat), ...tenantCage, isNull(cages.deletedAt)));
+
+      let deleted = 0;
+      for (const bird of testBirds) {
+        await db.update(birds).set({ deletedAt: now, deletedBy: uid } as any).where(and(eq(birds.id, bird.id), ...tenantBird));
+        deleted++;
+      }
+      for (const cage of testCages) {
+        const occupied = await db.select({ id: couples.id }).from(couples).where(and(
+          eq(couples.cageId, cage.id),
+          ...(tenantId === null ? [] : [eq(couples.tenantId, tenantId)]),
+          eq(couples.status, "active"),
+          isNull(couples.deletedAt),
+        )).limit(1);
+        if (occupied.length > 0) continue;
+        await db.update(cages).set({ deletedAt: now, deletedBy: uid } as any).where(and(eq(cages.id, cage.id), ...tenantCage));
+        deleted++;
+      }
+
+      await writeAudit(db, {
+        tenantId, userId: uid, action: "bulk_delete", entityType: "test_data",
+        reason: `Limpeza segura: prefixo "${input.prefix}", ${deleted} itens arquivados`,
+      });
+      return { deleted, prefix: input.prefix, hardDelete: false };
     }),
 });

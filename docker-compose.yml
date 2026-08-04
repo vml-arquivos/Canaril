@@ -1,153 +1,70 @@
-version: '3.9'
-
 services:
-  # ============================================================================
-  # PostgreSQL Database
-  # ============================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: canario-lima-postgres
+    container_name: vittabird-postgres
     environment:
-      POSTGRES_USER: postgis
-      POSTGRES_PASSWORD: postgis
-      POSTGRES_DB: canario_lima_db
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=pt_BR.UTF-8"
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-vittabird}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env local}
+      POSTGRES_DB: ${POSTGRES_DB:-vittabird}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     volumes:
-      # Persistência de dados
       - postgres_data:/var/lib/postgresql/data
-      # Migrations
-      - ./drizzle/migrations:/docker-entrypoint-initdb.d:ro
-    networks:
-      - canario-network
+    networks: [vittabird-network]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgis -d canario_lima_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vittabird} -d ${POSTGRES_DB:-vittabird}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
-  # ============================================================================
-  # Application Server
-  # ============================================================================
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: canario-lima-app
+    container_name: vittabird-app
     environment:
-      # Database
-      DATABASE_URL: "postgresql://postgis:postgis@postgres:5432/canario_lima_db"
-      
-      # Autenticação
-      JWT_SECRET: "TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y="
-      CSRF_SECRET: "26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b"
-      SESSION_SECRET: "BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs="
-      
-      # Owner
-      OWNER_NAME: "Canário Lima"
-      OWNER_OPEN_ID: "canario-lima-001"
-      
-      # App
-      VITE_APP_ID: "canario-gestao-pro-001"
-      VITE_APP_TITLE: "Canário Gestão Pro"
-      VITE_APP_LOGO: "https://seu-dominio.com/logo.png"
-      
-      # OAuth (Desativado)
-      OAUTH_SERVER_URL: "http://localhost:3000"
-      VITE_OAUTH_PORTAL_URL: "http://localhost:3000/login"
-      
-      # APIs (Desativadas)
-      BUILT_IN_FORGE_API_URL: "http://localhost:3000/api"
-      BUILT_IN_FORGE_API_KEY: "standalone-api-key-001"
-      VITE_FRONTEND_FORGE_API_URL: "http://localhost:3000/api"
-      VITE_FRONTEND_FORGE_API_KEY: "standalone-frontend-key-001"
-      
-      # Analytics
-      VITE_ANALYTICS_ENDPOINT: "http://localhost:3000/analytics"
-      VITE_ANALYTICS_WEBSITE_ID: "canario-lima-001"
-      
-      # Node
-      NODE_ENV: "production"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vittabird}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-vittabird}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET com pelo menos 32 caracteres}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      CSRF_SECRET: ${CSRF_SECRET:-}
+      OWNER_NAME: ${OWNER_NAME:-Administrador}
+      OWNER_OPEN_ID: ${OWNER_OPEN_ID:-local-admin}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      VITE_APP_ID: ${VITE_APP_ID:-vittabird}
+      VITE_APP_TITLE: ${VITE_APP_TITLE:-VittaBird}
+      VITE_APP_LOGO: ${VITE_APP_LOGO:-}
+      NODE_ENV: production
       PORT: "3000"
-      
-      # Logging
-      LOG_LEVEL: "info"
-      
-      # CORS
-      CORS_ORIGIN: "http://localhost:3000,https://seu-dominio.com"
-      
-      # Session
-      SESSION_TIMEOUT: "86400000"
-      
-      # Cookie
-      COOKIE_SECURE: "true"
-      COOKIE_SAME_SITE: "strict"
+      APP_TIME_ZONE: ${APP_TIME_ZONE:-America/Sao_Paulo}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-lax}
       COOKIE_HTTP_ONLY: "true"
-    
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      UPLOADS_DIR: /app/uploads
     ports:
-      - "3000:3000"
-    
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
-    
-    networks:
-      - canario-network
-    
-    volumes:
-      # Logs
-      - ./logs:/app/logs
-    
+    networks: [vittabird-network]
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 10s
-    
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
-    
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ============================================================================
-  # Nginx Reverse Proxy (Opcional)
-  # ============================================================================
-  nginx:
-    image: nginx:alpine
-    container_name: canario-lima-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-      - ./logs/nginx:/var/log/nginx
-    depends_on:
-      - app
-    networks:
-      - canario-network
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 volumes:
   postgres_data:
-    driver: local
+  uploads_data:
 
 networks:
-  canario-network:
+  vittabird-network:
     driver: bridge

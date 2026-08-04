@@ -18,8 +18,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getCurrentTenantId } from "../_core/tenant";
 import { getDb } from "../db";
-import { ai_conversations } from "../../drizzle/schema";
-import { eq, and, desc, lte } from "drizzle-orm";
+import { ai_conversations, birds } from "../../drizzle/schema";
+import { eq, and, desc, isNull } from "drizzle-orm";
 import { invokeLLM, getActiveProvider, type Message } from "../_core/llm";
 import { buildCriadouroContext } from "../_core/aiContextBuilder";
 
@@ -77,6 +77,21 @@ export const aiAssistantRouter = router({
       const tenantId = requireOwnTenantId(ctx);
       const userId = ctx.user.id;
 
+      if (input.birdId !== undefined) {
+        const [bird] = await db
+          .select({ id: birds.id })
+          .from(birds)
+          .where(and(
+            eq(birds.id, input.birdId),
+            eq(birds.tenantId, tenantId),
+            isNull(birds.deletedAt),
+          ))
+          .limit(1);
+        if (!bird) {
+          throw new Error("Pássaro não encontrado neste criadouro.");
+        }
+      }
+
       // 1. Contexto do criadouro
       const criadouroCtx = await buildCriadouroContext(tenantId);
 
@@ -87,6 +102,7 @@ export const aiAssistantRouter = router({
         .where(
           and(
             eq(ai_conversations.tenantId, tenantId),
+            eq(ai_conversations.userId, userId),
             eq(ai_conversations.sessionId, input.sessionId)
           )
         )
@@ -178,6 +194,7 @@ export const aiAssistantRouter = router({
       if (!db) return [];
 
       const tenantId = requireOwnTenantId(ctx);
+      const userId = ctx.user.id;
 
       const rows = await db
         .select({
@@ -192,6 +209,7 @@ export const aiAssistantRouter = router({
         .where(
           and(
             eq(ai_conversations.tenantId, tenantId),
+            eq(ai_conversations.userId, userId),
             eq(ai_conversations.sessionId, input.sessionId)
           )
         )
@@ -209,12 +227,14 @@ export const aiAssistantRouter = router({
       if (!db) return { cleared: 0 };
 
       const tenantId = requireOwnTenantId(ctx);
+      const userId = ctx.user.id;
 
       const deleted = await db
         .delete(ai_conversations)
         .where(
           and(
             eq(ai_conversations.tenantId, tenantId),
+            eq(ai_conversations.userId, userId),
             eq(ai_conversations.sessionId, input.sessionId)
           )
         )
@@ -230,6 +250,7 @@ export const aiAssistantRouter = router({
       if (!db) return [];
 
       const tenantId = requireOwnTenantId(ctx);
+      const userId = ctx.user.id;
 
       // Última mensagem de cada sessão
       const rows = await db
@@ -239,7 +260,7 @@ export const aiAssistantRouter = router({
           createdAt: ai_conversations.createdAt,
         })
         .from(ai_conversations)
-        .where(eq(ai_conversations.tenantId, tenantId))
+        .where(and(eq(ai_conversations.tenantId, tenantId), eq(ai_conversations.userId, userId)))
         .orderBy(desc(ai_conversations.createdAt))
         .limit(200);
 

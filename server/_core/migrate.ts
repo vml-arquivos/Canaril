@@ -47,7 +47,12 @@ export async function runMigrations(pool: Pool): Promise<void> {
   }
 
   const client = await pool.connect();
+  const migrationLockKey = "canaril_schema_migrations_v1";
   try {
+    // Bloqueia migrations entre réplicas/processos. A sessão mantém o lock
+    // até o finally, impedindo dois deploys de aplicarem o mesmo SQL juntos.
+    await client.query(`SELECT pg_advisory_lock(hashtext($1))`, [migrationLockKey]);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS "${MIGRATIONS_TABLE}" (
         "id" SERIAL PRIMARY KEY,
@@ -93,6 +98,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
       console.log(`[Migrations] ${appliedCount} migration(s) aplicada(s) com sucesso. Total verificado: ${files.length}.`);
     }
   } finally {
+    await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, [migrationLockKey]).catch(() => undefined);
     client.release();
   }
 }

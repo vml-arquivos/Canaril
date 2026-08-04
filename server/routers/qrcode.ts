@@ -10,12 +10,13 @@
  *   generateCage(cageId) → mesmo para gaiolas
  */
 import { z } from "zod";
-import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
+import { canarilManagerProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { birds, cages, bird_genetic_profiles, bird_genotype, championship_entries, championships, scores, tenants } from "../../drizzle/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { MUTATION_CONFIG } from "../_core/colorGenetics";
+import { getCurrentTenantId } from "../_core/tenant";
 
 // Em produção, APP_URL deve estar configurado no ambiente com o domínio real
 // da plataforma. Este fallback é só para desenvolvimento local — antes
@@ -33,13 +34,18 @@ export const qrcodeRouter = router({
    * Gera (ou retorna existente) publicCode para um pássaro.
    * Retorna URL pública e um SVG simples do QR Code via API pública.
    */
-  generateForBird: protectedProcedure
+  generateForBird: canarilManagerProcedure
     .input(z.object({ birdId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível.");
+      const tenantId = getCurrentTenantId(ctx);
 
-      const [bird] = await db.select().from(birds).where(eq(birds.id, input.birdId)).limit(1);
+      const [bird] = await db.select().from(birds).where(and(
+        eq(birds.id, input.birdId),
+        ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+        isNull(birds.deletedAt),
+      )).limit(1);
       if (!bird) throw new Error(`Pássaro #${input.birdId} não encontrado.`);
 
       // Reutiliza código existente se já houver
@@ -60,7 +66,11 @@ export const qrcodeRouter = router({
         attempts++;
       }
 
-      await db.update(birds).set({ publicCode }).where(eq(birds.id, input.birdId));
+      if (attempts >= 10) throw new Error("Não foi possível gerar um código público único. Tente novamente.");
+      await db.update(birds).set({ publicCode }).where(and(
+        eq(birds.id, input.birdId),
+        ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+      ));
 
       const url = `${BASE_URL}/p/${publicCode}`;
       const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
@@ -70,13 +80,18 @@ export const qrcodeRouter = router({
   /**
    * Gera (ou retorna existente) publicCode para uma gaiola.
    */
-  generateForCage: protectedProcedure
+  generateForCage: canarilManagerProcedure
     .input(z.object({ cageId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível.");
+      const tenantId = getCurrentTenantId(ctx);
 
-      const [cage] = await db.select().from(cages).where(eq(cages.id, input.cageId)).limit(1);
+      const [cage] = await db.select().from(cages).where(and(
+        eq(cages.id, input.cageId),
+        ...(tenantId === null ? [] : [eq(cages.tenantId, tenantId)]),
+        isNull(cages.deletedAt),
+      )).limit(1);
       if (!cage) throw new Error(`Gaiola #${input.cageId} não encontrada.`);
 
       if (cage.publicCode) {
@@ -95,7 +110,11 @@ export const qrcodeRouter = router({
         attempts++;
       }
 
-      await db.update(cages).set({ publicCode }).where(eq(cages.id, input.cageId));
+      if (attempts >= 10) throw new Error("Não foi possível gerar um código público único. Tente novamente.");
+      await db.update(cages).set({ publicCode }).where(and(
+        eq(cages.id, input.cageId),
+        ...(tenantId === null ? [] : [eq(cages.tenantId, tenantId)]),
+      ));
 
       const url = `${BASE_URL}/g/${publicCode}`;
       const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
@@ -113,14 +132,26 @@ export const qrcodeRouter = router({
       if (!db) return null;
 
       const [bird] = await db.select().from(birds)
-        .where(eq(birds.publicCode, input.code.toUpperCase()))
+        .where(and(
+          eq(birds.publicCode, input.code.toUpperCase()),
+          eq(birds.isPublic, true),
+          isNull(birds.deletedAt),
+        ))
         .limit(1);
 
-      if (!bird || !bird.isPublic) return null;
+      if (!bird || !bird.tenantId) return null;
 
-      const tenantRow = bird.tenantId
-        ? (await db.select({ name: tenants.name, publicSlug: tenants.publicSlug, slug: tenants.slug }).from(tenants).where(eq(tenants.id, bird.tenantId)).limit(1))[0]
-        : null;
+      const tenantRow = (await db.select({
+        name: tenants.name,
+        publicSlug: tenants.publicSlug,
+        slug: tenants.slug,
+        publicSiteEnabled: tenants.publicSiteEnabled,
+      }).from(tenants).where(and(
+        eq(tenants.id, bird.tenantId),
+        eq(tenants.publicSiteEnabled, true),
+        isNull(tenants.deletedAt),
+      )).limit(1))[0];
+      if (!tenantRow?.publicSiteEnabled) return null;
 
       const [profile] = await db.select().from(bird_genetic_profiles)
         .where(eq(bird_genetic_profiles.birdId, bird.id)).limit(1);
@@ -130,7 +161,7 @@ export const qrcodeRouter = router({
       // Genealogia — só anilha/nome dos pais (dado genealógico, não sensível).
       const parentIds = [bird.fatherId, bird.motherId].filter((id): id is number => !!id);
       const parents = parentIds.length
-        ? await db.select({ id: birds.id, ring: birds.ring, displayTitle: birds.displayTitle, sex: birds.sex }).from(birds).where(inArray(birds.id, parentIds))
+        ? await db.select({ id: birds.id, ring: birds.ring, displayTitle: birds.displayTitle, sex: birds.sex }).from(birds).where(and(inArray(birds.id, parentIds), eq(birds.tenantId, bird.tenantId), isNull(birds.deletedAt)))
         : [];
       const father = parents.find((p) => p.id === bird.fatherId) ?? null;
       const mother = parents.find((p) => p.id === bird.motherId) ?? null;
@@ -143,7 +174,7 @@ export const qrcodeRouter = router({
         const entryIds = entries.map((e) => e.id);
         const [entryScores, champs] = await Promise.all([
           db.select().from(scores).where(inArray(scores.entryId, entryIds)),
-          db.select().from(championships).where(inArray(championships.id, entries.map((e) => e.championshipId))),
+          db.select().from(championships).where(and(inArray(championships.id, entries.map((e) => e.championshipId)), eq(championships.tenantId, bird.tenantId), isNull(championships.deletedAt))),
         ]);
         const champById = new Map(champs.map((c) => [c.id, c]));
         awards = entryScores
@@ -195,12 +226,18 @@ export const qrcodeRouter = router({
   /**
    * Remove o publicCode de um pássaro (torna o QR inacessível).
    */
-  revokeForBird: protectedProcedure
+  revokeForBird: canarilManagerProcedure
     .input(z.object({ birdId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível.");
-      await db.update(birds).set({ publicCode: null }).where(eq(birds.id, input.birdId));
+      const tenantId = getCurrentTenantId(ctx);
+      const [updated] = await db.update(birds).set({ publicCode: null }).where(and(
+        eq(birds.id, input.birdId),
+        ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+        isNull(birds.deletedAt),
+      )).returning({ id: birds.id });
+      if (!updated) throw new Error("Pássaro não encontrado ou sem acesso.");
       return { success: true };
     }),
 });

@@ -10,11 +10,10 @@
  *
  * MUTAÇÕES LIGADAS AO SEXO (cromossomo Z):
  *   ágata, canela, ino (lutino/albino/rubino), marfim (ivory),
- *   acetinado (satin), asas cinza (greywing), opalino, topázio*
- *   *tópázio = ino + opalino (ligados ao sexo, compound)
+ *   acetinado (satin), asas cinza (greywing), pastel.
  *
  * MUTAÇÕES AUTOSSÔMICAS RECESSIVAS:
- *   pastel, opalino-autossômico*, branco recessivo, ônix, cobalto,
+ *   opalino, branco recessivo, ônix, cobalto,
  *   jaspe, feo, asas brancas, urucum (rubino não-ino)
  *
  * MUTAÇÕES AUTOSSÔMICAS DOMINANTES:
@@ -22,7 +21,7 @@
  *
  * CASOS ESPECIAIS / COMPOSTOS:
  *   isabelino  = ágata + canela (dois genes ligados ao sexo simultâneos)
- *   tópázio    = ino + opalino (dois genes ligados ao sexo)
+ *   topázio    = fator próprio; não é inferido automaticamente pela soma de outros loci
  *   lutino     = ino sobre amarelo
  *   rubino     = ino sobre vermelho (fator vermelho separado)
  *   albino     = ino sobre branco recessivo
@@ -51,10 +50,10 @@ export type ParentGenotypes = {
   marfim?:    ZygosityMaleSL | ZygosityFemaleSL; // ivory — dilui lipocromo
   acetinado?: ZygosityMaleSL | ZygosityFemaleSL; // satin
   asasCinza?: ZygosityMaleSL | ZygosityFemaleSL; // greywing
-  opalino?:   ZygosityMaleSL | ZygosityFemaleSL; // sex-linked opalino (= opal)
+  pastel?:    ZygosityMaleSL | ZygosityFemaleSL;
   // ── Autossômicas recessivas ────────────────────────────────────────────
-  pastel?:          ZygosityAR;
-  opala?:           ZygosityAR; // alias para pastel-opalino (autossômico em alguns países)
+  opalino?:         ZygosityAR;
+  opala?:           ZygosityAR; // alias legado para opalino
   brancorecessivo?: ZygosityAR; // recessive white
   onix?:            ZygosityAR; // onyx
   cobalto?:         ZygosityAR; // cobalt
@@ -131,6 +130,8 @@ interface MutationConfig {
   phenotypeEffect:     string;  // o que o gene faz visualmente
   compoundNote?:       string;  // nota sobre mutação composta (isabelino, topázio)
   compound?:           string[]; // mutações componentes
+  selectable?:         boolean;
+  evidenceStatus?:     "documented" | "provisional" | "legacy_alias";
 }
 
 export const MUTATION_CONFIG: Record<string, MutationConfig> = {
@@ -183,30 +184,34 @@ export const MUTATION_CONFIG: Record<string, MutationConfig> = {
     description: "Dilui a melanina nas rêmiges (penas de voo) deixando-as cinza-claras em vez de negras.",
     phenotypeEffect: "Rêmiges cinza em vez de negras; resto do padrão mantido",
   },
-  opalino: {
-    label: "Opalino",
-    labelEn: "Opaline",
-    inheritance: "sex_linked",
-    inheritanceLabel: "ligada ao sexo (cromossomo Z)",
-    description: "Redistribui a melanina criando um padrão 'suave' e expandindo a área lipocrômica. Fêmea sempre manifesta.",
-    phenotypeEffect: "Padrão opaco; lipocromo expande-se para o manto",
-  },
-  // ── Autossômicas recessivas ────────────────────────────────────────────────
   pastel: {
     label: "Pastel",
     labelEn: "Pastel",
+    inheritance: "sex_linked",
+    inheritanceLabel: "ligada ao sexo (cromossomo Z)",
+    description: "Fator sexo-ligado segundo a base documental incorporada ao sistema. Machos podem ser portadores; fêmeas ZW são visuais ou normais, nunca portadoras silenciosas.",
+    phenotypeEffect: "Redução/diluição melânica em padrão pastel",
+    evidenceStatus: "documented",
+  },
+  // ── Autossômicas recessivas ────────────────────────────────────────────────
+  opalino: {
+    label: "Opalino",
+    labelEn: "Opal",
     inheritance: "autosomal_recessive",
     inheritanceLabel: "autossômica recessiva",
-    description: "Reduz parcialmente a eumelanina produzindo tons pastel. Portadores (Nm) parecem normais mas transmitem o gene.",
-    phenotypeEffect: "Eumelanina parcialmente diluída → tons acinzentados pastel",
+    description: "Fator autossômico recessivo na base documental do sistema. Machos e fêmeas podem ser normais, portadores ou visuais.",
+    phenotypeEffect: "Redistribuição/redução característica da melanina",
+    evidenceStatus: "documented",
   },
   opala: {
-    label: "Opalino Autossômico",
-    labelEn: "Autosomal Opaline",
+    label: "Opalino (alias legado: opala)",
+    labelEn: "Opal legacy alias",
     inheritance: "autosomal_recessive",
     inheritanceLabel: "autossômica recessiva",
-    description: "Variante autossômica do opalino, presente em algumas linhagens. Ambos os sexos podem ser portadores.",
-    phenotypeEffect: "Padrão opalo com redistribuição de melanina",
+    description: "Alias mantido somente para compatibilidade com cenários antigos. Novos cálculos devem usar 'opalino'.",
+    phenotypeEffect: "Mesmo locus configurado como opalino",
+    selectable: false,
+    evidenceStatus: "legacy_alias",
   },
   brancorecessivo: {
     label: "Branco Recessivo",
@@ -234,6 +239,7 @@ export const MUTATION_CONFIG: Record<string, MutationConfig> = {
   },
   jaspe: {
     label: "Jaspe",
+    evidenceStatus: "provisional",
     labelEn: "Jaspe",
     inheritance: "autosomal_recessive",
     inheritanceLabel: "autossômica recessiva",
@@ -289,6 +295,8 @@ export const MUTATION_CONFIG: Record<string, MutationConfig> = {
   // ── Mutações compostas (isabelino e topázio) ────────────────────────────
   isabelino: {
     label: "Isabelino (Isabel)",
+    selectable: false,
+    evidenceStatus: "documented",
     labelEn: "Isabel",
     inheritance: "sex_linked",
     inheritanceLabel: "ligada ao sexo (ágata + canela simultâneos)",
@@ -297,11 +305,13 @@ export const MUTATION_CONFIG: Record<string, MutationConfig> = {
   },
   topazio: {
     label: "Topázio (Topaz)",
+    selectable: false,
+    evidenceStatus: "provisional",
     labelEn: "Topaz",
-    inheritance: "sex_linked",
-    inheritanceLabel: "ligada ao sexo (ino + opalino simultâneos)",
-    description: "Composto de ino E opalino ligados ao sexo. Produz pássaro com eumelanina ausente (ino) e redistribuição de melanina (opalino), resultando em fenótipo único dourado/âmbar.",
-    phenotypeEffect: "Ausência de eumelanina com redistribuição opalina; reflexo dourado/topázio característico",
+    inheritance: "autosomal_recessive",
+    inheritanceLabel: "modelo provisório — locus próprio a validar",
+    description: "O material anexado não sustenta tratar topázio como simples soma de ino e opalino. O item fica não selecionável até a regra oficial ser validada e versionada.",
+    phenotypeEffect: "Não calculado automaticamente neste modelo",
   },
 };
 
@@ -408,15 +418,14 @@ function buildExplanation(
   if (cfg.inheritance === "sex_linked") {
     const { sons = {}, daughters = {} } = result;
     const visualSons = Object.entries(sons)
-      .filter(([g]) => g === "Z+Z+" || g === "Z+Z-")
+      .filter(([g]) => g === "Z+Z+")
       .reduce((a, [, p]) => a + p, 0);
     const carrierSons = (sons["Z+Z-"] ?? 0);
     const visualDaughters = (daughters["Z+W"] ?? 0);
 
     lines.push(`**${cfg.label}** (${cfg.inheritanceLabel}):`);
-    lines.push(`• Filhos machos: ${Math.round(visualSons*100)}% visuais`
-      + (carrierSons > 0 ? ` (dos quais ${Math.round(carrierSons / Math.max(visualSons,0.001) * 100)}% serão portadores)` : "")
-    );
+    lines.push(`• Filhos machos: ${Math.round(visualSons*100)}% visuais`);
+    if (carrierSons > 0) lines.push(`• Filhos machos portadores: ${Math.round(carrierSons*100)}% da prole total`);
     lines.push(`• Filhas fêmeas: ${Math.round(visualDaughters*100)}% visuais`);
     lines.push(`  ℹ️ ${cfg.phenotypeEffect}`);
   } else if (cfg.inheritance === "autosomal_recessive") {
@@ -597,13 +606,6 @@ export function calculateColorCross(input: {
     recommendations.push("Para calcular isabelinos precisamente, considere ambos os genes ligados ao sexo no mesmo pássaro.");
   }
 
-  // Ino + Opalino = Topázio
-  if ((male.ino || female.ino) && (male.opalino || female.opalino)) {
-    globalWarnings.push(
-      "TOPÁZIO: a combinação de ino + opalino (ambos ligados ao sexo) produz o topázio. Calcule cada gene separadamente e combine os resultados."
-    );
-  }
-
   // Marfim sobre vermelho = vermelho marfim (diluição)
   if (male.marfim || female.marfim) {
     recommendations.push("Marfim dilui o lipocromo: amarelo→marfim claro, vermelho→salmão/rosê. Filhotes marfim sobre vermelho = vermelho marfim.");
@@ -667,7 +669,7 @@ function buildExpectedPhenotypes(byMutation: Record<string, MutationCrossResult>
           description: sexLinkedPhenotypeLabel(geno, mutId, "macho"),
           probability: prob,
           sex: "macho",
-          isVisual: geno === "Z+Z+" || geno === "Z+Z-",
+          isVisual: geno === "Z+Z+",
           isCarrier: geno === "Z+Z-",
         });
       }
@@ -720,7 +722,7 @@ function buildSummaryText(
 
     if (res.sons && res.daughters) {
       const visualSons = Object.entries(res.sons)
-        .filter(([g]) => g === "Z+Z+" || g === "Z+Z-")
+        .filter(([g]) => g === "Z+Z+")
         .reduce((a, [, p]) => a + p, 0);
       const visualDaughters = (res.daughters["Z+W"] ?? 0);
       parts.push(`${cfg.label}: ${Math.round(visualSons*100)}% filhos machos visuais, ${Math.round(visualDaughters*100)}% filhas visuais`);

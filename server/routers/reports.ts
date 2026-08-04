@@ -14,7 +14,7 @@ import {
   bird_genetic_profiles,
   chicks,
 } from "../../drizzle/schema";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, inArray, isNull } from "drizzle-orm";
 import { calculateCOI, calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 import { analyzeCoiForPair } from "../_core/coiAnalyzer";
 import { buildPopulationGeneticsReport } from "../_core/populationGenetics";
@@ -22,6 +22,25 @@ import { scorePair } from "../_core/pairingOptimizer";
 import { classifyBirdAgeCategory, AGE_CATEGORY_LABELS } from "../_core/costAllocation";
 import { getCurrentTenantId } from "../_core/tenant";
 
+async function loadGeneticRows(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  birdIds: number[],
+) {
+  if (birdIds.length === 0) return { genotypes: [], profiles: [] };
+  const [genotypes, profiles] = await Promise.all([
+    db.select().from(bird_genotype).where(inArray(bird_genotype.birdId, birdIds)),
+    db.select().from(bird_genetic_profiles).where(inArray(bird_genetic_profiles.birdId, birdIds)),
+  ]);
+  return { genotypes, profiles };
+}
+
+function scopedBirdCondition(id: number, tenantId: number | null) {
+  return and(
+    eq(birds.id, id),
+    ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+    isNull(birds.deletedAt),
+  );
+}
 
 function countBy<T extends Record<string, any>>(rows: T[], key: keyof T): Record<string, number> {
   return rows.reduce((acc, row) => {
@@ -57,15 +76,21 @@ export const reportsRouter = router({
     const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
-    const [birdsList, couplesList, clutchesList, ringsList, championshipsList, entriesList, scoresList] = await Promise.all([
-      tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
-      tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
-      tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
-      tf ? db.select().from(rings).where(eq(rings.tenantId, tenantId)) : db.select().from(rings),
-      tf ? db.select().from(championships).where(eq(championships.tenantId, tenantId)) : db.select().from(championships),
-      db.select().from(championship_entries),
-      db.select().from(scores).orderBy(desc(scores.totalScore)),
+    const [birdsList, couplesList, clutchesList, ringsList, championshipsList] = await Promise.all([
+      tf ? db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt))) : db.select().from(birds).where(isNull(birds.deletedAt)),
+      tf ? db.select().from(couples).where(and(eq(couples.tenantId, tenantId), isNull(couples.deletedAt))) : db.select().from(couples).where(isNull(couples.deletedAt)),
+      tf ? db.select().from(clutches).where(and(eq(clutches.tenantId, tenantId), isNull(clutches.deletedAt))) : db.select().from(clutches).where(isNull(clutches.deletedAt)),
+      tf ? db.select().from(rings).where(and(eq(rings.tenantId, tenantId), isNull(rings.deletedAt))) : db.select().from(rings).where(isNull(rings.deletedAt)),
+      tf ? db.select().from(championships).where(and(eq(championships.tenantId, tenantId), isNull(championships.deletedAt))) : db.select().from(championships).where(isNull(championships.deletedAt)),
     ]);
+    const championshipIds = championshipsList.map((row) => row.id);
+    const entriesList = championshipIds.length > 0
+      ? await db.select().from(championship_entries).where(inArray(championship_entries.championshipId, championshipIds))
+      : [];
+    const entryIds = entriesList.map((row) => row.id);
+    const scoresList = entryIds.length > 0
+      ? await db.select().from(scores).where(inArray(scores.entryId, entryIds)).orderBy(desc(scores.totalScore))
+      : [];
 
     const totalEggs = clutchesList.reduce((sum, c) => sum + c.totalEggs, 0);
     const totalFertilized = clutchesList.reduce((sum, c) => sum + c.fertilizedEggs, 0);
@@ -123,13 +148,12 @@ export const reportsRouter = router({
       const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
       const tf = tenantId !== null;
 
-      const [allBirds, allGenotypes, allProfiles, allCouples, allClutches] = await Promise.all([
-        tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
-        db.select().from(bird_genotype),
-        db.select().from(bird_genetic_profiles),
-        tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
-        tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
+      const [allBirds, allCouples, allClutches] = await Promise.all([
+        tf ? db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt))) : db.select().from(birds).where(isNull(birds.deletedAt)),
+        tf ? db.select().from(couples).where(and(eq(couples.tenantId, tenantId), isNull(couples.deletedAt))) : db.select().from(couples).where(isNull(couples.deletedAt)),
+        tf ? db.select().from(clutches).where(and(eq(clutches.tenantId, tenantId), isNull(clutches.deletedAt))) : db.select().from(clutches).where(isNull(clutches.deletedAt)),
       ]);
+      const { genotypes: allGenotypes, profiles: allProfiles } = await loadGeneticRows(db, allBirds.map((row) => row.id));
 
       const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
       const profileByBird = new Map(allProfiles.map((p) => [p.birdId, p]));
@@ -231,11 +255,12 @@ export const reportsRouter = router({
   // ─── NOVO: Relatório Individual de um Pássaro ──────────────────────────────
   birdIndividual: protectedProcedure
     .input(z.object({ birdId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
+      const tenantId = getCurrentTenantId(ctx);
 
-      const [bird] = await db.select().from(birds).where(eq(birds.id, input.birdId)).limit(1);
+      const [bird] = await db.select().from(birds).where(scopedBirdCondition(input.birdId, tenantId)).limit(1);
       if (!bird) return null;
 
       const [genotype] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.birdId)).limit(1);
@@ -244,16 +269,16 @@ export const reportsRouter = router({
       // Pedigree
       let father = null, mother = null, paternalGf = null, paternalGm = null, maternalGf = null, maternalGm = null;
       if (bird.fatherId) {
-        const [f] = await db.select().from(birds).where(eq(birds.id, bird.fatherId)).limit(1);
+        const [f] = await db.select().from(birds).where(scopedBirdCondition(bird.fatherId, tenantId)).limit(1);
         father = f ?? null;
-        if (f?.fatherId) { const [gf] = await db.select().from(birds).where(eq(birds.id, f.fatherId)).limit(1); paternalGf = gf ?? null; }
-        if (f?.motherId) { const [gm] = await db.select().from(birds).where(eq(birds.id, f.motherId)).limit(1); paternalGm = gm ?? null; }
+        if (f?.fatherId) { const [gf] = await db.select().from(birds).where(scopedBirdCondition(f.fatherId, tenantId)).limit(1); paternalGf = gf ?? null; }
+        if (f?.motherId) { const [gm] = await db.select().from(birds).where(scopedBirdCondition(f.motherId, tenantId)).limit(1); paternalGm = gm ?? null; }
       }
       if (bird.motherId) {
-        const [m] = await db.select().from(birds).where(eq(birds.id, bird.motherId)).limit(1);
+        const [m] = await db.select().from(birds).where(scopedBirdCondition(bird.motherId, tenantId)).limit(1);
         mother = m ?? null;
-        if (m?.fatherId) { const [gf] = await db.select().from(birds).where(eq(birds.id, m.fatherId)).limit(1); maternalGf = gf ?? null; }
-        if (m?.motherId) { const [gm] = await db.select().from(birds).where(eq(birds.id, m.motherId)).limit(1); maternalGm = gm ?? null; }
+        if (m?.fatherId) { const [gf] = await db.select().from(birds).where(scopedBirdCondition(m.fatherId, tenantId)).limit(1); maternalGf = gf ?? null; }
+        if (m?.motherId) { const [gm] = await db.select().from(birds).where(scopedBirdCondition(m.motherId, tenantId)).limit(1); maternalGm = gm ?? null; }
       }
 
       // Casais e posturas
@@ -269,7 +294,7 @@ export const reportsRouter = router({
       }
 
       // COI
-      const allBirds = await db.select().from(birds);
+      const allBirds = tenantId === null ? await db.select().from(birds).where(isNull(birds.deletedAt)) : await db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt)));
       const birdMap = new Map<number, PedigreeBird>(
         allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
       );
@@ -299,11 +324,10 @@ export const reportsRouter = router({
     const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
     const tf = tenantId !== null;
 
-    const [allBirds, allGenotypes, allProfiles] = await Promise.all([
-      tf ? db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))) : db.select().from(birds).where(eq(birds.status, "active")),
-      db.select().from(bird_genotype),
-      db.select().from(bird_genetic_profiles),
-    ]);
+    const allBirds = tf
+      ? await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId), isNull(birds.deletedAt)))
+      : await db.select().from(birds).where(and(eq(birds.status, "active"), isNull(birds.deletedAt)));
+    const { genotypes: allGenotypes, profiles: allProfiles } = await loadGeneticRows(db, allBirds.map((row) => row.id));
 
     const genotypeSet = new Set(allGenotypes.map((g) => g.birdId));
     const profileSet = new Set(allProfiles.map((p) => p.birdId));
@@ -409,12 +433,13 @@ export const reportsRouter = router({
   // ─── NOVO: Confronto Genético de Casal ─────────────────────────────────────
   confrontoGenetico: protectedProcedure
     .input(z.object({ maleId: z.number().int().positive(), femaleId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
+      const tenantId = getCurrentTenantId(ctx);
 
-      const [male] = await db.select().from(birds).where(eq(birds.id, input.maleId)).limit(1);
-      const [female] = await db.select().from(birds).where(eq(birds.id, input.femaleId)).limit(1);
+      const [male] = await db.select().from(birds).where(scopedBirdCondition(input.maleId, tenantId)).limit(1);
+      const [female] = await db.select().from(birds).where(scopedBirdCondition(input.femaleId, tenantId)).limit(1);
 
       if (!male || !female) return null;
 
@@ -424,7 +449,7 @@ export const reportsRouter = router({
       const [femaleProfile] = await db.select().from(bird_genetic_profiles).where(eq(bird_genetic_profiles.birdId, input.femaleId)).limit(1);
 
       // COI
-      const allBirds = await db.select().from(birds);
+      const allBirds = tenantId === null ? await db.select().from(birds).where(isNull(birds.deletedAt)) : await db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt)));
       const birdMap = new Map<number, PedigreeBird>(
         allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
       );
@@ -757,10 +782,16 @@ export const reportsRouter = router({
   // ─── M3: COI Avançado com ancestrais comuns ──────────────────────────────
   coiAvancado: protectedProcedure
     .input(z.object({ maleId: z.number().int().positive(), femaleId: z.number().int().positive(), maxGen: z.number().int().min(2).max(8).default(6) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
-      const fullBirds = await db.select().from(birds);
+      const tenantId = getCurrentTenantId(ctx);
+      const [male, female] = await Promise.all([
+        db.select({ id: birds.id }).from(birds).where(scopedBirdCondition(input.maleId, tenantId)).limit(1),
+        db.select({ id: birds.id }).from(birds).where(scopedBirdCondition(input.femaleId, tenantId)).limit(1),
+      ]);
+      if (male.length === 0 || female.length === 0) throw new Error("Casal não encontrado neste canaril.");
+      const fullBirds = tenantId === null ? await db.select().from(birds).where(isNull(birds.deletedAt)) : await db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt)));
       const fullBirdMap = new Map(fullBirds.map((b) => [b.id, b]));
       const birdMap = new Map<number, PedigreeBird>(
         fullBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
@@ -778,13 +809,16 @@ indice: protectedProcedure.query(async ({ ctx }) => {
   if (!db) return { rows: [], generatedAt: new Date() };
   const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
   const tf = tenantId !== null;
-  const [allBirds, allCouples, allClutches, allEntries, allScores] = await Promise.all([
-    tf ? db.select().from(birds).where(eq(birds.tenantId, tenantId)) : db.select().from(birds),
-    tf ? db.select().from(couples).where(eq(couples.tenantId, tenantId)) : db.select().from(couples),
-    tf ? db.select().from(clutches).where(eq(clutches.tenantId, tenantId)) : db.select().from(clutches),
-    db.select().from(championship_entries),
-    db.select().from(scores),
+  const [allBirds, allCouples, allClutches, tenantChampionships] = await Promise.all([
+    tf ? db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt))) : db.select().from(birds).where(isNull(birds.deletedAt)),
+    tf ? db.select().from(couples).where(and(eq(couples.tenantId, tenantId), isNull(couples.deletedAt))) : db.select().from(couples).where(isNull(couples.deletedAt)),
+    tf ? db.select().from(clutches).where(and(eq(clutches.tenantId, tenantId), isNull(clutches.deletedAt))) : db.select().from(clutches).where(isNull(clutches.deletedAt)),
+    tf ? db.select().from(championships).where(and(eq(championships.tenantId, tenantId), isNull(championships.deletedAt))) : db.select().from(championships).where(isNull(championships.deletedAt)),
   ]);
+  const championshipIds = tenantChampionships.map((row) => row.id);
+  const allEntries = championshipIds.length ? await db.select().from(championship_entries).where(inArray(championship_entries.championshipId, championshipIds)) : [];
+  const entryIds = allEntries.map((row) => row.id);
+  const allScores = entryIds.length ? await db.select().from(scores).where(inArray(scores.entryId, entryIds)) : [];
   const birdMap = new Map<number, PedigreeBird>(
     allBirds.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }])
   );
@@ -823,11 +857,10 @@ mapaGenetico: protectedProcedure.query(async ({ ctx }) => {
   if (!db) return null;
   const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
   const tf = tenantId !== null;
-  const [allBirds, allGenotypes, allProfiles] = await Promise.all([
-    tf ? db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))) : db.select().from(birds).where(eq(birds.status, "active")),
-    db.select().from(bird_genotype),
-    db.select().from(bird_genetic_profiles),
-  ]);
+  const allBirds = tf
+    ? await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.tenantId, tenantId), isNull(birds.deletedAt)))
+    : await db.select().from(birds).where(and(eq(birds.status, "active"), isNull(birds.deletedAt)));
+  const { genotypes: allGenotypes, profiles: allProfiles } = await loadGeneticRows(db, allBirds.map((row) => row.id));
   const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
   const profileByBird = new Map(allProfiles.map((p) => [p.birdId, p]));
   const birdMap = new Map<number, PedigreeBird>(
@@ -859,16 +892,21 @@ mapaGenetico: protectedProcedure.query(async ({ ctx }) => {
 
 assistenteCruzamento: protectedProcedure
   .input(z.object({ birdId: z.number().int().positive(), objetivo: z.enum(["seguranca","cor","porte","reduzir_coi","linhagem","portadores","exposicao","livre"]), maxResults: z.number().int().min(3).max(20).default(8) }))
-  .query(async ({ input }) => {
+  .query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return null;
-    const [bird] = await db.select().from(birds).where(eq(birds.id, input.birdId)).limit(1);
+    const tenantId = getCurrentTenantId(ctx);
+    const [bird] = await db.select().from(birds).where(scopedBirdCondition(input.birdId, tenantId)).limit(1);
     if (!bird) return null;
     const oppositeSex = bird.sex === "macho" ? "fêmea" : "macho";
-    const allBirdsActive = await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.sex, oppositeSex)));
-    const allBirdsAll = await db.select().from(birds);
+    const allBirdsActive = tenantId === null
+      ? await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.sex, oppositeSex), isNull(birds.deletedAt)))
+      : await db.select().from(birds).where(and(eq(birds.status, "active"), eq(birds.sex, oppositeSex), eq(birds.tenantId, tenantId), isNull(birds.deletedAt)));
+    const allBirdsAll = tenantId === null
+      ? await db.select().from(birds).where(isNull(birds.deletedAt))
+      : await db.select().from(birds).where(and(eq(birds.tenantId, tenantId), isNull(birds.deletedAt)));
     const birdMapFull = new Map<number, PedigreeBird>(allBirdsAll.map((b) => [b.id, { id: b.id, ring: b.ring, specialty_code: b.specialty_code, color_code: b.color_code, sex: b.sex, fatherId: b.fatherId, motherId: b.motherId }]));
-    const allGenotypes = await db.select().from(bird_genotype);
+    const { genotypes: allGenotypes } = await loadGeneticRows(db, allBirdsAll.map((row) => row.id));
     const genotypeMap = new Map(allGenotypes.map((g) => [g.birdId, g]));
     const baseGenotype = genotypeMap.get(input.birdId);
     const order: Record<string, number> = { ideal: 0, aprovado: 1, atencao: 2, nao_recomendado: 3 };

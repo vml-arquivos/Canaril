@@ -53,14 +53,17 @@ COPY --from=builder /app/dist ./dist
 COPY drizzle/migrations ./drizzle/migrations
 
 # Criar diretório para logs
-RUN mkdir -p /app/logs
+RUN mkdir -p /app/logs /app/uploads && chown -R node:node /app
 
 # Expor porta
 EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+  CMD node -e "require('http').get('http://localhost:3000/ready', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+# Executar sem privilégios de root
+USER node
 
 # Usar dumb-init para iniciar a aplicação
 ENTRYPOINT ["dumb-init", "--"]

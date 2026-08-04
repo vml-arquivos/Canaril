@@ -126,7 +126,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (user.role !== undefined) {
       values.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
+      values.role = 'PLATFORM_ADMIN';
     }
 
     if (!values.lastSignedIn) {

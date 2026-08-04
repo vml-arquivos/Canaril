@@ -9,7 +9,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { supply_records, birds } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
-import { getCurrentTenantId } from "../_core/tenant";
+import { getCurrentTenantId, requireTenantId } from "../_core/tenant";
 import { allocateCostsPerBird, classifyBirdPigmentCategory, classifyBirdAgeCategory } from "../_core/costAllocation";
 import { COLORS } from "../../shared/constants";
 
@@ -74,7 +74,7 @@ export const suppliesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível");
-      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
+      const tenantId = requireTenantId(ctx);
       const uid = (ctx.user as any)?.id ?? null;
 
       // Calcular totalCost se não informado diretamente
@@ -101,10 +101,15 @@ export const suppliesRouter = router({
   // ── Deletar registro ──────────────────────────────────────────────────────
   delete: protectedProcedure
     .input(z.number().int().positive())
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível");
-      await db.delete(supply_records).where(eq(supply_records.id, input));
+      const tenantId = requireTenantId(ctx);
+      const deleted = await db.delete(supply_records).where(and(
+        eq(supply_records.id, input),
+        eq(supply_records.tenantId, tenantId),
+      )).returning({ id: supply_records.id });
+      if (deleted.length !== 1) throw new Error("Insumo não encontrado neste criadouro.");
       return { success: true };
     }),
 

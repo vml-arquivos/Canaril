@@ -2,7 +2,7 @@
  * adminReset.ts — Router para Zona de Segurança / Reset do Canaril (Missão 7)
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { platformAdminProcedure, router } from "../_core/trpc";
 import { getDb, getPool } from "../db";
 import {
   scanOperationalCounts,
@@ -22,20 +22,20 @@ import { eq, ilike, desc } from "drizzle-orm";
 import { audit_logs } from "../../drizzle/schema";
 
 function getUserId(ctx: any): number {
-  return (ctx as any)?.userId ?? 0;
+  return Number((ctx as any)?.user?.id ?? 0);
 }
 
 export const adminResetRouter = router({
 
   // ─── Preview reset total operacional ─────────────────────────────────────
-  previewOperationalReset: protectedProcedure.query(async () => {
+  previewOperationalReset: platformAdminProcedure.query(async () => {
     const pool = getPool();
     if (!pool) return null;
     return scanOperationalCounts(pool);
   }),
 
   // ─── Executar reset total operacional ────────────────────────────────────
-  executeOperationalReset: protectedProcedure
+  executeOperationalReset: platformAdminProcedure
     .input(z.object({
       confirm: z.literal("RESETAR CANARIL"),
       agreedToTerms: z.boolean().refine((v) => v === true, "Você deve marcar a confirmação."),
@@ -48,7 +48,7 @@ export const adminResetRouter = router({
     }),
 
   // ─── Preview limpeza por prefixo ─────────────────────────────────────────
-  previewTestCleanup: protectedProcedure
+  previewTestCleanup: platformAdminProcedure
     .input(z.object({ prefix: z.string().min(2).max(50) }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -94,7 +94,7 @@ export const adminResetRouter = router({
     }),
 
   // ─── Executar limpeza de testes ───────────────────────────────────────────
-  executeTestCleanup: protectedProcedure
+  executeTestCleanup: platformAdminProcedure
     .input(z.object({
       prefix: z.string().min(2).max(50),
       confirm: z.literal("LIMPAR TESTES"),
@@ -107,7 +107,7 @@ export const adminResetRouter = router({
     }),
 
   // ─── Dependências de um lote de anilhas ──────────────────────────────────
-  scanRingBatchDependencies: protectedProcedure
+  scanRingBatchDependencies: platformAdminProcedure
     .input(z.object({ batchId: z.number().int().positive() }))
     .query(async ({ input }) => {
       const pool = getPool();
@@ -116,7 +116,7 @@ export const adminResetRouter = router({
     }),
 
   // ─── Forçar exclusão de lote com anilhas em uso ───────────────────────────
-  forceDeleteRingBatch: protectedProcedure
+  forceDeleteRingBatch: platformAdminProcedure
     .input(z.object({
       batchId: z.number().int().positive(),
       mode: z.enum(["archive", "free_rings", "delete_all"]),
@@ -129,7 +129,7 @@ export const adminResetRouter = router({
     }),
 
   // ─── Reconciliar anilhas órfãs ────────────────────────────────────────────
-  reconcileRings: protectedProcedure
+  reconcileRings: platformAdminProcedure
     .mutation(async ({ ctx }) => {
       const pool = getPool();
       if (!pool) throw new Error("Pool não disponível.");
@@ -137,7 +137,7 @@ export const adminResetRouter = router({
     }),
 
   // ─── Listar contagens de análises ─────────────────────────────────────────
-  listAnalyses: protectedProcedure.query(async () => {
+  listAnalyses: platformAdminProcedure.query(async () => {
     const pool = getPool();
     if (!pool) return null;
     const tables = ["ai_judge_analyses", "bird_photo_analyses", "bird_genetic_inference_logs"];
@@ -152,7 +152,7 @@ export const adminResetRouter = router({
   }),
 
   // ─── Deletar análises ─────────────────────────────────────────────────────
-  deleteAnalyses: protectedProcedure
+  deleteAnalyses: platformAdminProcedure
     .input(z.object({
       types: z.array(z.enum(["ai_judge", "photo", "genetic_inference", "all"])),
       confirm: z.literal("EXCLUIR ANÁLISES"),
@@ -164,14 +164,14 @@ export const adminResetRouter = router({
     }),
 
   // ─── Escanear órfãos ──────────────────────────────────────────────────────
-  scanOrphans: protectedProcedure.query(async () => {
+  scanOrphans: platformAdminProcedure.query(async () => {
     const pool = getPool();
     if (!pool) return [];
     return scanOrphans(pool);
   }),
 
   // ─── Corrigir órfãos ──────────────────────────────────────────────────────
-  fixOrphans: protectedProcedure
+  fixOrphans: platformAdminProcedure
     .input(z.object({
       tables: z.array(z.string()),
       confirm: z.literal("CORRIGIR ORPHANS"),
@@ -183,7 +183,7 @@ export const adminResetRouter = router({
     }),
 
   // ─── Logs de auditoria de reset ───────────────────────────────────────────
-  getResetAuditLogs: protectedProcedure
+  getResetAuditLogs: platformAdminProcedure
     .input(z.object({ limit: z.number().int().max(100).default(30) }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -197,7 +197,7 @@ export const adminResetRouter = router({
   // ─── Backfill de tenantId nos dados antigos ───────────────────────────────
   // Vincula registros sem tenantId ao tenant principal do sistema.
   // Executar uma vez após deploy da migration 0018.
-  backfillTenantIds: protectedProcedure
+  backfillTenantIds: platformAdminProcedure
     .mutation(async () => {
       const db = await getDb();
       if (!db) throw new Error("Banco não disponível.");

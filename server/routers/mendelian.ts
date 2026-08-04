@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { canarilManagerProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { bird_genotype, birds } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import { predictCross, BirdGenotypeInput } from "../_core/mendelian";
 import { calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
 import { SPECIALTIES, COLORS } from "../../shared/constants";
@@ -21,14 +21,17 @@ export const mendelianRouter = router({
   // Genótipo avançado de um pássaro (pode não existir ainda — é opcional)
   getGenotype: protectedProcedure
     .input(z.number())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
+      const tenantId = getCurrentTenantId(ctx);
+      const [bird] = await db.select({ id: birds.id }).from(birds).where(and(eq(birds.id, input), ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]), isNull(birds.deletedAt))).limit(1);
+      if (!bird) throw new Error("Pássaro não encontrado ou sem acesso.");
       const [genotype] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input));
       return genotype ?? null;
     }),
 
-  upsertGenotype: protectedProcedure
+  upsertGenotype: canarilManagerProcedure
     .input(
       z.object({
         birdId: z.number(),
@@ -40,15 +43,17 @@ export const mendelianRouter = router({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível");
+      const tenantId = getCurrentTenantId(ctx);
       const { birdId, ...fields } = input;
+      const [ownedBird] = await db.select().from(birds).where(and(eq(birds.id, birdId), ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]), isNull(birds.deletedAt))).limit(1);
+      if (!ownedBird) throw new Error("Pássaro não encontrado ou sem acesso.");
 
       // ── Validação backend: fêmea NÃO pode ser portadora de gene sex-linked
       if (fields.mutations && fields.mutations.length > 0) {
-        const [bird] = await db.select().from(birds).where(eq(birds.id, birdId)).limit(1);
-        if (bird?.sex === "fêmea") {
+        if (ownedBird.sex === "fêmea") {
           const invalidMutation = fields.mutations.find(
             (m) => m.inheritance === "sex_linked_recessive" && m.zygosity === "heterozygous_carrier"
           );
@@ -78,12 +83,13 @@ export const mendelianRouter = router({
    */
   predictCross: protectedProcedure
     .input(z.object({ fatherId: z.number(), motherId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Banco de dados não disponível");
+      const tenantId = getCurrentTenantId(ctx);
 
-      const [fatherBird] = await db.select().from(birds).where(eq(birds.id, input.fatherId));
-      const [motherBird] = await db.select().from(birds).where(eq(birds.id, input.motherId));
+      const [fatherBird] = await db.select().from(birds).where(and(eq(birds.id, input.fatherId), ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]), isNull(birds.deletedAt)));
+      const [motherBird] = await db.select().from(birds).where(and(eq(birds.id, input.motherId), ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]), isNull(birds.deletedAt)));
       const [fatherGenotype] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.fatherId));
       const [motherGenotype] = await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.motherId));
 
@@ -139,19 +145,24 @@ export const mendelianRouter = router({
       const db = await getDb();
       if (!db) return { target: null, candidates: [] };
 
-      const [target] = await db.select().from(birds).where(eq(birds.id, input.birdId));
-      if (!target) throw new Error("Pássaro não encontrado");
-
-      const targetGenotype = (await db.select().from(bird_genotype).where(eq(bird_genotype.birdId, input.birdId)))[0];
+      const tenantId = getCurrentTenantId(ctx);
+      const [target] = await db.select().from(birds).where(and(
+        eq(birds.id, input.birdId),
+        ...(tenantId === null ? [] : [eq(birds.tenantId, tenantId)]),
+        isNull(birds.deletedAt),
+      ));
+      if (!target) throw new Error("Pássaro não encontrado ou sem acesso.");
 
       const oppositeSex = target.sex === "macho" ? "fêmea" : "macho";
-      const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-      // Filtrar pássaros do próprio tenant
-      const activeBirdsQuery = tenantId
-        ? and(eq(birds.status, "active"), eq(birds.tenantId, tenantId))
-        : eq(birds.status, "active");
+      const activeBirdsQuery = tenantId !== null
+        ? and(eq(birds.status, "active"), eq(birds.tenantId, tenantId), isNull(birds.deletedAt))
+        : and(eq(birds.status, "active"), isNull(birds.deletedAt));
       const allBirds = await db.select().from(birds).where(activeBirdsQuery);
-      const allGenotypes = await db.select().from(bird_genotype);
+      const birdIds = allBirds.map((bird) => bird.id);
+      const allGenotypes = birdIds.length > 0
+        ? await db.select().from(bird_genotype).where(inArray(bird_genotype.birdId, birdIds))
+        : [];
+      const targetGenotype = allGenotypes.find((genotype) => genotype.birdId === input.birdId);
       const genotypeByBird = new Map(allGenotypes.map((g) => [g.birdId, g]));
 
       const birdMap: Map<number, PedigreeBird> = new Map(

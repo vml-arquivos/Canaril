@@ -15,7 +15,7 @@ import {
   birds, couples, clutches, chicks,
   health_records, breeding_reminders,
 } from "../../drizzle/schema";
-import { eq, and, gte, desc, inArray, count, isNull } from "drizzle-orm";
+import { eq, and, gte, desc, count, isNull } from "drizzle-orm";
 
 export interface CriadouroContext {
   summary: string;
@@ -93,12 +93,22 @@ export async function buildCriadouroContext(tenantId: number): Promise<Criadouro
       description: health_records.description,
       date: health_records.date,
     }).from(health_records)
-      .where(gte(health_records.date, thirtyDaysAgo))
+      .innerJoin(birds, eq(health_records.birdId, birds.id))
+      .where(and(
+        eq(birds.tenantId, tenantId),
+        isNull(birds.deletedAt),
+        gte(health_records.date, thirtyDaysAgo),
+      ))
       .orderBy(desc(health_records.date))
       .limit(20),
 
     db.select({ cnt: count() }).from(breeding_reminders)
-      .where(eq(breeding_reminders.completed, false)),
+      .innerJoin(couples, eq(breeding_reminders.coupleId, couples.id))
+      .where(and(
+        eq(couples.tenantId, tenantId),
+        isNull(couples.deletedAt),
+        eq(breeding_reminders.completed, false),
+      )),
 
     db.select({ cnt: count() }).from(chicks)
       .where(and(
@@ -183,9 +193,9 @@ Você é o Assistente IA do Canaril — especialista em canários domésticos (S
 
 ÁREAS DE EXPERTISE:
 • Raças: 771 classes COR (lipocromos, melaninas, feo, opalino, topázio, eumo, ônix, cobalto, jaspe, mogno, mulato, acetinado, asas cinza, bico amarelo) e 698 classes PORTE (37 raças FOB/OBJO 2026)
-• Genética: sistema ZZ/ZW (machos ZZ, fêmeas ZW). Genes ligados ao sexo (Lutino, Ino, Acetinado, Asa Cinza, Topo, Opalino)
-• COI: >12,5% = risco moderado; >25% = risco alto de depressão endogâmica
-• Cruzamentos letais: Branco Dominante × Branco Dominante = 25% mortalidade embrionária; Topo × Topo = 25% sem topete
+• Genética: sistema ZZ/ZW (machos ZZ, fêmeas ZW). Diferencie rigorosamente fenótipo visual, portador e genótipo. Ágata, Canela, Isabelino, Pastel, Acetinado, Marfim, Asa Cinza e Inos lipocrômicos são tratados como fatores sexo-ligados na base documental do sistema; Branco, Opalino e Feo como fatores autossômicos recessivos; Intenso e Branco Dominante como dominantes.
+• COI: apresente o coeficiente calculado e a genealogia usada; não transforme faixas de risco em diagnóstico biológico absoluto.
+• Cruzamentos de risco: explique a regra configurada e sua fonte/versionamento. Não invente probabilidades nem trate regras tradicionais como gene causal confirmado.
 • Saúde: doenças respiratórias, coccidiose, ácaros, candidíase, muda de penas
 • Reprodução: ciclos, incubação (13-14 dias), anilhamento (5-7 dias), desmame (30-35 dias)
 • Alimentação: dieta por fase (reprodução, muda, descanso, canto)

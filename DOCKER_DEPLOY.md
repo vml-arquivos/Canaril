@@ -159,11 +159,11 @@ docker-compose logs -f nginx
 ```bash
 # As migrations são executadas automaticamente pelo PostgreSQL
 # Verificar se tabelas foram criadas:
-docker-compose exec postgres psql -U postgis -d canario_lima_db -c "\dt"
+docker-compose exec postgres psql -U vittabird -d canario_lima_db -c "\dt"
 
 # Se precisar executar manualmente:
-docker-compose exec postgres psql -U postgis -d canario_lima_db < drizzle/migrations/0001_init_schema.sql
-docker-compose exec postgres psql -U postgis -d canario_lima_db < drizzle/migrations/0002_seed_data.sql
+docker-compose exec postgres psql -U vittabird -d canario_lima_db < drizzle/migrations/0001_init_schema.sql
+docker-compose exec postgres psql -U vittabird -d canario_lima_db < drizzle/migrations/0002_seed_data.sql
 ```
 
 ### 4. Acessar Aplicação
@@ -324,7 +324,7 @@ sudo crontab -e
 curl http://localhost:3000/health
 
 # Health check do banco
-docker-compose exec postgres pg_isready -U postgis
+docker-compose exec postgres pg_isready -U vittabird
 
 # Verificar uso de recursos
 docker stats
@@ -337,10 +337,10 @@ docker-compose logs app | grep ERROR
 
 ```bash
 # Backup do banco de dados
-docker-compose exec postgres pg_dump -U postgis canario_lima_db > backup_$(date +%Y%m%d_%H%M%S).sql
+docker-compose exec postgres pg_dump -U vittabird canario_lima_db > backup_$(date +%Y%m%d_%H%M%S).sql
 
 # Restaurar backup
-docker-compose exec -T postgres psql -U postgis canario_lima_db < backup_20260619_120000.sql
+docker-compose exec -T postgres psql -U vittabird canario_lima_db < backup_20260619_120000.sql
 
 # Backup de volumes
 docker run --rm -v canario-lima-postgres:/data -v $(pwd):/backup alpine tar czf /backup/postgres_backup.tar.gz /data
@@ -428,7 +428,7 @@ docker-compose logs app
 
 ```bash
 # Verificar se PostgreSQL está saudável
-docker-compose exec postgres pg_isready -U postgis
+docker-compose exec postgres pg_isready -U vittabird
 
 # Verificar variáveis de ambiente
 docker-compose config | grep DATABASE_URL

@@ -159,6 +159,8 @@ export const ring_batches = pgTable("ring_batches", {
   currentNumber: integer("currentNumber").default(1).notNull(),
   formatPattern: varchar("formatPattern", { length: 100 }).default("{breederCode}-{year}-{seq}").notNull(),
   notes: text("notes"),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   /**
@@ -177,7 +179,7 @@ export const ring_batches = pgTable("ring_batches", {
  */
 export const birds = pgTable("birds", {
   id: serial("id").primaryKey(),
-  ring: varchar("ring", { length: 50 }).notNull().unique(),
+  ring: varchar("ring", { length: 100 }).notNull().unique(),
   // Título humano gerado automaticamente para identificação rápida no plantel.
   // Ex.: GF-003-2026-027 — Gloster Consort — Opalino — Macho
   displayTitle: varchar("displayTitle", { length: 250 }),
@@ -301,10 +303,17 @@ export const clutches = pgTable("clutches", {
 export const chicks = pgTable("chicks", {
   id: serial("id").primaryKey(),
   clutchId: integer("clutchId").notNull(),
-  ring: varchar("ring", { length: 50 }).notNull().unique(),
-  sex: varchar("sex", { length: 20 }).notNull(),
-  color_code: varchar("color_code", { length: 50 }).notNull(),
+  // O filhote passa a existir no momento da eclosão. Anilha, sexo e cor
+  // podem ser definidos depois sem inventar dados provisórios.
+  ring: varchar("ring", { length: 100 }).unique(),
+  sex: varchar("sex", { length: 20 }),
+  color_code: varchar("color_code", { length: 50 }),
   birthDate: timestamp("birthDate").notNull(),
+  hatchDateTime: timestamp("hatchDateTime"),
+  // Liga o indivíduo ao lançamento de eclosão que o criou. Permite corrigir
+  // quantidade sem apagar ou duplicar filhotes já anilhados/promovidos.
+  hatchLogId: integer("hatchLogId"),
+  birthDateSource: varchar("birthDateSource", { length: 24 }).default("recorded").notNull(),
   ringDate: timestamp("ringDate"),
   weanDate: timestamp("weanDate"),
   deletedAt: timestamp("deletedAt"),
@@ -325,6 +334,7 @@ export const chicks = pgTable("chicks", {
   ringIdx: index("chicks_ring_idx").on(table.ring),
   clutchIdx: index("chicks_clutch_idx").on(table.clutchId),
   birdIdx: index("chicks_bird_idx").on(table.birdId),
+  hatchLogIdx: index("chicks_hatch_log_idx").on(table.hatchLogId),
   tenantIdx: index("chicks_tenant_idx").on(table.tenantId),
 }));
 
@@ -435,7 +445,7 @@ export const rings = pgTable("rings", {
   id: serial("id").primaryKey(),
   batchId: integer("batchId").notNull(),
 
-  number: varchar("number", { length: 50 }).notNull().unique(),
+  number: varchar("number", { length: 100 }).notNull().unique(),
   sequence: integer("sequence").notNull(),
   status: varchar("status", { length: 20 }).default("available").notNull(),
   // AVAILABLE | RESERVED | USED | LOST | DAMAGED | CANCELLED
@@ -448,6 +458,8 @@ export const rings = pgTable("rings", {
   // BATCH | MANUAL
   reservedAt: timestamp("reservedAt"),
   notes: text("notes"),
+  deletedAt: timestamp("deletedAt"),
+  deletedBy: integer("deletedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   /**

@@ -42,7 +42,7 @@ function isOperational(role: string | null | undefined): boolean {
 
 // ─── Middleware base: usuário autenticado ─────────────────────────────────────
 
-const requireUser = t.middleware(async ({ ctx, next }) => {
+const requireUser = t.middleware(async ({ ctx, next, type }) => {
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   }
@@ -52,6 +52,14 @@ const requireUser = t.middleware(async ({ ctx, next }) => {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Seu acesso está suspenso. Entre em contato com o administrador da plataforma.",
+    });
+  }
+  // VIEWER é estritamente leitura. A regra fica no middleware central para
+  // impedir que uma mutation nova seja publicada sem proteção por engano.
+  if (type === "mutation" && user.role === VIEWER) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Seu perfil possui acesso somente para leitura.",
     });
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
@@ -94,8 +102,8 @@ export const canarilManagerProcedure = t.procedure.use(
     if (user.isActive === false) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Acesso suspenso." });
     }
-    if (!isOperational(user.role)) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado." });
+    if (!(isPlatformAdmin(user.role) || isCanarilManager(user.role))) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado. Esta ação exige perfil de responsável do canaril." });
     }
     return next({ ctx: { ...ctx, user } });
   })
@@ -121,7 +129,12 @@ export function requirePlatformAdmin(ctx: any): void {
 export function requireTenantAccess(ctx: any, targetTenantId: number | null | undefined): void {
   const user = ctx.user as any;
   if (isPlatformAdmin(user?.role)) return; // admin global tem acesso total
-  if (!targetTenantId) return; // sem tenant = dado global/sem restrição de tenant
+  if (targetTenantId === null || targetTenantId === undefined) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Acesso negado. Este recurso legado ainda não está vinculado a um canaril.",
+    });
+  }
   if (user?.tenantId !== targetTenantId) {
     throw new TRPCError({
       code: "FORBIDDEN",

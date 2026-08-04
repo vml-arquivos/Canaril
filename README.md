@@ -128,8 +128,8 @@ psql canario_lima_db < drizzle/migrations/0002_seed_data.sql
 docker run -d \
   --name canario-postgres \
   -e POSTGRES_DB=canario_lima_db \
-  -e POSTGRES_USER=postgis \
-  -e POSTGRES_PASSWORD=postgis \
+  -e POSTGRES_USER=vittabird \
+  -e POSTGRES_PASSWORD=GERAR_UMA_SENHA_FORTE \
   -p 5432:5432 \
   postgres:17-alpine
 ```
@@ -144,7 +144,7 @@ cp .env.production .env.local
 nano .env.local
 
 # Variáveis essenciais:
-DATABASE_URL=postgresql://postgis:postgis@localhost:5432/canario_lima_db
+DATABASE_URL=postgresql://USUARIO:SENHA@localhost:5432/BANCO
 VITE_APP_TITLE=Canário Gestão Pro
 JWT_SECRET=seu_jwt_secret_aqui
 ```
@@ -241,10 +241,10 @@ psql -U postgres
 CREATE DATABASE canario_lima_db;
 
 # Criar usuário
-CREATE USER postgis WITH PASSWORD 'postgis';
+CREATE USER vittabird WITH PASSWORD 'SUBSTITUA_POR_SENHA_FORTE';
 
 # Dar permissões
-GRANT ALL PRIVILEGES ON DATABASE canario_lima_db TO postgis;
+GRANT ALL PRIVILEGES ON DATABASE canario_lima_db TO vittabird;
 
 # Sair
 \q
@@ -254,7 +254,7 @@ GRANT ALL PRIVILEGES ON DATABASE canario_lima_db TO postgis;
 
 ```bash
 # Conectar ao banco
-psql -U postgis -d canario_lima_db
+psql -U vittabird -d canario_lima_db
 
 # Executar migrations
 \i drizzle/migrations/0001_init_schema.sql
@@ -272,13 +272,13 @@ psql -U postgis -d canario_lima_db
 ```bash
 # Criar arquivo .env.local
 cat > .env.local << EOF
-DATABASE_URL=postgresql://postgis:postgis@localhost:5432/canario_lima_db
+DATABASE_URL=postgresql://USUARIO:SENHA@localhost:5432/BANCO
 VITE_APP_ID=canario-gestao-pro-001
 VITE_APP_TITLE=Canário Gestão Pro
 VITE_APP_LOGO=https://canarillima.casadf.com.br/logo.png
-JWT_SECRET=TVITqnLcUTCxp0ucX8aZlBHKjlKSBnt1a6v0y+bD25Y=
-CSRF_SECRET=26e3313ac552271a67533cd7d4b8f04f357c023b271c311c6c6aaa4632b5309b
-SESSION_SECRET=BKyZUOvHcSqgKWj2V6Ski9kz2FjVyEZJb8IAHHxfyrs=
+JWT_SECRET=GERAR_COM_OPENSSL_RAND_BASE64_48
+CSRF_SECRET=<GERE_UM_SEGREDO_CSRF_UNICO_COM_64_CARACTERES_HEXADECIMAIS>
+SESSION_SECRET=<GERE_UM_SEGREDO_DE_SESSAO_UNICO_COM_NO_MINIMO_32_CARACTERES>
 OWNER_NAME=Canário Lima
 OWNER_OPEN_ID=canario-lima-001
 CORS_ORIGIN=http://localhost:3000
@@ -366,8 +366,8 @@ docker-compose logs -f app
 # 4. Adicione banco de dados
 # - Tipo: PostgreSQL
 # - Nome: canario_lima_db
-# - User: postgis
-# - Pass: postgis
+# - User: vittabird
+# - Pass: <SEGREDO_CONFIGURADO_NO_AMBIENTE>
 
 # 5. Configure domínio
 # - canarillima.casadf.com.br
@@ -390,7 +390,7 @@ pnpm install
 pnpm build
 
 # 4. Configure variáveis
-export DATABASE_URL=postgresql://postgis:postgis@seu-host:5432/canario_lima_db
+export DATABASE_URL=postgresql://USUARIO:SENHA@SEU_HOST:5432/BANCO
 export JWT_SECRET=seu_jwt_secret
 export NODE_ENV=production
 
@@ -540,6 +540,9 @@ pnpm start        # Iniciar servidor de produção
 pnpm test         # Executar testes
 pnpm check        # Verificar tipos TypeScript
 pnpm format       # Formatar código
+pnpm validate:hardening # Verificações críticas sem dependências externas
+pnpm validate:genetics  # Simulações determinísticas do motor genético
+pnpm validate:security  # Senhas e geração única de anilhas
 ```
 
 ### Docker
@@ -554,7 +557,7 @@ docker-compose restart            # Reiniciar containers
 
 ### Banco de Dados
 ```bash
-psql -U postgis -d canario_lima_db        # Conectar ao banco
+psql "$DATABASE_URL"                         # Conectar ao PostgreSQL configurado
 \dt                                        # Listar tabelas
 \d nome_tabela                             # Descrever tabela
 SELECT * FROM birds LIMIT 10;              # Consultar dados
@@ -635,8 +638,8 @@ Este projeto é propriedade do Criadouro Canário Lima.
 
 ---
 
-**Versão**: 1.0  
-**Data**: 2026-06-19  
-**Status**: ✅ Pronto para Produção
+**Versão**: 1.1-hardening
+**Data**: 2026-08-04
+**Status**: validações estáticas aprovadas; liberação final condicionada a build, testes e smoke test no ambiente de homologação.
 
 🚀 **Boa sorte com seu Criadouro Canário Lima!**

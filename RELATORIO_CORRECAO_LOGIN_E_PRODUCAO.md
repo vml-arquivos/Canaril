@@ -57,7 +57,7 @@ Variáveis necessárias:
 ```env
 ADMIN_NAME=Vilson Marcio
 ADMIN_EMAIL=vilsonmarcio@gmail.com
-ADMIN_PASSWORD=Senha@123
+ADMIN_PASSWORD=DEFINA_UMA_SENHA_FORTE
 ```
 
 No Coolify, essas três variáveis devem estar no ambiente da aplicação. Após adicionar, é obrigatório redeploy/restart do container.
@@ -104,7 +104,7 @@ OWNER_NAME=Canário Lima
 OWNER_OPEN_ID=canario-lima-001
 ADMIN_NAME=Vilson Marcio
 ADMIN_EMAIL=vilsonmarcio@gmail.com
-ADMIN_PASSWORD=Senha@123
+ADMIN_PASSWORD=DEFINA_UMA_SENHA_FORTE
 CORS_ORIGIN=https://canarillima.casadf.com.br
 LOG_LEVEL=info
 PORT=3000

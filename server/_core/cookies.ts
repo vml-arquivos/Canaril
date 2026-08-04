@@ -1,13 +1,5 @@
 import type { CookieOptions, Request } from "express";
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
-function isIpAddress(host: string) {
-  // Basic IPv4 check and IPv6 presence detection.
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
-  return host.includes(":");
-}
-
 function isSecureRequest(req: Request) {
   if (req.protocol === "https") return true;
 
@@ -21,28 +13,38 @@ function isSecureRequest(req: Request) {
   return protoList.some(proto => proto.trim().toLowerCase() === "https");
 }
 
+function parseBoolean(value: string | undefined, fallback: boolean) {
+  if (value === undefined || value === "") return fallback;
+  return value.trim().toLowerCase() === "true";
+}
+
+function parseSameSite(value: string | undefined): CookieOptions["sameSite"] {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "strict" || normalized === "none") return normalized;
+  return "lax";
+}
+
 export function getSessionCookieOptions(
   req: Request
 ): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
-  // const hostname = req.hostname;
-  // const shouldSetDomain =
-  //   hostname &&
-  //   !LOCAL_HOSTS.has(hostname) &&
-  //   !isIpAddress(hostname) &&
-  //   hostname !== "127.0.0.1" &&
-  //   hostname !== "::1";
+  const requestIsSecure = isSecureRequest(req);
+  const configuredSameSite = parseSameSite(process.env.COOKIE_SAME_SITE);
+  const configuredSecure = parseBoolean(
+    process.env.COOKIE_SECURE,
+    process.env.NODE_ENV === "production"
+  );
 
-  // const domain =
-  //   shouldSetDomain && !hostname.startsWith(".")
-  //     ? `.${hostname}`
-  //     : shouldSetDomain
-  //       ? hostname
-  //       : undefined;
+  // Navegadores rejeitam cookies SameSite=None sem Secure. Em desenvolvimento
+  // HTTP, recuamos para Lax para que login/logout continuem funcionais.
+  const secure = configuredSecure && requestIsSecure;
+  const sameSite = configuredSameSite === "none" && !secure
+    ? "lax"
+    : configuredSameSite;
 
   return {
-    httpOnly: true,
+    httpOnly: parseBoolean(process.env.COOKIE_HTTP_ONLY, true),
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    sameSite,
+    secure,
   };
 }

@@ -1,44 +1,157 @@
 import { z } from "zod";
 import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
-import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders, cages, breeding_species_rules } from "../../drizzle/schema";
+import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders, breeding_species_rules } from "../../drizzle/schema";
 import { and, eq, desc, sql, isNull, gte, lte } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
-import { getNextAvailableRing } from "../_core/ringAllocator";
-import { getCurrentTenantId } from "../_core/tenant";
+import { ringAndPromoteChick } from "../_core/ringPromotion";
+import { getCurrentTenantId, requireTenantId } from "../_core/tenant";
+import { createRingBatchesAtomic, deleteUnusedRingBatchAtomic } from "../_core/ringBatchService";
 
-async function generateRingsForBatch(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, batchId: number, year: number, startNumber: number, endNumber: number) {
-  const now = new Date();
+async function createChickAtomic(params: {
+  tenantId: number;
+  clutchId: number;
+  ring?: string;
+  sex?: string;
+  colorCode?: string;
+  birthDate: Date;
+  ringDate?: Date;
+  weanDate?: Date;
+}) {
+  const pool = getPool();
+  if (!pool) throw new Error("Banco de dados não disponível.");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const clutch = await client.query(
+      `SELECT id FROM clutches WHERE id=$1 AND "tenantId"=$2 AND "deletedAt" IS NULL FOR UPDATE`,
+      [params.clutchId, params.tenantId],
+    );
+    if (clutch.rows.length !== 1) throw new Error("Postura não encontrada neste criadouro.");
 
-  for (let chunkStart = startNumber; chunkStart <= endNumber; chunkStart += 500) {
-    const chunkEnd = Math.min(chunkStart + 499, endNumber);
-    const values = [];
-    for (let sequence = chunkStart; sequence <= chunkEnd; sequence++) {
-      values.push({
-        batchId,
-        number: `${year}-${String(sequence).padStart(3, "0")}`,
-        sequence,
-        status: "available",
-        createdAt: now,
-        updatedAt: now,
-      });
+    let ringRow: { id: number; batchId: number; code: string } | null = null;
+    if (params.ring?.trim()) {
+      const lockedRing = await client.query<{ id: number; batchId: number; code: string }>(
+        `SELECT id, "batchId" AS "batchId", COALESCE("fullCode", number) AS code
+           FROM rings
+          WHERE "tenantId"=$1
+            AND (number=$2 OR "fullCode"=$2)
+            AND status='available'
+            AND "birdId" IS NULL AND "chickId" IS NULL
+          ORDER BY id FOR UPDATE`,
+        [params.tenantId, params.ring.trim()],
+      );
+      if (lockedRing.rows.length > 1) {
+        throw new Error("A anilha está duplicada no inventário legado. Corrija a duplicidade antes de utilizá-la.");
+      }
+      ringRow = lockedRing.rows[0] ?? null;
+      if (!ringRow) throw new Error("Anilha não encontrada ou já utilizada neste criadouro.");
     }
-    if (values.length > 0) {
-      await db.insert(rings).values(values).onConflictDoNothing();
+
+    const created = await client.query<Record<string, unknown>>(
+      `INSERT INTO chicks
+        ("clutchId", ring, sex, color_code, "birthDate", "hatchDateTime", "birthDateSource", "ringDate", "weanDate", status, "tenantId")
+       VALUES ($1,$2,$3,$4,$5,$5,'recorded',$6,$7,'active',$8) RETURNING *`,
+      [
+        params.clutchId,
+        ringRow?.code ?? null,
+        params.sex ?? null,
+        params.colorCode ?? null,
+        params.birthDate,
+        ringRow ? (params.ringDate ?? new Date()) : null,
+        params.weanDate ?? null,
+        params.tenantId,
+      ],
+    );
+    const chick = created.rows[0];
+    if (!chick || typeof chick.id !== "number") throw new Error("Falha ao criar filhote.");
+
+    if (ringRow) {
+      await client.query(
+        `UPDATE rings SET status='in_use', "chickId"=$1, "usedAt"=NOW(), "updatedAt"=NOW() WHERE id=$2`,
+        [chick.id, ringRow.id],
+      );
+      await client.query(
+        `UPDATE ring_batches rb SET
+           quantity_used=(SELECT COUNT(*)::integer FROM rings r WHERE r."batchId"=rb.id AND r.status IN ('in_use','used')),
+           status=CASE WHEN EXISTS(SELECT 1 FROM rings r WHERE r."batchId"=rb.id AND r.status='available') THEN 'available' ELSE 'exhausted' END,
+           "updatedAt"=NOW()
+         WHERE rb.id=$1`,
+        [ringRow.batchId],
+      );
     }
+
+    await client.query("COMMIT");
+    return chick;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
-async function markRingAsUsed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, ringNumber: string, patch: { birdId?: number; chickId?: number }) {
-  await db
-    .update(rings)
-    .set({
-      ...patch,
-      status: "in_use",
-      usedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(rings.number, ringNumber), eq(rings.status, "available")));
+async function createCoupleWithReminders(params: {
+  tenantId: number;
+  maleId: number;
+  femaleId: number;
+  cageNumber: string;
+  formationDate: Date;
+}) {
+  const pool = getPool();
+  if (!pool) throw new Error("Banco de dados não disponível.");
+  if (params.maleId === params.femaleId) throw new Error("Macho e fêmea devem ser pássaros diferentes.");
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const birdsResult = await client.query<{ id: number; sex: string; status: string }>(
+      `SELECT id, sex, status FROM birds
+        WHERE id = ANY($1::integer[])
+          AND "tenantId" = $2
+          AND "deletedAt" IS NULL
+        FOR UPDATE`,
+      [[params.maleId, params.femaleId], params.tenantId],
+    );
+    const male = birdsResult.rows.find((bird) => bird.id === params.maleId);
+    const female = birdsResult.rows.find((bird) => bird.id === params.femaleId);
+    if (!male || !female) throw new Error("Macho ou fêmea não pertence a este criadouro.");
+    if (male.status !== "active" || female.status !== "active") throw new Error("Somente pássaros ativos podem formar um casal.");
+    if (!new Set(["macho", "M"]).has(male.sex)) throw new Error("O pássaro selecionado como macho possui sexo incompatível.");
+    if (!new Set(["fêmea", "F"]).has(female.sex)) throw new Error("O pássaro selecionado como fêmea possui sexo incompatível.");
+
+    const duplicate = await client.query(
+      `SELECT id FROM couples
+        WHERE "tenantId"=$1 AND status='active' AND "deletedAt" IS NULL
+          AND ("femaleId"=$2 OR ("maleId"=$3 AND "femaleId"=$2))
+        FOR UPDATE`,
+      [params.tenantId, params.femaleId, params.maleId],
+    );
+    if (duplicate.rows.length > 0) throw new Error("A fêmea já está em um casal ativo.");
+
+    const created = await client.query<Record<string, unknown>>(
+      `INSERT INTO couples ("maleId","femaleId","cageNumber","formationDate",status,"tenantId")
+       VALUES ($1,$2,$3,$4,'active',$5) RETURNING *`,
+      [params.maleId, params.femaleId, params.cageNumber, params.formationDate, params.tenantId],
+    );
+    const couple = created.rows[0];
+    if (!couple || typeof couple.id !== "number") throw new Error("Falha ao criar casal.");
+
+    const reminders = generateBreedingReminders(params.formationDate);
+    for (const reminder of reminders) {
+      await client.query(
+        `INSERT INTO breeding_reminders ("coupleId","eventType","expectedDate",notes) VALUES ($1,$2,$3,$4)`,
+        [couple.id, reminder.eventType, reminder.expectedDate, reminder.notes ?? null],
+      );
+    }
+    await client.query("COMMIT");
+    return couple;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export const managementRouter = router({
@@ -62,49 +175,26 @@ export const managementRouter = router({
 
     create: protectedProcedure
       .input(z.object({
-        batch_number: z.string(),
-        year: z.number(),
-        color: z.string().optional(),
+        batch_number: z.string().trim().min(1).max(50),
+        year: z.number().int().min(2000).max(2100),
+        color: z.string().trim().max(50).optional(),
         startNumber: z.number().int().positive(),
-        endNumber: z.number().int().positive(),
+        endNumber: z.number().int().positive().max(10000),
       }))
       .mutation(async ({ ctx, input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-
-        if (input.endNumber < input.startNumber) {
-          throw new Error("A numeração final deve ser maior ou igual à inicial");
-        }
-        const quantity_total = input.endNumber - input.startNumber + 1;
-        if (quantity_total > 5000) {
-          throw new Error("Lote muito grande (máximo 5000 anilhas por lote)");
-        }
-
-        try {
-          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-          const [createdBatch] = await db.insert(ring_batches).values({
-            batch_number: input.batch_number,
-            year: input.year,
-            color: input.color || "Padrão",
-            quantity_total,
-            quantity_used: 0,
-            status: "available",
-            tenantId: tenantId,
-          }).returning();
-
-          if (createdBatch) {
-            await generateRingsForBatch(db, createdBatch.id, createdBatch.year, input.startNumber, input.endNumber);
-            // Após gerar as anilhas individuais, atualiza o tenantId delas
-            if (tenantId !== null && tenantId !== undefined) {
-              await db.update(rings).set({ tenantId: tenantId }).where(eq(rings.batchId, createdBatch.id));
-            }
-          }
-
-          return { success: true, batch: createdBatch, generated: quantity_total };
-        } catch (error) {
-          console.error("Error creating ring batch:", error);
-          throw error;
-        }
+        await getDb();
+        const pool = getPool();
+        if (!pool) throw new Error("Banco de dados não disponível.");
+        const tenantId = requireTenantId(ctx);
+        const [created] = await createRingBatchesAtomic(pool, tenantId, [{
+          batch_number: input.batch_number,
+          year: input.year,
+          color: input.color || "Padrão",
+          startNumber: input.startNumber,
+          endNumber: input.endNumber,
+          formatPattern: "{year}-{seq}",
+        }]);
+        return { success: true, batch: created.batch, generated: created.generated };
       }),
 
     // Anilhas individuais disponíveis (para selects de cadastro de pássaro/filhote)
@@ -128,11 +218,15 @@ export const managementRouter = router({
     // Todas as anilhas individuais de um lote (visão detalhada)
     listByBatch: protectedProcedure
       .input(z.number())
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) return [];
         try {
-          return await db.select().from(rings).where(eq(rings.batchId, input)).orderBy(rings.sequence);
+          const tenantId = getCurrentTenantId(ctx);
+          if (tenantId === null) return [];
+          const [batch] = await db.select({ id: ring_batches.id }).from(ring_batches).where(and(eq(ring_batches.id, input), eq(ring_batches.tenantId, tenantId))).limit(1);
+          if (!batch) throw new Error("Lote não encontrado neste criadouro.");
+          return await db.select().from(rings).where(and(eq(rings.batchId, input), eq(rings.tenantId, tenantId))).orderBy(rings.sequence);
         } catch (error) {
           console.error("Error listing rings by batch:", error);
           return [];
@@ -143,11 +237,14 @@ export const managementRouter = router({
     // muda depois de gerada, pois isso já criou anilhas individuais reais.
     update: protectedProcedure
       .input(z.object({ id: z.number(), color: z.string().trim().optional(), status: z.string().optional() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) throw new Error("Selecione um criadouro.");
         const { id, ...fields } = input;
-        await db.update(ring_batches).set({ ...fields, updatedAt: new Date() }).where(eq(ring_batches.id, id));
+        const updated = await db.update(ring_batches).set({ ...fields, updatedAt: new Date() }).where(and(eq(ring_batches.id, id), eq(ring_batches.tenantId, tenantId))).returning({ id: ring_batches.id });
+        if (updated.length !== 1) throw new Error("Lote não encontrado neste criadouro.");
         return { success: true };
       }),
 
@@ -155,30 +252,17 @@ export const managementRouter = router({
     // já em uso vinculadas a pássaros ATIVOS bloqueiam a remoção. Órfãs são ignoradas.
     delete: protectedProcedure
       .input(z.number())
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         const pool = getPool();
         if (!db || !pool) throw new Error("Database not available");
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) throw new Error("Selecione um criadouro.");
+        const [ownedBatch] = await db.select({ id: ring_batches.id }).from(ring_batches).where(and(eq(ring_batches.id, input), eq(ring_batches.tenantId, tenantId))).limit(1);
+        if (!ownedBatch) throw new Error("Lote não encontrado neste criadouro.");
 
-        // Only block if rings are linked to an ACTIVE (non-deleted) bird
-        const { rows: activeRows } = await pool.query<{ id: number }>(
-          `SELECT r.id FROM rings r
-           JOIN birds b ON b.id = r."birdId"
-           WHERE r."batchId" = $1
-             AND r.status = 'in_use'
-             AND r."birdId" IS NOT NULL
-             AND (b."deletedAt" IS NULL)
-           LIMIT 1`,
-          [input]
-        );
-
-        if (activeRows.length > 0) {
-          throw new Error(`Este lote tem anilha(s) vinculada(s) a pássaro(s) ativo(s) e não pode ser removido. Use a opção "Reconciliar órfãs" se os pássaros já foram removidos.`);
-        }
-
-        await db.delete(rings).where(eq(rings.batchId, input));
-        await db.delete(ring_batches).where(eq(ring_batches.id, input));
-        return { success: true };
+        const deleted = await deleteUnusedRingBatchAtomic(pool, tenantId, input);
+        return { success: true, deleted };
       }),
   }),
 
@@ -222,66 +306,16 @@ export const managementRouter = router({
 
     create: protectedProcedure
       .input(z.object({
-        maleId: z.number(),
-        femaleId: z.number(),
-        cageNumber: z.string(),
+        maleId: z.number().int().positive(),
+        femaleId: z.number().int().positive(),
+        cageNumber: z.string().trim().min(1).max(50),
         formationDate: z.date(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        try {
-          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-          // Filtra casais ativos do mesmo tenant
-          const activeCouples = await db.select().from(couples).where(
-            and(eq(couples.status, "active"), tenantId !== null && tenantId !== undefined ? eq(couples.tenantId, tenantId) : sql`1=1`)
-          );
-          // O MACHO pode estar em vários casais ativos ao mesmo tempo (uso
-          // em "harém", comum na prática de canaricultura — um macho
-          // reprodutor bom serve várias fêmeas na mesma temporada). A
-          // FÊMEA continua restrita a um único casal ativo por vez, porque
-          // ela só pode estar botando num ninho de cada vez.
-          const femaleTaken = activeCouples.find((c) => c.femaleId === input.femaleId);
-          if (femaleTaken) {
-            throw new Error("Este pássaro (fêmea) já está em outro casal ativo. Desfaça o casal anterior primeiro.");
-          }
-          if (activeCouples.some((c) => c.maleId === input.maleId && c.femaleId === input.femaleId)) {
-            throw new Error("Este casal (mesmo macho e mesma fêmea) já está ativo.");
-          }
-
-          await db.insert(couples).values({
-            maleId: input.maleId,
-            femaleId: input.femaleId,
-            cageNumber: input.cageNumber,
-            formationDate: input.formationDate,
-            status: "active",
-            tenantId: tenantId,
-          });
-
-          const [createdCouple] = await db
-            .select()
-            .from(couples)
-            .where(and(eq(couples.maleId, input.maleId), eq(couples.femaleId, input.femaleId)))
-            .orderBy(desc(couples.id))
-            .limit(1);
-
-          if (createdCouple) {
-            const seeds = generateBreedingReminders(input.formationDate);
-            await db.insert(breeding_reminders).values(
-              seeds.map((s) => ({
-                coupleId: createdCouple.id,
-                eventType: s.eventType,
-                expectedDate: s.expectedDate,
-                notes: s.notes,
-              }))
-            );
-          }
-
-          return { success: true };
-        } catch (error) {
-          console.error("Error creating couple:", error);
-          throw error;
-        }
+        await getDb();
+        const tenantId = requireTenantId(ctx);
+        const couple = await createCoupleWithReminders({ tenantId, ...input });
+        return { success: true, couple };
       }),
 
     update: protectedProcedure
@@ -311,14 +345,10 @@ export const managementRouter = router({
             const checkMaleId = input.maleId ?? existing?.maleId;
             const checkFemaleId = input.femaleId ?? existing?.femaleId;
             const activeCouples = await db.select().from(couples).where(and(eq(couples.status, "active"), tenantId !== null && tenantId !== undefined ? eq(couples.tenantId, tenantId) : sql`1=1`));
-            const maleTaken = activeCouples.find((c) => c.id !== id && (c.maleId === checkMaleId || c.femaleId === checkMaleId));
-            const femaleTaken = activeCouples.find((c) => c.id !== id && (c.maleId === checkFemaleId || c.femaleId === checkFemaleId));
-            if (maleTaken) {
-              throw new Error("Este pássaro (macho) já está em outro casal ativo.");
-            }
-            if (femaleTaken) {
-              throw new Error("Este pássaro (fêmea) já está em outro casal ativo.");
-            }
+            const duplicatePair = activeCouples.find((c) => c.id !== id && c.maleId === checkMaleId && c.femaleId === checkFemaleId);
+            const femaleTaken = activeCouples.find((c) => c.id !== id && c.femaleId === checkFemaleId);
+            if (duplicatePair) throw new Error("Este mesmo casal já está ativo.");
+            if (femaleTaken) throw new Error("Este pássaro (fêmea) já está em outro casal ativo.");
           }
           await db.update(couples).set({ ...fields, updatedAt: new Date() }).where(eq(couples.id, id));
           return { success: true };
@@ -342,7 +372,12 @@ export const managementRouter = router({
           if (tenantId !== null && tenantId !== undefined) {
             requireTenantAccess(ctx, existing.tenantId);
           }
-          await db.delete(couples).where(eq(couples.id, input));
+          await db.update(couples).set({
+            status: "inactive",
+            deletedAt: new Date(),
+            deletedBy: ctx.user.id,
+            updatedAt: new Date(),
+          }).where(and(eq(couples.id, input), eq(couples.tenantId, requireTenantId(ctx))));
           return { success: true };
         } catch (error) {
           console.error("Error deleting couple:", error);
@@ -368,16 +403,22 @@ export const managementRouter = router({
     }),
 
     getByCoupleId: protectedProcedure
-      .input(z.number())
-      .query(async ({ input }) => {
+      .input(z.number().int().positive())
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) return [];
-        try {
-          return await db.select().from(clutches).where(and(eq(clutches.coupleId, input), isNull(clutches.deletedAt))).orderBy(desc(clutches.clutchDate));
-        } catch (error) {
-          console.error("Error getting clutches by couple:", error);
-          return [];
-        }
+        const tenantId = requireTenantId(ctx);
+        const [ownedCouple] = await db.select({ id: couples.id }).from(couples).where(and(
+          eq(couples.id, input),
+          eq(couples.tenantId, tenantId),
+          isNull(couples.deletedAt),
+        )).limit(1);
+        if (!ownedCouple) throw new Error("Casal não encontrado neste criadouro.");
+        return db.select().from(clutches).where(and(
+          eq(clutches.coupleId, input),
+          eq(clutches.tenantId, tenantId),
+          isNull(clutches.deletedAt),
+        )).orderBy(desc(clutches.clutchDate));
       }),
 
     create: protectedProcedure
@@ -393,7 +434,14 @@ export const managementRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
+        const tenantId = requireTenantId(ctx);
+        const [ownedCouple] = await db.select({ id: couples.id }).from(couples).where(and(
+          eq(couples.id, input.coupleId),
+          eq(couples.tenantId, tenantId),
+          eq(couples.status, "active"),
+          isNull(couples.deletedAt),
+        )).limit(1);
+        if (!ownedCouple) throw new Error("Casal ativo não encontrado neste criadouro.");
         try {
           // Aviso (não bloqueio) se o casal já passou do limite de posturas
           // no mesmo ano-calendário — usa a regra configurável
@@ -421,7 +469,7 @@ export const managementRouter = router({
             infertileEggs: input.infertileEggs || 0,
             lostEggs: input.lostEggs || 0,
             hatchedChicks: input.hatchedChicks || 0,
-            tenantId: tenantId ?? null,
+            tenantId,
           });
           return { success: true, warning };
         } catch (error) {
@@ -450,16 +498,14 @@ export const managementRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
+        const tenantId = requireTenantId(ctx);
         const { id, ...fields } = input;
 
         const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId }).from(clutches).where(eq(clutches.id, id)).limit(1);
         if (!existing) throw new Error("Postura não encontrada.");
-        if (tenantId !== null && existing.tenantId !== tenantId) {
-          throw new Error("Esta postura não pertence ao seu criadouro.");
-        }
+        if (existing.tenantId !== tenantId) throw new Error("Esta postura não pertence ao seu criadouro.");
 
-        await db.update(clutches).set({ ...fields, updatedAt: new Date() }).where(eq(clutches.id, id));
+        await db.update(clutches).set({ ...fields, updatedAt: new Date() }).where(and(eq(clutches.id, id), eq(clutches.tenantId, tenantId)));
         return { success: true };
       }),
 
@@ -469,16 +515,14 @@ export const managementRouter = router({
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new Error("Database not available");
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
-        const uid = (ctx as any)?.userId;
+        const tenantId = requireTenantId(ctx);
+        const uid = ctx.user.id;
 
         const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId }).from(clutches).where(eq(clutches.id, input.id)).limit(1);
         if (!existing) throw new Error("Postura não encontrada.");
-        if (tenantId !== null && existing.tenantId !== tenantId) {
-          throw new Error("Esta postura não pertence ao seu criadouro.");
-        }
+        if (existing.tenantId !== tenantId) throw new Error("Esta postura não pertence ao seu criadouro.");
 
-        await db.update(clutches).set({ deletedAt: new Date(), deletedBy: uid }).where(eq(clutches.id, input.id));
+        await db.update(clutches).set({ deletedAt: new Date(), deletedBy: uid }).where(and(eq(clutches.id, input.id), eq(clutches.tenantId, tenantId)));
         return { success: true };
       }),
   }),
@@ -501,89 +545,25 @@ export const managementRouter = router({
       .input(z.object({
         clutchId: z.number().int().positive(),
         sex: z.enum(["macho", "fêmea", "indefinido"]).default("indefinido"),
+        hatchDate: z.date().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant
-
-        const [clutch] = await db.select().from(clutches).where(eq(clutches.id, input.clutchId)).limit(1);
-        if (!clutch) throw new Error("Postura não encontrada.");
-        if (tenantId !== null && clutch.tenantId !== tenantId) throw new Error("Esta postura não pertence ao seu criadouro.");
-
-        const [couple] = await db.select().from(couples).where(eq(couples.id, clutch.coupleId)).limit(1);
-        if (!couple) throw new Error("Casal desta postura não encontrado.");
-
-        const [father] = await db.select().from(birds).where(eq(birds.id, couple.maleId)).limit(1);
-        const [mother] = await db.select().from(birds).where(eq(birds.id, couple.femaleId)).limit(1);
-
-        // Gaiola do casal (couples.cageNumber é o código, cages.code é a
-        // chave real) — se existir uma gaiola cadastrada com esse código,
-        // o pássaro já nasce vinculado a ela.
-        let cageId: number | null = null;
-        if (couple.cageNumber) {
-          const [cage] = await db.select({ id: cages.id }).from(cages).where(eq(cages.code, couple.cageNumber)).limit(1);
-          cageId = cage?.id ?? null;
+        // Esta operação é deliberadamente atômica. Não usar inserts Drizzle
+        // independentes aqui: uma falha nunca pode deixar ave, filhote ou
+        // anilha em estados diferentes.
+        await getDb(); // inicializa pool e garante migrations
+        const pool = getPool();
+        if (!pool) throw new Error("Banco de dados não disponível.");
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) {
+          throw new Error("Selecione um criadouro antes de anilhar um filhote.");
         }
-
-        // Avós (linhagem) — só pra devolver no retorno, pra ficha do
-        // pássaro já mostrar de onde ele vem, sem precisar ir atrás.
-        const grandparentIds = [father?.fatherId, father?.motherId, mother?.fatherId, mother?.motherId].filter((id): id is number => !!id);
-        const grandparents = grandparentIds.length
-          ? await db.select({ id: birds.id, ring: birds.ring, displayTitle: birds.displayTitle }).from(birds).where(sql`${birds.id} IN (${sql.join(grandparentIds, sql`, `)})`)
-          : [];
-
-        const nextRing = await getNextAvailableRing(db, {
-          speciesName: father?.speciesName ?? undefined,
-          breedName: father?.breedName ?? undefined,
-          modality: (father?.modality as any) ?? undefined,
+        return ringAndPromoteChick(pool, {
           tenantId,
-        });
-        if (!nextRing) {
-          throw new Error("Sem anilhas disponíveis no momento. Cadastre um novo lote em Anilhas antes de anilhar este filhote.");
-        }
-
-        const birthDate = clutch.clutchDate; // melhor dado disponível — a postura é o evento mais próximo do nascimento real
-        const inheritedSpecialty = father?.specialty_code ?? mother?.specialty_code ?? "a_definir";
-
-        const [createdBird] = await db.insert(birds).values({
-          ring: nextRing.fullCode,
-          specialty_code: inheritedSpecialty,
-          sex: input.sex,
-          color_code: "a_definir", // placeholder — o criador completa na ficha logo em seguida
-          birthDate,
-          fatherId: couple.maleId,
-          motherId: couple.femaleId,
-          cageId,
-          status: "active",
-          speciesName: father?.speciesName ?? mother?.speciesName ?? null,
-          breedName: father?.breedName ?? mother?.breedName ?? null,
-          modality: father?.modality ?? mother?.modality ?? null,
-          tenantId: tenantId ?? null,
-        } as any).returning();
-
-        const [createdChick] = await db.insert(chicks).values({
           clutchId: input.clutchId,
-          ring: nextRing.fullCode,
           sex: input.sex,
-          color_code: "a_definir",
-          birthDate,
-          ringDate: new Date(),
-          status: "active",
-          birdId: createdBird.id,
-          tenantId: tenantId ?? null,
-        }).returning();
-
-        await markRingAsUsed(db, nextRing.ring.number, { birdId: createdBird.id, chickId: createdChick.id });
-
-        return {
-          bird: createdBird,
-          chick: createdChick,
-          ring: nextRing.fullCode,
-          father: father ? { id: father.id, ring: father.ring } : null,
-          mother: mother ? { id: mother.id, ring: mother.ring } : null,
-          grandparents,
-        };
+          hatchDate: input.hatchDate,
+        });
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -602,53 +582,42 @@ export const managementRouter = router({
 
     getByClutchId: protectedProcedure
       .input(z.number())
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) return [];
-        try {
-          return await db.select().from(chicks).where(eq(chicks.clutchId, input)).orderBy(desc(chicks.birthDate));
-        } catch (error) {
-          console.error("Error getting chicks by clutch:", error);
-          return [];
-        }
+        const tenantId = getCurrentTenantId(ctx);
+        if (tenantId === null) return [];
+        return db.select().from(chicks).where(and(
+          eq(chicks.clutchId, input),
+          eq(chicks.tenantId, tenantId),
+          isNull(chicks.deletedAt),
+        )).orderBy(desc(chicks.birthDate));
       }),
 
     create: protectedProcedure
       .input(z.object({
-        clutchId: z.number(),
-        ring: z.string(),
-        sex: z.string(),
-        color_code: z.string(),
+        clutchId: z.number().int().positive(),
+        ring: z.string().trim().min(1).max(100).optional(),
+        sex: z.string().trim().max(20).optional(),
+        color_code: z.string().trim().max(50).optional(),
         birthDate: z.date(),
         ringDate: z.date().optional(),
         weanDate: z.date().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
-        try {
-          const [createdChick] = await db.insert(chicks).values({
-            clutchId: input.clutchId,
-            ring: input.ring,
-            sex: input.sex,
-            color_code: input.color_code,
-            birthDate: input.birthDate,
-            ringDate: input.ringDate,
-            weanDate: input.weanDate,
-            status: "active",
-            tenantId: tenantId ?? null,
-          }).returning();
-
-          if (createdChick) {
-            await markRingAsUsed(db, createdChick.ring, { chickId: createdChick.id });
-          }
-
-          return { success: true, chick: createdChick };
-        } catch (error) {
-          console.error("Error creating chick:", error);
-          throw error;
-        }
+        await getDb();
+        const tenantId = requireTenantId(ctx);
+        const chick = await createChickAtomic({
+          tenantId,
+          clutchId: input.clutchId,
+          ring: input.ring,
+          sex: input.sex,
+          colorCode: input.color_code,
+          birthDate: input.birthDate,
+          ringDate: input.ringDate,
+          weanDate: input.weanDate,
+        });
+        return { success: true, chick };
       }),
 
     /**

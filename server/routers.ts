@@ -6,11 +6,12 @@ import { ENV } from "./_core/env";
 import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { hashPassword, verifyPassword } from "./_core/password";
 import * as db from "./db";
 import { birdsRouter } from "./routers/birds";
 // Drizzle helper for equality
 // Import equality helper and users table definition for login queries
-import { eq } from "drizzle-orm";
+import { eq, ilike } from "drizzle-orm";
 import { users } from "../drizzle/schema";
 import { managementRouter } from "./routers/management";
 import { aiJudgeRouter } from "./routers/aiJudge";
@@ -99,16 +100,11 @@ export const appRouter = router({
         const adminName = normalize(process.env.ADMIN_NAME) || normalize(process.env.OWNER_NAME) || "Administrador";
         const adminOpenId = normalize(ENV.ownerOpenId) || "local-admin";
 
-        // Se credenciais de admin não estiverem configuradas, falha
-        if (!adminEmail || !adminPassword) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "ADMIN_EMAIL e ADMIN_PASSWORD não foram configurados no ambiente.",
-          });
-        }
-
-        // Fluxo legacy: se email e senha batem com admin principal, efetua login como PLATFORM_ADMIN
-        if (input.email.trim().toLowerCase() === adminEmail && input.password === adminPassword) {
+        // Compatibilidade de bootstrap: o login administrativo por variável
+        // de ambiente só é avaliado quando ambas as credenciais existem.
+        // A ausência delas não bloqueia os usuários locais do banco.
+        const legacyAdminEnabled = Boolean(adminEmail && adminPassword);
+        if (legacyAdminEnabled && input.email.trim().toLowerCase() === adminEmail && input.password === adminPassword) {
           await db.upsertUser({
             openId: adminOpenId,
             name: adminName,
@@ -138,7 +134,8 @@ export const appRouter = router({
         if (!dbConn) {
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco não disponível." });
         }
-        const found = await dbConn.select().from(users).where(eq(users.email, input.email)).limit(1);
+        const normalizedEmail = input.email.trim().toLowerCase();
+        const found = await dbConn.select().from(users).where(ilike(users.email, normalizedEmail)).limit(1);
         const user = found?.[0];
         if (!user) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
@@ -155,19 +152,20 @@ export const appRouter = router({
         if (user.accessExpiresAt && new Date(user.accessExpiresAt) < new Date()) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Seu acesso expirou. Entre em contato com o administrador." });
         }
-        // Verificar senha: scrypt com o mesmo sal
-        const crypto = await import("crypto");
-        const derived: string = await new Promise((resolve, reject) => {
-          crypto.scrypt(input.password, "canaril-salt", 64, (err: any, derivedKey: Buffer) => {
-            if (err) return reject(err);
-            resolve(derivedKey.toString("hex"));
-          });
-        });
-        if (derived !== user.passwordHash) {
+        // Verificar senha com formato versionado e compatibilidade automática
+        // com os hashes legados. A comparação usa timingSafeEqual no helper.
+        const verification = await verifyPassword(input.password, user.passwordHash);
+        if (!verification.valid) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
         }
-        // Atualizar lastLoginAt
-        await dbConn.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+
+        // Migração transparente: no primeiro login válido, troca o hash legado
+        // com sal fixo por um hash scrypt com sal aleatório individual.
+        const loginPatch: Record<string, unknown> = { lastLoginAt: new Date() };
+        if (verification.needsRehash) {
+          loginPatch.passwordHash = await hashPassword(input.password);
+        }
+        await dbConn.update(users).set(loginPatch).where(eq(users.id, user.id));
         // Criar token de sessão
         const sessionToken = await sdk.createSessionToken(user.openId ?? "", {
           name: user.name || "",
@@ -175,7 +173,7 @@ export const appRouter = router({
         });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-        return { success: true, user: sanitizeUser(user) } as const;
+        return { success: true, user: sanitizeUser({ ...user, ...loginPatch }) } as const;
       }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
