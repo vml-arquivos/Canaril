@@ -67,6 +67,16 @@ async function startServer() {
     console.warn(error);
   }
 
+  // Bitolas oficiais de anilhamento (FOB/OBJO 2026) — idempotente e
+  // não-crítico, mesmo padrão do sync de catálogo acima.
+  try {
+    const { seedOfficialRingGauges } = await import("./ringGaugeSeed");
+    await seedOfficialRingGauges();
+  } catch (error) {
+    console.warn("[Startup] Aviso: não foi possível semear as bitolas oficiais FOB/OBJO (sistema continua funcionando normalmente).");
+    console.warn(error);
+  }
+
   const app = express();
   const server = createServer(app);
   // Health check endpoint
