@@ -977,6 +977,19 @@ function ModoTecnico() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">{label}</CardTitle>
               <CardDescription>{sel.size === 0 ? "Nenhuma mutação selecionada" : `${sel.size} mutação(ões)`}</CardDescription>
+              {sel.size > 4 && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1">
+                  ⚠️ {sel.size} mutações simultâneas num único pássaro é raro na prática — a maioria dos canários reais
+                  carrega 1 a 3 mutações visíveis/portadas. Confira se isso reflete um pássaro real do seu plantel, ou
+                  se é uma simulação hipotética intencional.
+                </p>
+              )}
+              {sel.has("agata") && sel.has("canela") && (
+                <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1.5 mt-1">
+                  ℹ️ Ágata + Canela marcados juntos representa o mesmo pássaro que "Isabelino" (que já é a combinação
+                  das duas). Pra representar um Isabelino, considere marcar só a opção Isabelino em vez das duas.
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               <MutSelector mutations={mutations} sex={sex} selected={sel} genotypes={genos} onToggle={toggle} onGeno={onGeno} />

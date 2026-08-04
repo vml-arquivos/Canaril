@@ -11,7 +11,7 @@
  *   - Toda operação de escrita usa transação explícita
  */
 
-import { and, eq, asc, isNull, sql, notInArray } from "drizzle-orm";
+import { and, eq, asc, isNull, sql, notInArray, or } from "drizzle-orm";
 import { ring_batches, rings, birds } from "../../drizzle/schema";
 import { generateRingCode, generateBatchCodes } from "./ringParser";
 import type { Pool } from "pg";
@@ -65,21 +65,23 @@ export async function getNextAvailableRing(
   if (criteria.year) {
     batchConditions.push(eq(ring_batches.year, criteria.year));
   }
+  // Em todos os critérios abaixo: um lote SEM aquele campo preenchido é
+  // tratado como "universal" (serve pra qualquer pássaro nesse critério) —
+  // não como "não bate com nada". Sem isso, um lote genérico (sem raça
+  // definida, como o lote-padrão que a maioria dos criadores usa) nunca
+  // seria encontrado assim que qualquer critério específico fosse pedido —
+  // foi exatamente o bug que reapareceu ao ligar o filtro de raça.
   if (criteria.speciesName) {
-    batchConditions.push(eq(ring_batches.speciesName, criteria.speciesName));
+    batchConditions.push(or(isNull(ring_batches.speciesName), eq(ring_batches.speciesName, criteria.speciesName))!);
   }
   if (criteria.breedName) {
-    // Antes: breedName era aceito no tipo RingCriteria mas NUNCA aplicado
-    // como filtro — o sistema não conseguia distinguir, por exemplo, um
-    // lote de Roller de um lote de Gloster na hora de escolher a próxima
-    // anilha automaticamente.
-    batchConditions.push(eq(ring_batches.breedName, criteria.breedName));
+    batchConditions.push(or(isNull(ring_batches.breedName), eq(ring_batches.breedName, criteria.breedName))!);
   }
   if (criteria.modality) {
-    batchConditions.push(eq(ring_batches.modality, criteria.modality));
+    batchConditions.push(or(isNull(ring_batches.modality), eq(ring_batches.modality, criteria.modality))!);
   }
   if (criteria.ringGaugeMm) {
-    batchConditions.push(eq(ring_batches.ringGaugeMm, criteria.ringGaugeMm));
+    batchConditions.push(or(isNull(ring_batches.ringGaugeMm), eq(ring_batches.ringGaugeMm, criteria.ringGaugeMm))!);
   }
   // Filtra por tenant se especificado (usuários operacionais)
   if (criteria.tenantId !== null && criteria.tenantId !== undefined) {
@@ -92,6 +94,19 @@ export async function getNextAvailableRing(
     .from(ring_batches)
     .where(and(...batchConditions))
     .orderBy(asc(ring_batches.year));
+
+  // Entre os lotes compatíveis, prioriza o mais ESPECÍFICO pra essa raça —
+  // um lote com breedName batendo exatamente vem antes de um lote
+  // universal (sem raça definida), mesmo que o universal seja mais antigo.
+  // Sem isso, um lote genérico "roubaria" a vez de um lote feito sob
+  // medida pra raça certa.
+  if (criteria.breedName) {
+    compatibleBatches.sort((a, b) => {
+      const aMatch = a.breedName === criteria.breedName ? 0 : 1;
+      const bMatch = b.breedName === criteria.breedName ? 0 : 1;
+      return aMatch - bMatch;
+    });
+  }
 
   for (const batch of compatibleBatches) {
     // Busca as próximas anilhas disponíveis do lote (pega algumas para filtrar)

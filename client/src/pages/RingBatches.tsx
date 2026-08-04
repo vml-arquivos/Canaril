@@ -691,6 +691,11 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
   const [breederCode, setBreederCode] = useState("");
   const [rows, setRows] = useState<SplitRow[]>([emptySplitRow(), emptySplitRow()]);
   const utils = trpc.useUtils();
+  // Nomenclatura oficial já cadastrada no sistema (mesma lista usada em
+  // Pássaros) — em vez de digitar a raça como texto livre, seleciona da
+  // lista real, eliminando erro de digitação/grafia divergente que
+  // impedia a raça de bater com o pássaro na hora de anilhar.
+  const { data: officialBreeds = [] } = trpc.catalog.specialtiesList.useQuery();
 
   const createSplit = trpc.ringsV2.batches.createSplitOrder.useMutation({
     onSuccess: (data) => {
@@ -787,8 +792,15 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
           {rows.map((row, i) => (
             <div key={i} className="grid grid-cols-12 gap-2 items-end bg-gray-50 rounded-lg p-3">
               <div className="col-span-4">
-                <Label className="text-xs">Raça</Label>
-                <Input value={row.breedName} onChange={(e) => updateRow(i, { breedName: e.target.value })} onBlur={(e) => suggestGaugeFor(i, e.target.value)} placeholder="Ex: Gloster, Roller" />
+                <Label className="text-xs">Raça (nomenclatura oficial)</Label>
+                <Select value={row.breedName} onValueChange={(v) => { updateRow(i, { breedName: v }); suggestGaugeFor(i, v); }}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Selecione a raça..." /></SelectTrigger>
+                  <SelectContent>
+                    {officialBreeds.map((b: any) => (
+                      <SelectItem key={b.code} value={b.name}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="col-span-2">
                 <Label className="text-xs">Bitola (mm)</Label>
