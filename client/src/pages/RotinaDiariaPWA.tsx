@@ -12,7 +12,7 @@ import { useState, useCallback, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { ChevronDown, ChevronUp, RefreshCw, Info, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronRight, RefreshCw, Info, Pencil, Trash2 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 
@@ -666,6 +666,34 @@ export default function RotinaDiariaPWA() {
                     isOpen={!!openSections[`${couple.coupleId}-history`]}
                     onToggle={() => toggleSection(`${couple.coupleId}-history`)}
                   />
+
+                  {/* Banner bem visível — some passar despercebido: quando há
+                      filhote nascido e ainda não anilhado, aparece aqui,
+                      não só como mais um ícone igual aos outros. */}
+                  {(() => {
+                    const chicksExpected = (couple as any).chicksExpected ?? 0;
+                    const chicksRinged = (couple as any).chicksRingedCount ?? 0;
+                    const pending = chicksExpected - chicksRinged;
+                    if (pending <= 0) return null;
+                    const key = `${couple.coupleId}-CHICK_RINGED`;
+                    const busy = pending && ringAndPromote.isPending;
+                    return (
+                      <button
+                        disabled={!!busy}
+                        onClick={() => handleEvent(couple.coupleId, clutchId, "CHICK_RINGED")}
+                        className="w-full mb-3 flex items-center justify-between gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-3 text-left active:scale-[0.98] transition-transform disabled:opacity-60"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="text-2xl">💍</span>
+                          <span>
+                            <span className="block text-sm font-bold">{pending} filhote{pending > 1 ? "s" : ""} pra anilhar</span>
+                            <span className="block text-xs text-blue-100">Toque aqui — anilha e já cria o cadastro em Pássaros</span>
+                          </span>
+                        </span>
+                        <ChevronRight className="w-5 h-5 shrink-0" />
+                      </button>
+                    );
+                  })()}
 
                   {/* Status da postura ativa */}
                   {clutchTotals && (

@@ -5,7 +5,7 @@
  *   Par Ideal          — encontra o melhor parceiro no plantel
  *   Casal do Plantel   — analisa dois pássaros reais (Relatório completo)
  *   Modo Guiado        — passo a passo sem termos técnicos
- *   Modo Técnico       — Punnett quadrado com todas as 18 mutações
+ *   Modo Técnico       — Punnett quadrado com todas as 20 mutações
  *   Comparar Cenários  — compara até 4 cruzamentos lado a lado
  *   Referência         — catálogo genético completo
  */
@@ -1520,19 +1520,39 @@ export default function GeneticsCalculator() {
             Calculadora Genética Profissional
           </h1>
           <p className="text-gray-500 mt-1 text-sm">
-            18 mutações · Sistema ZZ/ZW · Punnett quadrado · COI · Relatório de cruzamento
+            20 mutações · Sistema ZZ/ZW · Punnett quadrado · COI · Relatório de cruzamento
           </p>
+        </div>
+
+        {/* Guia de níveis — do mais simples ao mais profissional, sem precisar adivinhar qual aba usar */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            <p className="font-semibold text-green-800">🟢 Simples</p>
+            <p className="text-green-700 mt-0.5">Par Ideal, Modo Guiado</p>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+            <p className="font-semibold text-blue-800">🔵 Médio</p>
+            <p className="text-blue-700 mt-0.5">Casal do Plantel</p>
+          </div>
+          <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2">
+            <p className="font-semibold text-purple-800">🟣 Avançado</p>
+            <p className="text-purple-700 mt-0.5">Comparar, F1→F2, Temporada</p>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <p className="font-semibold text-red-800">🔴 Profissional</p>
+            <p className="text-red-700 mt-0.5">Modo Técnico (genótipo manual)</p>
+          </div>
         </div>
 
         <Tabs defaultValue="par-ideal">
           <TabsList className="flex-wrap h-auto gap-1">
-            <TabsTrigger value="par-ideal">    <Star className="w-3.5 h-3.5 mr-1.5" />Par Ideal</TabsTrigger>
-            <TabsTrigger value="plantel">      <Heart className="w-3.5 h-3.5 mr-1.5" />Casal do Plantel</TabsTrigger>
-            <TabsTrigger value="guiado">       <Zap className="w-3.5 h-3.5 mr-1.5" />Modo Guiado</TabsTrigger>
-            <TabsTrigger value="tecnico">      <FlaskConical className="w-3.5 h-3.5 mr-1.5" />Modo Técnico</TabsTrigger>
-            <TabsTrigger value="comparar">     <GitCompare className="w-3.5 h-3.5 mr-1.5" />Comparar Cenários</TabsTrigger>
-            <TabsTrigger value="f1f2">         <Layers className="w-3.5 h-3.5 mr-1.5" />Simulação F1→F2</TabsTrigger>
-            <TabsTrigger value="temporada">   <Users className="w-3.5 h-3.5 mr-1.5" />Plano de Temporada</TabsTrigger>
+            <TabsTrigger value="par-ideal">    <Star className="w-3.5 h-3.5 mr-1.5" />Par Ideal <span className="ml-1 text-[9px] text-green-600">●</span></TabsTrigger>
+            <TabsTrigger value="plantel">      <Heart className="w-3.5 h-3.5 mr-1.5" />Casal do Plantel <span className="ml-1 text-[9px] text-blue-600">●</span></TabsTrigger>
+            <TabsTrigger value="guiado">       <Zap className="w-3.5 h-3.5 mr-1.5" />Modo Guiado <span className="ml-1 text-[9px] text-green-600">●</span></TabsTrigger>
+            <TabsTrigger value="tecnico">      <FlaskConical className="w-3.5 h-3.5 mr-1.5" />Modo Técnico <span className="ml-1 text-[9px] text-red-600">●</span></TabsTrigger>
+            <TabsTrigger value="comparar">     <GitCompare className="w-3.5 h-3.5 mr-1.5" />Comparar Cenários <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
+            <TabsTrigger value="f1f2">         <Layers className="w-3.5 h-3.5 mr-1.5" />Simulação F1→F2 <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
+            <TabsTrigger value="temporada">   <Users className="w-3.5 h-3.5 mr-1.5" />Plano de Temporada <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
             <TabsTrigger value="referencia">   <BookOpen className="w-3.5 h-3.5 mr-1.5" />Referência</TabsTrigger>
           </TabsList>
 

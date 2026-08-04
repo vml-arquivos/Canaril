@@ -228,12 +228,12 @@ export function interpretOfficialClass(officialName: string, modality: Modality 
     result.reasoning.push('"COBRE" → série negra com fator vermelho.');
   }
   if (upper.includes("ASAS BRANCAS") || upper.includes("ASA BRANCA")) {
-    result.visibleMutations.push("asas_brancas");
+    result.visibleMutations.push("asasBrancas"); // antes: "asas_brancas" — não batia com a chave real em MUTATION_CONFIG
     result.reasoning.push('"ASAS BRANCAS" → traço asas brancas (categórico/configurável).');
   }
   if (upper.includes("ASAS CINZA") || upper.includes("ASA CINZA")) {
     result.melaninSeries = result.melaninSeries ?? "asas_cinza";
-    result.visibleMutations.push("asas_cinza");
+    result.visibleMutations.push("asasCinza"); // antes: "asas_cinza" — não batia com a chave real em MUTATION_CONFIG
     result.reasoning.push('"ASAS CINZA" → mutação asas cinza (sexo-ligada).');
   }
   if (upper.includes("ACETINADO")) {

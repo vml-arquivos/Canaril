@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
-import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders, cages } from "../../drizzle/schema";
+import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders, cages, breeding_species_rules } from "../../drizzle/schema";
 import { and, eq, desc, sql, isNull, gte, lte } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
 import { getNextAvailableRing } from "../_core/ringAllocator";
@@ -395,18 +395,22 @@ export const managementRouter = router({
         if (!db) throw new Error("Database not available");
         const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
         try {
-          // Aviso (não bloqueio) se o casal já passou de 4 posturas no
-          // mesmo ano-calendário da nova postura — 4/ano é a prática
-          // recomendada de descanso reprodutivo do casal, mas não travamos
-          // o cadastro pra não impedir correção de dados históricos.
+          // Aviso (não bloqueio) se o casal já passou do limite de posturas
+          // no mesmo ano-calendário — usa a regra configurável
+          // breeding_species_rules.maxClutchesPerSeason (padrão 3, já
+          // existia no schema) em vez de um número fixo no código. Não
+          // bloqueia o cadastro pra não impedir correção de dados históricos.
+          const [rule] = await db.select().from(breeding_species_rules).limit(1);
+          const maxPerYear = rule?.maxClutchesPerSeason ?? 3;
+
           const year = input.clutchDate.getFullYear();
           const yearStart = new Date(year, 0, 1);
           const yearEnd = new Date(year, 11, 31, 23, 59, 59);
           const sameYearClutches = await db.select().from(clutches).where(
             and(eq(clutches.coupleId, input.coupleId), gte(clutches.clutchDate, yearStart), lte(clutches.clutchDate, yearEnd), isNull(clutches.deletedAt))
           );
-          const warning = sameYearClutches.length >= 4
-            ? `Atenção: este casal já tem ${sameYearClutches.length} postura(s) registrada(s) em ${year}. O recomendado é no máximo 4 por ano, pra não desgastar o casal.`
+          const warning = sameYearClutches.length >= maxPerYear
+            ? `Atenção: este casal já tem ${sameYearClutches.length} postura(s) registrada(s) em ${year}. O recomendado é no máximo ${maxPerYear} por ano, pra não desgastar o casal.`
             : null;
 
           await db.insert(clutches).values({

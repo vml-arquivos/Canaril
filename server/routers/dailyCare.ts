@@ -199,6 +199,21 @@ export const dailyCareRouter = router({
         clutchId = newClutch.id;
       }
 
+      // Trava real: uma postura de canário não passa de ~8 ovos na prática
+      // (o normal é 3-6). Sem isso, dava pra clicar "Ovo adicionado" quantas
+      // vezes quiser, todo santo dia, na mesma postura — o que é
+      // biologicamente impossível e distorcia todos os relatórios.
+      const MAX_EGGS_PER_CLUTCH = 8;
+      if (input.eventType === "EGG_ADDED" && clutchId) {
+        const [currentClutch] = await db.select({ totalEggs: clutches.totalEggs }).from(clutches).where(eq(clutches.id, clutchId)).limit(1);
+        const currentTotal = currentClutch?.totalEggs ?? 0;
+        if (currentTotal + input.quantity > MAX_EGGS_PER_CLUTCH) {
+          throw new Error(
+            `Esta postura já tem ${currentTotal} ovo(s) registrado(s). O normal pra um canário é até ${MAX_EGGS_PER_CLUTCH} ovos por postura — confira se não é o caso de iniciar uma nova postura em vez de continuar registrando nesta.`
+          );
+        }
+      }
+
       // Insert the log
       const [log] = await db.insert(breeding_daily_logs).values({
         coupleId: input.coupleId,
