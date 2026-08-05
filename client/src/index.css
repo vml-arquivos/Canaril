@@ -336,3 +336,40 @@ input, select, textarea { font-size: max(16px, 1em); }
   border: 2px solid transparent;
   background-clip: padding-box;
 }
+
+/* ─── Anti-overlap hardening: selected values and modal grids ─────────────── */
+[data-slot="dialog-content"] {
+  max-width: calc(100vw - 1.5rem);
+}
+
+[data-slot="dialog-content"] > *,
+[data-slot="dialog-content"] form,
+[data-slot="dialog-content"] fieldset,
+[data-slot="dialog-content"] [class*="grid"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-slot="select-trigger"] {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+[data-slot="select-trigger"] [data-slot="select-value"],
+[data-slot="select-trigger"] [data-slot="select-value"] > *,
+[data-slot="select-item"] [data-radix-collection-item],
+[data-slot="select-item"] span {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-slot="select-trigger"] [data-slot="select-value"] {
+  width: 0;
+  flex: 1 1 0%;
+}
+
+[data-slot="select-content"] [role="option"] {
+  min-width: 0;
+  max-width: 100%;
+}

@@ -259,7 +259,7 @@ export default function RingBatches() {
                   <Plus className="h-4 w-4 mr-2" /> Novo Lote
                 </Button>
               </DialogTrigger>
-              <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
+              <DialogContent className="w-[calc(100vw-1.5rem)] !max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
                 <DialogHeader className="pr-8 border-b pb-4">
                   <DialogTitle>Criar lote de anilhas</DialogTitle>
                   <DialogDescription>
@@ -815,7 +815,7 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
           <Plus className="h-4 w-4 mr-2" /> Pedido rápido por raça
         </Button>
       </DialogTrigger>
-      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
+      <DialogContent className="w-[calc(100vw-1.5rem)] !max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
         <DialogHeader className="pr-8 border-b pb-4">
           <DialogTitle>Pedido rápido de anilhas</DialogTitle>
           <DialogDescription>

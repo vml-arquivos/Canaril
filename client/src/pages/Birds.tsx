@@ -485,7 +485,7 @@ export default function Birds() {
                 Novo Pássaro
               </Button>
             </DialogTrigger>
-            <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
+            <DialogContent className="w-[calc(100vw-1.5rem)] !max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6" style={{ maxWidth: "64rem" }}>
               <DialogHeader className="pr-8 border-b pb-4">
                 <DialogTitle>{editingId ? "Editar Pássaro" : "Cadastrar Novo Pássaro"}</DialogTitle>
                 <DialogDescription>
@@ -647,34 +647,50 @@ export default function Birds() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div>
+                  <div className="grid min-w-0 grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="min-w-0 overflow-hidden">
                       <Label htmlFor="fatherId">Pai conhecido</Label>
                       <Select value={formData.fatherId} onValueChange={(value) => patchForm({ fatherId: value })}>
-                        <SelectTrigger className="w-full min-w-0 overflow-hidden">
-                          <SelectValue placeholder="Não informado" />
+                        <SelectTrigger id="fatherId" className="w-full min-w-0 max-w-full overflow-hidden">
+                          <SelectValue placeholder="Não informado">
+                            <span className="block min-w-0 max-w-full truncate">
+                              {formData.fatherId && formData.fatherId !== "none"
+                                ? (allBirdsForSelects ?? []).find((b) => String(b.id) === formData.fatherId)?.displayTitle
+                                  || (allBirdsForSelects ?? []).find((b) => String(b.id) === formData.fatherId)?.ring
+                                  || "Não informado"
+                                : "Não informado"}
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
-                        <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
+                        <SelectContent className="!w-[var(--radix-select-trigger-width)] max-w-[min(34rem,calc(100vw-2rem))]">
                           <SelectItem value="none">Não informado</SelectItem>
                           {(allBirdsForSelects ?? []).filter((b) => b.id !== editingId && b.sex !== "fêmea").map((b) => (
-                            <SelectItem key={b.id} value={String(b.id)} title={b.displayTitle || b.ring}>
-                              <span className="block min-w-0 truncate">{b.displayTitle || b.ring}</span>
+                            <SelectItem key={b.id} value={String(b.id)} textValue={b.displayTitle || b.ring} title={b.displayTitle || b.ring}>
+                              {b.displayTitle || b.ring}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
-                    <div>
+                    <div className="min-w-0 overflow-hidden">
                       <Label htmlFor="motherId">Mãe conhecida</Label>
                       <Select value={formData.motherId} onValueChange={(value) => patchForm({ motherId: value })}>
-                        <SelectTrigger className="w-full min-w-0 overflow-hidden">
-                          <SelectValue placeholder="Não informado" />
+                        <SelectTrigger id="motherId" className="w-full min-w-0 max-w-full overflow-hidden">
+                          <SelectValue placeholder="Não informado">
+                            <span className="block min-w-0 max-w-full truncate">
+                              {formData.motherId && formData.motherId !== "none"
+                                ? (allBirdsForSelects ?? []).find((b) => String(b.id) === formData.motherId)?.displayTitle
+                                  || (allBirdsForSelects ?? []).find((b) => String(b.id) === formData.motherId)?.ring
+                                  || "Não informado"
+                                : "Não informado"}
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
-                        <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
+                        <SelectContent className="!w-[var(--radix-select-trigger-width)] max-w-[min(34rem,calc(100vw-2rem))]">
                           <SelectItem value="none">Não informado</SelectItem>
                           {(allBirdsForSelects ?? []).filter((b) => b.id !== editingId && b.sex !== "macho").map((b) => (
-                            <SelectItem key={b.id} value={String(b.id)} title={b.displayTitle || b.ring}>
-                              <span className="block min-w-0 truncate">{b.displayTitle || b.ring}</span>
+                            <SelectItem key={b.id} value={String(b.id)} textValue={b.displayTitle || b.ring} title={b.displayTitle || b.ring}>
+                              {b.displayTitle || b.ring}
                             </SelectItem>
                           ))}
                         </SelectContent>
