@@ -256,6 +256,10 @@ export const couples = pgTable("couples", {
   // existente — mantido nullable para não quebrar casais já cadastrados
   // antes desta tabela existir.
   cageId: integer("cageId"),
+  // Método reprodutivo declarado. "bigamy" exige confirmação explícita quando
+  // o mesmo macho participa de mais de um casal ativo.
+  pairingMethod: varchar("pairingMethod", { length: 20 }).default("monogamy").notNull(),
+  maleReuseConfirmed: boolean("maleReuseConfirmed").default(false).notNull(),
   formationDate: timestamp("formationDate").notNull(),
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),

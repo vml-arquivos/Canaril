@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router, requireTenantAccess } from "../_core/trpc";
 import { getDb, getPool } from "../db";
-import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders, breeding_species_rules } from "../../drizzle/schema";
+import { birds, ring_batches, rings, couples, clutches, chicks, breeding_reminders, breeding_species_rules, cages } from "../../drizzle/schema";
 import { and, eq, desc, sql, isNull, gte, lte } from "drizzle-orm";
 import { generateBreedingReminders } from "../_core/breeding";
 import { ringAndPromoteChick } from "../_core/ringPromotion";
@@ -95,7 +95,9 @@ async function createCoupleWithReminders(params: {
   tenantId: number;
   maleId: number;
   femaleId: number;
-  cageNumber: string;
+  cageId: number;
+  pairingMethod: "monogamy" | "bigamy";
+  maleReuseConfirmed: boolean;
   formationDate: Date;
 }) {
   const pool = getPool();
@@ -120,20 +122,58 @@ async function createCoupleWithReminders(params: {
     if (!new Set(["macho", "M"]).has(male.sex)) throw new Error("O pássaro selecionado como macho possui sexo incompatível.");
     if (!new Set(["fêmea", "F"]).has(female.sex)) throw new Error("O pássaro selecionado como fêmea possui sexo incompatível.");
 
-    const duplicate = await client.query(
+    const cageResult = await client.query<{ id: number; code: string; status: string }>(
+      `SELECT id, code, status FROM cages
+        WHERE id=$1 AND "tenantId"=$2 AND "deletedAt" IS NULL
+        FOR UPDATE`,
+      [params.cageId, params.tenantId],
+    );
+    const cage = cageResult.rows[0];
+    if (!cage) throw new Error("Selecione uma gaiola cadastrada neste criadouro.");
+    if (cage.status === "maintenance") throw new Error("A gaiola selecionada está em manutenção.");
+
+    const duplicate = await client.query<{ id: number }>(
       `SELECT id FROM couples
         WHERE "tenantId"=$1 AND status='active' AND "deletedAt" IS NULL
-          AND ("femaleId"=$2 OR ("maleId"=$3 AND "femaleId"=$2))
+          AND "femaleId"=$2
         FOR UPDATE`,
-      [params.tenantId, params.femaleId, params.maleId],
+      [params.tenantId, params.femaleId],
     );
     if (duplicate.rows.length > 0) throw new Error("A fêmea já está em um casal ativo.");
 
-    const created = await client.query<Record<string, unknown>>(
-      `INSERT INTO couples ("maleId","femaleId","cageNumber","formationDate",status,"tenantId")
-       VALUES ($1,$2,$3,$4,'active',$5) RETURNING *`,
-      [params.maleId, params.femaleId, params.cageNumber, params.formationDate, params.tenantId],
+    const cageOccupied = await client.query<{ id: number }>(
+      `SELECT id FROM couples
+        WHERE "tenantId"=$1 AND status='active' AND "deletedAt" IS NULL AND "cageId"=$2
+        FOR UPDATE`,
+      [params.tenantId, params.cageId],
     );
+    if (cageOccupied.rows.length > 0) throw new Error("A gaiola selecionada já possui um casal ativo.");
+
+    const activeMaleUsage = await client.query<{ id: number }>(
+      `SELECT id FROM couples
+        WHERE "tenantId"=$1 AND status='active' AND "deletedAt" IS NULL AND "maleId"=$2
+        FOR UPDATE`,
+      [params.tenantId, params.maleId],
+    );
+    if (activeMaleUsage.rows.length > 0 && (params.pairingMethod !== "bigamy" || !params.maleReuseConfirmed)) {
+      throw new Error("Este macho já está em outro casal ativo. Marque o método de bigamia e confirme o reaproveitamento do macho.");
+    }
+
+    if (activeMaleUsage.rows.length > 0) {
+      await client.query(
+        `UPDATE couples SET "pairingMethod"='bigamy', "maleReuseConfirmed"=TRUE, "updatedAt"=NOW()
+          WHERE "tenantId"=$1 AND "maleId"=$2 AND status='active' AND "deletedAt" IS NULL`,
+        [params.tenantId, params.maleId],
+      );
+    }
+
+    const created = await client.query<Record<string, unknown>>(
+      `INSERT INTO couples ("maleId","femaleId","cageNumber","cageId","pairingMethod","maleReuseConfirmed","formationDate",status,"tenantId")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8) RETURNING *`,
+      [params.maleId, params.femaleId, cage.code, params.cageId, params.pairingMethod, params.maleReuseConfirmed, params.formationDate, params.tenantId],
+    );
+
+    await client.query(`UPDATE cages SET status='occupied', "updatedAt"=NOW() WHERE id=$1 AND "tenantId"=$2`, [params.cageId, params.tenantId]);
     const couple = created.rows[0];
     if (!couple || typeof couple.id !== "number") throw new Error("Falha ao criar casal.");
 
@@ -304,11 +344,34 @@ export const managementRouter = router({
         }
       }),
 
+    maleUsage: protectedProcedure
+      .input(z.object({ maleId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        const pool = getPool();
+        if (!pool) return { active: [], history: [] };
+        const tenantId = requireTenantId(ctx);
+        const { rows } = await pool.query(
+          `SELECT cp.id, cp.status, cp."deletedAt", cp."pairingMethod", cp."formationDate", cp."cageNumber", cp."cageId",
+                  f.id AS "femaleId", f.ring AS "femaleRing", f."displayTitle" AS "femaleTitle",
+                  COUNT(cl.id)::integer AS "clutchCount", MAX(cl."clutchDate") AS "lastClutchDate"
+             FROM couples cp
+             JOIN birds f ON f.id=cp."femaleId" AND f."tenantId"=$2
+        LEFT JOIN clutches cl ON cl."coupleId"=cp.id AND cl."deletedAt" IS NULL AND cl."tenantId"=$2
+            WHERE cp."maleId"=$1 AND cp."tenantId"=$2
+         GROUP BY cp.id, f.id, f.ring, f."displayTitle"
+         ORDER BY CASE WHEN cp.status='active' THEN 0 ELSE 1 END, cp."formationDate" DESC`,
+          [input.maleId, tenantId],
+        );
+        return { active: rows.filter((r: any) => r.status === "active" && !r.deletedAt), history: rows };
+      }),
+
     create: protectedProcedure
       .input(z.object({
         maleId: z.number().int().positive(),
         femaleId: z.number().int().positive(),
-        cageNumber: z.string().trim().min(1).max(50),
+        cageId: z.number().int().positive(),
+        pairingMethod: z.enum(["monogamy", "bigamy"]).default("monogamy"),
+        maleReuseConfirmed: z.boolean().default(false),
         formationDate: z.date(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -323,7 +386,9 @@ export const managementRouter = router({
         id: z.number(),
         maleId: z.number().optional(),
         femaleId: z.number().optional(),
-        cageNumber: z.string().optional(),
+        cageId: z.number().int().positive().optional(),
+        pairingMethod: z.enum(["monogamy", "bigamy"]).optional(),
+        maleReuseConfirmed: z.boolean().optional(),
         formationDate: z.date().optional(),
         status: z.string().optional(),
       }))
@@ -350,7 +415,52 @@ export const managementRouter = router({
             if (duplicatePair) throw new Error("Este mesmo casal já está ativo.");
             if (femaleTaken) throw new Error("Este pássaro (fêmea) já está em outro casal ativo.");
           }
-          await db.update(couples).set({ ...fields, updatedAt: new Date() }).where(eq(couples.id, id));
+          const updateFields: Record<string, unknown> = { ...fields, updatedAt: new Date() };
+          if (input.cageId !== undefined) {
+            const [selectedCage] = await db.select().from(cages).where(and(
+              eq(cages.id, input.cageId),
+              eq(cages.tenantId, requireTenantId(ctx)),
+              isNull(cages.deletedAt),
+            )).limit(1);
+            if (!selectedCage) throw new Error("Selecione uma gaiola cadastrada neste criadouro.");
+            if (selectedCage.status === "maintenance") throw new Error("A gaiola selecionada está em manutenção.");
+            const occupied = await db.select({ id: couples.id }).from(couples).where(and(
+              eq(couples.cageId, input.cageId),
+              eq(couples.tenantId, requireTenantId(ctx)),
+              eq(couples.status, "active"),
+              isNull(couples.deletedAt),
+            ));
+            if (occupied.some((row) => row.id !== id)) throw new Error("A gaiola selecionada já possui outro casal ativo.");
+            updateFields.cageNumber = selectedCage.code;
+          }
+
+          const checkMaleId = input.maleId ?? existing.maleId;
+          const otherMaleUsage = await db.select({ id: couples.id }).from(couples).where(and(
+            eq(couples.maleId, checkMaleId),
+            eq(couples.tenantId, requireTenantId(ctx)),
+            eq(couples.status, "active"),
+            isNull(couples.deletedAt),
+          ));
+          const hasOtherActiveMaleCouple = otherMaleUsage.some((row) => row.id !== id);
+          const method = input.pairingMethod ?? existing.pairingMethod;
+          const confirmed = input.maleReuseConfirmed ?? existing.maleReuseConfirmed;
+          if (hasOtherActiveMaleCouple && (method !== "bigamy" || !confirmed)) {
+            throw new Error("Este macho já está em outro casal ativo. Confirme o método de bigamia.");
+          }
+
+          await db.update(couples).set(updateFields).where(eq(couples.id, id));
+          if (input.cageId !== undefined && input.cageId !== existing.cageId) {
+            if (existing.cageId) {
+              const stillUsed = await db.select({ id: couples.id }).from(couples).where(and(
+                eq(couples.cageId, existing.cageId), eq(couples.status, "active"), isNull(couples.deletedAt),
+              )).limit(1);
+              if (stillUsed.length === 0) await db.update(cages).set({ status: "free", updatedAt: new Date() }).where(eq(cages.id, existing.cageId));
+            }
+            await db.update(cages).set({ status: "occupied", updatedAt: new Date() }).where(eq(cages.id, input.cageId));
+          }
+          if (input.status && input.status !== "active" && existing.cageId) {
+            await db.update(cages).set({ status: "free", updatedAt: new Date() }).where(eq(cages.id, existing.cageId));
+          }
           return { success: true };
         } catch (error) {
           console.error("Error updating couple:", error);
@@ -378,6 +488,11 @@ export const managementRouter = router({
             deletedBy: ctx.user.id,
             updatedAt: new Date(),
           }).where(and(eq(couples.id, input), eq(couples.tenantId, requireTenantId(ctx))));
+          if (existing.cageId) {
+            await db.update(cages).set({ status: "free", updatedAt: new Date() }).where(and(
+              eq(cages.id, existing.cageId), eq(cages.tenantId, requireTenantId(ctx)),
+            ));
+          }
           return { success: true };
         } catch (error) {
           console.error("Error deleting couple:", error);

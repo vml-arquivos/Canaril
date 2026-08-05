@@ -14,7 +14,7 @@ import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Hear
 import { toast } from "sonner";
 import { Link } from "wouter";
 
-const emptyForm = { maleId: "", femaleId: "", cageNumber: "", formationDate: "", status: "active" };
+const emptyForm = { maleId: "", femaleId: "", cageId: "", formationDate: "", status: "active", pairingMethod: "monogamy" as "monogamy" | "bigamy", maleReuseConfirmed: false };
 
 const PAIRING_OBJECTIVES: { value: "cor" | "porte" | "show" | "linhagem" | "diversidade" | "portadores"; label: string; desc: string }[] = [
   { value: "linhagem",    label: "Manter linhagem",      desc: "Preserva as características da linha atual" },
@@ -218,6 +218,13 @@ export default function Couples() {
 
   const { data: couples, refetch } = trpc.management.couples.list.useQuery();
   const { data: birds } = trpc.birds.list.useQuery({});
+  const { data: cages = [] } = trpc.cages.list.useQuery();
+  const { data: maleUsage } = trpc.management.couples.maleUsage.useQuery(
+    { maleId: Number(formData.maleId) || 0 },
+    { enabled: !!formData.maleId && !editingId },
+  );
+  const activeMaleUsages = maleUsage?.active ?? [];
+  const isMaleAlreadyActive = activeMaleUsages.length > 0;
   // Fêmea já vinculada a um casal ATIVO não pode formar outro casal — some
   // da lista até o casal anterior ser desfeito/excluído. O MACHO pode
   // estar em vários casais ativos ao mesmo tempo (uso em "harém", comum na
@@ -270,16 +277,18 @@ export default function Couples() {
     setFormData({
       maleId: String(couple.maleId),
       femaleId: String(couple.femaleId),
-      cageNumber: couple.cageNumber ?? "",
+      cageId: couple.cageId ? String(couple.cageId) : "",
       formationDate: new Date(couple.formationDate).toISOString().slice(0, 10),
       status: couple.status,
+      pairingMethod: (couple.pairingMethod === "bigamy" ? "bigamy" : "monogamy"),
+      maleReuseConfirmed: Boolean(couple.maleReuseConfirmed),
     });
     setOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.maleId || !formData.femaleId || !formData.formationDate) {
+    if (!formData.maleId || !formData.femaleId || !formData.cageId || !formData.formationDate) {
       toast.error("Preencha todos os campos obrigatórios");
       return;
     }
@@ -287,7 +296,9 @@ export default function Couples() {
     const payload = {
       maleId: parseInt(formData.maleId),
       femaleId: parseInt(formData.femaleId),
-      cageNumber: formData.cageNumber,
+      cageId: parseInt(formData.cageId),
+      pairingMethod: formData.pairingMethod,
+      maleReuseConfirmed: formData.maleReuseConfirmed,
       formationDate: new Date(formData.formationDate),
     };
 
@@ -379,13 +390,27 @@ export default function Couples() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="cageNumber">Número da Gaiola</Label>
-                    <Input
-                      id="cageNumber"
-                      value={formData.cageNumber}
-                      onChange={(e) => setFormData({ ...formData, cageNumber: e.target.value })}
-                      placeholder="Ex: G-01"
-                    />
+                    <Label htmlFor="cageId">Gaiola cadastrada *</Label>
+                    <Select value={formData.cageId} onValueChange={(value) => setFormData({ ...formData, cageId: value })}>
+                      <SelectTrigger id="cageId">
+                        <SelectValue placeholder="Selecione a gaiola correta..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cages.map((cage) => {
+                          const activeCouple = couples?.find((c) => c.status === "active" && c.cageId === cage.id && c.id !== editingId);
+                          const unavailable = cage.status === "maintenance" || Boolean(activeCouple);
+                          return (
+                            <SelectItem key={cage.id} value={String(cage.id)} disabled={unavailable}>
+                              {cage.code}{cage.section ? ` — ${cage.section}` : ""}
+                              {cage.status === "maintenance" ? " · manutenção" : activeCouple ? ` · ocupada pelo casal #${activeCouple.id}` : " · disponível"}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    {cages.length === 0 && (
+                      <p className="text-xs text-red-600 mt-1">Cadastre primeiro as gaiolas em Infraestrutura → Gaiolas.</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="formationDate">Data de Formação *</Label>
@@ -413,6 +438,76 @@ export default function Couples() {
                   )}
                 </div>
 
+                {!editingId && formData.maleId && (
+                  <div className={`rounded-xl border-2 p-4 ${isMaleAlreadyActive ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${isMaleAlreadyActive ? "text-amber-600" : "text-emerald-600"}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm text-gray-900">Uso reprodutivo deste macho</p>
+                        {isMaleAlreadyActive ? (
+                          <>
+                            <p className="text-sm text-amber-800 mt-1">
+                              Este macho já está em {activeMaleUsages.length} casal{activeMaleUsages.length > 1 ? "is" : ""} ativo{activeMaleUsages.length > 1 ? "s" : ""}. Para formar outro casal, registre explicitamente o método de bigamia.
+                            </p>
+                            <div className="mt-3 space-y-2">
+                              {activeMaleUsages.map((usage: any) => (
+                                <div key={usage.id} className="rounded-lg border bg-white px-3 py-2 text-xs text-gray-700">
+                                  <div className="font-medium">Gaiola {usage.cageNumber} · Fêmea {usage.femaleRing}</div>
+                                  <div className="text-gray-500 mt-0.5">
+                                    {usage.femaleTitle || "Sem título completo"} · {usage.clutchCount} postura{usage.clutchCount === 1 ? "" : "s"}
+                                    {usage.lastClutchDate ? ` · última em ${new Date(usage.lastClutchDate).toLocaleDateString("pt-BR")}` : ""}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <label className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-white p-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formData.pairingMethod === "bigamy" && formData.maleReuseConfirmed}
+                                onChange={(e) => setFormData({
+                                  ...formData,
+                                  pairingMethod: e.target.checked ? "bigamy" : "monogamy",
+                                  maleReuseConfirmed: e.target.checked,
+                                })}
+                                className="mt-0.5 h-4 w-4"
+                              />
+                              <span className="text-sm text-gray-800">
+                                Confirmo que este macho será utilizado pelo <strong>método de bigamia</strong> em outra gaiola e estou ciente dos casais e posturas já registrados acima.
+                              </span>
+                            </label>
+                          </>
+                        ) : (
+                          <p className="text-sm text-emerald-800 mt-1">Nenhum outro casal ativo encontrado para este macho. O método padrão será monogamia.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!editingId && formData.maleId && (maleUsage?.history?.length ?? 0) > 0 && (
+                  <details className="rounded-xl border bg-slate-50 p-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+                      Histórico reprodutivo do macho ({maleUsage?.history.length})
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {maleUsage?.history.map((usage: any) => (
+                        <div key={usage.id} className="grid gap-1 rounded-lg border bg-white px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-800 truncate">
+                              Fêmea {usage.femaleRing} · Gaiola {usage.cageNumber}
+                            </p>
+                            <p className="text-gray-500 truncate">{usage.femaleTitle || "Sem título completo"}</p>
+                          </div>
+                          <div className="text-left text-gray-500 sm:text-right">
+                            <p>{usage.clutchCount} postura{usage.clutchCount === 1 ? "" : "s"}</p>
+                            <p>{usage.status === "active" && !usage.deletedAt ? "Ativo" : "Encerrado"}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
                 {/* Sugestão de par ideal — aparece assim que UM dos dois lados é
                     escolhido, antes do outro. Reaproveita genetics.recommendPairing,
                     que já existia mas só estava exposto dentro da Calculadora
@@ -435,7 +530,7 @@ export default function Couples() {
                   <Button type="button" variant="outline" onClick={closeDialog}>
                     Cancelar
                   </Button>
-                  <Button type="submit" className="bg-green-600 hover:bg-green-700">
+                  <Button type="submit" className="bg-green-600 hover:bg-green-700" disabled={cages.length === 0 || (isMaleAlreadyActive && !formData.maleReuseConfirmed)}>
                     {editingId ? "Salvar alterações" : "Formar Casal"}
                   </Button>
                 </div>
@@ -465,13 +560,18 @@ export default function Couples() {
                         <span className="text-xs font-mono font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
                           Gaiola {couple.cageNumber || "-"}
                         </span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                          couple.status === "active" ? "bg-green-100 text-green-800" :
-                          couple.status === "finalized" ? "bg-blue-100 text-blue-800" :
-                          "bg-gray-100 text-gray-600"
-                        }`}>
-                          {couple.status === "active" ? "Ativo" : couple.status === "finalized" ? "Finalizado" : "Desfeito"}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {couple.pairingMethod === "bigamy" && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-100 text-purple-800">Bigamia</span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                            couple.status === "active" ? "bg-green-100 text-green-800" :
+                            couple.status === "finalized" ? "bg-blue-100 text-blue-800" :
+                            "bg-gray-100 text-gray-600"
+                          }`}>
+                            {couple.status === "active" ? "Ativo" : couple.status === "finalized" ? "Finalizado" : "Desfeito"}
+                          </span>
+                        </div>
                       </div>
                       <div className="flex items-center justify-center gap-3 py-2">
                         <BirdMini bird={male} symbol="♂" color="text-blue-500" />
@@ -508,6 +608,7 @@ export default function Couples() {
                       <TableHead>Macho</TableHead>
                       <TableHead>Fêmea</TableHead>
                       <TableHead>Data Formação</TableHead>
+                      <TableHead>Método</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Ações</TableHead>
                     </TableRow>
@@ -519,6 +620,11 @@ export default function Couples() {
                         <TableCell className="font-mono text-sm">{ringOf(couple.maleId)}</TableCell>
                         <TableCell className="font-mono text-sm">{ringOf(couple.femaleId)}</TableCell>
                         <TableCell>{new Date(couple.formationDate).toLocaleDateString("pt-BR")}</TableCell>
+                        <TableCell>
+                          <Badge className={couple.pairingMethod === "bigamy" ? "bg-purple-100 text-purple-800" : "bg-slate-100 text-slate-700"}>
+                            {couple.pairingMethod === "bigamy" ? "Bigamia" : "Monogamia"}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             couple.status === "active" ? "bg-green-100 text-green-800" :
@@ -689,7 +795,7 @@ function CoupleDetailDialog({
   onClose,
   onEdit,
 }: {
-  couple: { id: number; cageNumber: string | null; formationDate: Date | string; status: string } | null | undefined;
+  couple: { id: number; cageNumber: string | null; formationDate: Date | string; status: string; pairingMethod?: string | null; maleReuseConfirmed?: boolean | null } | null | undefined;
   male: { id: number; ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
   female: { id: number; ring: string; specialty_code: string; color_code: string; sex: string } | undefined;
   onClose: () => void;
@@ -707,6 +813,13 @@ function CoupleDetailDialog({
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
+                <div>
+                  <p className="text-xs text-gray-400 uppercase">Método reprodutivo</p>
+                  <p className="font-semibold text-gray-900">{couple.pairingMethod === "bigamy" ? "Bigamia" : "Monogamia"}</p>
+                </div>
+                {couple.pairingMethod === "bigamy" && <Badge className="bg-purple-100 text-purple-800">Macho compartilhado</Badge>}
+              </div>
               {[
                 { label: "Macho", bird: male },
                 { label: "Fêmea", bird: female },
