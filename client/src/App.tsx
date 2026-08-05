@@ -19,6 +19,7 @@ import Dashboard from "@/pages/Dashboard";
 // Páginas pesadas — lazy loaded para reduzir o bundle inicial
 const Birds = lazy(() => import("@/pages/Birds"));
 const Couples = lazy(() => import("@/pages/Couples"));
+const CouplesHistory = lazy(() => import("@/pages/CouplesHistory"));
 const Rings = lazy(() => import("@/pages/Rings"));
 const Clutches = lazy(() => import("@/pages/Clutches"));
 const ControlSheetPDF = lazy(() => import("@/pages/ControlSheetPDF"));
@@ -163,6 +164,9 @@ function Router() {
       </Route>
       <Route path={"/birds/:birdId/ficha"}>
         {(params) => <ProtectedRoute component={BirdFichaPage} {...params} />}
+      </Route>
+      <Route path={"/couples/history"}>
+        {(params) => <ProtectedRoute component={CouplesHistory} {...params} />}
       </Route>
       <Route path={"/couples"}>
         {(params) => <ProtectedRoute component={Couples} {...params} />}
