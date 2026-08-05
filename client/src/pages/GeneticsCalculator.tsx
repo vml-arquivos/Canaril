@@ -434,7 +434,7 @@ function ParIdeal() {
           <p className="text-xs text-gray-500 mb-1.5">Pássaro base</p>
           <Select value={birdId} onValueChange={setBirdId}>
             <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione o pássaro" /></SelectTrigger>
-            <SelectContent className="max-h-64 w-[min(480px,90vw)]">
+            <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] max-h-72">
               {(allBirds ?? []).map((b) => (
                 <SelectItem key={b.id} value={String(b.id)}>
                   <div className="flex items-center gap-2 min-w-0">
@@ -579,8 +579,8 @@ function CasalPlantel() {
 
   return (
     <div className="space-y-5">
-      {/* Selects empilhados sempre — evita sobreposição de texto longo */}
-      <div className="space-y-3">
+      {/* Seletores responsivos: sem sobreposição e com leitura completa no dropdown. */}
+      <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-2">
         {[
           { label: "♂ Macho", list: males, val: maleId, set: setMaleId },
           { label: "♀ Fêmea", list: females, val: femaleId, set: setFemaleId },
@@ -591,12 +591,12 @@ function CasalPlantel() {
               <SelectTrigger className="w-full min-w-0">
                 <SelectValue placeholder="Selecione..." />
               </SelectTrigger>
-              <SelectContent className="max-h-64">
+              <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] max-h-72">
                 {list.map((b) => (
                   <SelectItem key={b.id} value={String(b.id)}>
                     <span className="font-mono font-semibold">{b.ring}</span>
                     {b.displayTitle && (
-                      <span className="text-gray-400 ml-2 text-xs">
+                      <span className="min-w-0 flex-1 truncate text-gray-400 ml-2 text-xs" title={b.displayTitle}>
                         {/* Truncar displayTitle longo para evitar overflow */}
                         {b.displayTitle.length > 60
                           ? b.displayTitle.slice(0, 60) + "…"
@@ -608,7 +608,7 @@ function CasalPlantel() {
               </SelectContent>
             </Select>
             {val && (
-              <p className="text-xs text-gray-400 mt-0.5 truncate">
+              <p className="mt-1 text-xs leading-relaxed text-gray-500 break-words">
                 {list.find((b) => String(b.id) === val)?.displayTitle ?? ""}
               </p>
             )}
@@ -761,7 +761,7 @@ function ModoGuiado() {
   );
 
   return (
-    <div className="space-y-5 max-w-2xl">
+    <div className="w-full min-w-0 max-w-3xl space-y-5">
       {/* Steps indicator */}
       <div className="flex items-center gap-2">
         {GUIADO_STEPS.map((s, i) => (
@@ -776,17 +776,17 @@ function ModoGuiado() {
       {/* Step 1: Pássaros */}
       {step === 0 && (
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">Escolha o macho e a fêmea</CardTitle></CardHeader>
+          <CardHeader className="border-b bg-slate-50/60 pb-3"><CardTitle className="text-base">Escolha o macho e a fêmea</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <div>
               <p className="text-xs text-gray-500 mb-1.5">♂ Macho</p>
               <Select value={maleId} onValueChange={setMaleId}>
                 <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione o macho" /></SelectTrigger>
-                <SelectContent className="max-h-56 w-[min(440px,90vw)]">
+                <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] max-h-72">
                   {males.map((b) => (
                     <SelectItem key={b.id} value={String(b.id)}>
                       <span className="font-mono font-semibold">{b.ring}</span>
-                      {b.displayTitle && <span className="text-gray-400 text-xs ml-2 truncate max-w-[280px] inline-block">{b.displayTitle}</span>}
+                      {b.displayTitle && <span className="min-w-0 flex-1 truncate text-gray-400 text-xs" title={b.displayTitle}>{b.displayTitle}</span>}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -796,11 +796,11 @@ function ModoGuiado() {
               <p className="text-xs text-gray-500 mb-1.5">♀ Fêmea</p>
               <Select value={femaleId} onValueChange={setFemaleId}>
                 <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione a fêmea" /></SelectTrigger>
-                <SelectContent className="max-h-56 w-[min(440px,90vw)]">
+                <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] max-h-72">
                   {females.map((b) => (
                     <SelectItem key={b.id} value={String(b.id)}>
                       <span className="font-mono font-semibold">{b.ring}</span>
-                      {b.displayTitle && <span className="text-gray-400 text-xs ml-2 truncate max-w-[280px] inline-block">{b.displayTitle}</span>}
+                      {b.displayTitle && <span className="min-w-0 flex-1 truncate text-gray-400 text-xs" title={b.displayTitle}>{b.displayTitle}</span>}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1526,7 +1526,7 @@ function PlanoTemporada() {
 export default function GeneticsCalculator() {
   return (
     <DashboardLayout>
-      <div className="space-y-5 max-w-5xl">
+      <div className="w-full min-w-0 max-w-6xl space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl flex items-center gap-3">
             <Dna className="w-8 h-8 text-amber-600" />
@@ -1558,15 +1558,15 @@ export default function GeneticsCalculator() {
         </div>
 
         <Tabs defaultValue="par-ideal">
-          <TabsList className="flex-wrap h-auto gap-1">
-            <TabsTrigger value="par-ideal">    <Star className="w-3.5 h-3.5 mr-1.5" />Par Ideal <span className="ml-1 text-[9px] text-green-600">●</span></TabsTrigger>
-            <TabsTrigger value="plantel">      <Heart className="w-3.5 h-3.5 mr-1.5" />Casal do Plantel <span className="ml-1 text-[9px] text-blue-600">●</span></TabsTrigger>
-            <TabsTrigger value="guiado">       <Zap className="w-3.5 h-3.5 mr-1.5" />Modo Guiado <span className="ml-1 text-[9px] text-green-600">●</span></TabsTrigger>
-            <TabsTrigger value="tecnico">      <FlaskConical className="w-3.5 h-3.5 mr-1.5" />Modo Técnico <span className="ml-1 text-[9px] text-red-600">●</span></TabsTrigger>
-            <TabsTrigger value="comparar">     <GitCompare className="w-3.5 h-3.5 mr-1.5" />Comparar Cenários <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
-            <TabsTrigger value="f1f2">         <Layers className="w-3.5 h-3.5 mr-1.5" />Simulação F1→F2 <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
-            <TabsTrigger value="temporada">   <Users className="w-3.5 h-3.5 mr-1.5" />Plano de Temporada <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
-            <TabsTrigger value="referencia">   <BookOpen className="w-3.5 h-3.5 mr-1.5" />Referência</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-slate-100/80 p-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="par-ideal">    <Star className="w-3.5 h-3.5 mr-1.5" />Par Ideal <span className="ml-1 text-[9px] text-green-600">●</span></TabsTrigger>
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="plantel">      <Heart className="w-3.5 h-3.5 mr-1.5" />Casal do Plantel <span className="ml-1 text-[9px] text-blue-600">●</span></TabsTrigger>
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="guiado">       <Zap className="w-3.5 h-3.5 mr-1.5" />Modo Guiado <span className="ml-1 text-[9px] text-green-600">●</span></TabsTrigger>
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="tecnico">      <FlaskConical className="w-3.5 h-3.5 mr-1.5" />Modo Técnico <span className="ml-1 text-[9px] text-red-600">●</span></TabsTrigger>
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="comparar">     <GitCompare className="w-3.5 h-3.5 mr-1.5" />Comparar Cenários <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="f1f2">         <Layers className="w-3.5 h-3.5 mr-1.5" />Simulação F1→F2 <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="temporada">   <Users className="w-3.5 h-3.5 mr-1.5" />Plano de Temporada <span className="ml-1 text-[9px] text-purple-600">●</span></TabsTrigger>
+            <TabsTrigger className="min-w-0 justify-center rounded-lg px-2 text-xs" value="referencia">   <BookOpen className="w-3.5 h-3.5 mr-1.5" />Referência</TabsTrigger>
           </TabsList>
 
           <TabsContent value="par-ideal"  className="mt-5"><ParIdeal /></TabsContent>

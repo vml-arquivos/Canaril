@@ -266,3 +266,73 @@ input, select, textarea { font-size: max(16px, 1em); }
 @media (max-width: 640px) {
   main { padding-left: 1rem !important; padding-right: 1rem !important; }
 }
+
+/* ─── Modal/select polish: no text overlap or horizontal scroll ────────────── */
+[data-slot="dialog-content"] {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+[data-slot="dialog-content"] .grid > * {
+  min-width: 0;
+}
+
+[data-slot="select-trigger"] [data-slot="select-value"] {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+[data-slot="select-item"] > span:last-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-slot="command-item"] > span,
+[data-slot="command-item"] > div {
+  min-width: 0;
+}
+
+[data-slot="dialog-content"],
+[data-slot="select-content"],
+[data-slot="command-list"] {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.7) transparent;
+}
+
+[data-slot="dialog-content"]::-webkit-scrollbar,
+[data-slot="select-content"]::-webkit-scrollbar,
+[data-slot="command-list"]::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-slot="dialog-content"]::-webkit-scrollbar-track,
+[data-slot="select-content"]::-webkit-scrollbar-track,
+[data-slot="command-list"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-slot="dialog-content"]::-webkit-scrollbar-thumb,
+[data-slot="select-content"]::-webkit-scrollbar-thumb,
+[data-slot="command-list"]::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184 / 0.55);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+[data-slot="dialog-content"]::-webkit-scrollbar-thumb:hover,
+[data-slot="select-content"]::-webkit-scrollbar-thumb:hover,
+[data-slot="command-list"]::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 116 139 / 0.7);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}

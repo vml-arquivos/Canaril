@@ -485,14 +485,14 @@ export default function Birds() {
                 Novo Pássaro
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
+            <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
+              <DialogHeader className="pr-8 border-b pb-4">
                 <DialogTitle>{editingId ? "Editar Pássaro" : "Cadastrar Novo Pássaro"}</DialogTitle>
                 <DialogDescription>
                   {editingId ? "Atualize os dados do pássaro" : "Preencha os dados do pássaro abaixo"}
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="min-w-0 space-y-5">
                 {!editingId && (
                   <BirdPhotoIdentifier
                     onIdentified={(result) => {
@@ -513,13 +513,13 @@ export default function Birds() {
                     }}
                   />
                 )}
-                <div className="rounded-xl border bg-blue-50/60 p-3 space-y-3">
+                <div className="min-w-0 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 sm:p-5 space-y-4">
                   <div>
                     <h3 className="font-semibold text-gray-900 text-sm">Ficha inteligente do pássaro</h3>
                     <p className="text-xs text-gray-500">Use os selects oficiais para gerar título, ficha genética e dados para confronto de casais.</p>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="nickname">Apelido / nome interno</Label>
                       <Input
@@ -578,7 +578,7 @@ export default function Birds() {
                           variant="outline"
                           role="combobox"
                           disabled={formData.modality !== "COR" && formData.modality !== "PORTE"}
-                          className="w-full justify-between font-normal"
+                          className="w-full min-w-0 justify-between overflow-hidden font-normal"
                         >
                           <span className="truncate text-left">
                             {selectedOfficialClass
@@ -588,7 +588,7 @@ export default function Birds() {
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] p-0" align="start">
                         <Command shouldFilter={false}>
                           <CommandInput
                             placeholder="Busque: ágata, gloster, branco, vermelho, mosaico..."
@@ -647,18 +647,18 @@ export default function Birds() {
                     )}
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="fatherId">Pai conhecido</Label>
                       <Select value={formData.fatherId} onValueChange={(value) => patchForm({ fatherId: value })}>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full min-w-0 overflow-hidden">
                           <SelectValue placeholder="Não informado" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
                           <SelectItem value="none">Não informado</SelectItem>
                           {(allBirdsForSelects ?? []).filter((b) => b.id !== editingId && b.sex !== "fêmea").map((b) => (
-                            <SelectItem key={b.id} value={String(b.id)}>
-                              {(b.displayTitle || b.ring)}
+                            <SelectItem key={b.id} value={String(b.id)} title={b.displayTitle || b.ring}>
+                              <span className="block min-w-0 truncate">{b.displayTitle || b.ring}</span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -667,14 +667,14 @@ export default function Birds() {
                     <div>
                       <Label htmlFor="motherId">Mãe conhecida</Label>
                       <Select value={formData.motherId} onValueChange={(value) => patchForm({ motherId: value })}>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full min-w-0 overflow-hidden">
                           <SelectValue placeholder="Não informado" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
                           <SelectItem value="none">Não informado</SelectItem>
                           {(allBirdsForSelects ?? []).filter((b) => b.id !== editingId && b.sex !== "macho").map((b) => (
-                            <SelectItem key={b.id} value={String(b.id)}>
-                              {(b.displayTitle || b.ring)}
+                            <SelectItem key={b.id} value={String(b.id)} title={b.displayTitle || b.ring}>
+                              <span className="block min-w-0 truncate">{b.displayTitle || b.ring}</span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -684,11 +684,11 @@ export default function Birds() {
 
                   <div className="rounded-lg border bg-white p-2">
                     <p className="text-xs text-gray-400 uppercase">Título automático</p>
-                    <p className="text-sm font-medium text-gray-900">{previewTitle(formData, selectedOfficialClass?.officialName, specialtiesList, colorsList)}</p>
+                    <p className="text-sm font-medium leading-relaxed text-gray-900 break-words">{previewTitle(formData, selectedOfficialClass?.officialName, specialtiesList, colorsList)}</p>
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="ring" className="flex items-center gap-2">
                       Anilha *
@@ -859,7 +859,7 @@ export default function Birds() {
                   </div>
                 )}
 
-                <div className="flex gap-2 justify-end">
+                <div className="sticky bottom-0 z-20 -mx-5 mt-6 flex flex-col-reverse gap-2 border-t bg-white/95 px-5 py-4 backdrop-blur sm:-mx-6 sm:flex-row sm:justify-end sm:px-6">
                   <Button type="button" variant="outline" onClick={closeDialog}>
                     {editingId ? "Fechar" : "Cancelar"}
                   </Button>
@@ -880,7 +880,7 @@ export default function Birds() {
               {/* Fotos, Juiz Virtual, Saúde e Genótipo Avançado (modo edição)
                   ficam disponíveis depois que o pássaro já existe (precisam de um ID). */}
               {editingId && (
-                <div className="border-t pt-4 mt-2 space-y-5">
+                <div className="min-w-0 border-t pt-5 mt-3 space-y-5">
                   <div className="flex items-center justify-between rounded-lg border p-3">
                     <div>
                       <p className="font-medium text-gray-900">Exibir na vitrine pública</p>

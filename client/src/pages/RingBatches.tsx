@@ -259,8 +259,8 @@ export default function RingBatches() {
                   <Plus className="h-4 w-4 mr-2" /> Novo Lote
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
+              <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
+                <DialogHeader className="pr-8 border-b pb-4">
                   <DialogTitle>Criar lote de anilhas</DialogTitle>
                   <DialogDescription>
                     Preencha só o essencial. O sistema já sugere a bitola oficial automaticamente.
@@ -365,7 +365,7 @@ export default function RingBatches() {
                           <div>
                             <Label>Raça do canário de porte *</Label>
                             <Select value={formData.breedName || "__empty__"} onValueChange={(value) => setFormData({ ...formData, breedName: value === "__empty__" ? "" : value })}>
-                              <SelectTrigger><SelectValue placeholder="Selecione a raça" /></SelectTrigger>
+                              <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione a raça" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__empty__">Selecione a raça...</SelectItem>
                                 {OFFICIAL_PORTE_BREEDS.map((breed) => (
@@ -482,7 +482,7 @@ export default function RingBatches() {
                       <div>
                         <Label>Modelo do código</Label>
                         <Select value={formData.formatPreset} onValueChange={handleFormatPreset}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {FORMAT_PRESETS.map((preset) => (
                               <SelectItem key={preset.value} value={preset.value}>{preset.label}</SelectItem>
@@ -815,8 +815,8 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
           <Plus className="h-4 w-4 mr-2" /> Pedido rápido por raça
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden p-5 sm:p-6">
+        <DialogHeader className="pr-8 border-b pb-4">
           <DialogTitle>Pedido rápido de anilhas</DialogTitle>
           <DialogDescription>
             Ideal para pedir o ano inteiro de uma vez, separado por raça ou tipo de canário.
@@ -838,12 +838,12 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
           {rows.map((row, index) => {
             const suggestion = resolveRowSuggestion(row);
             return (
-              <div key={index} className="rounded-lg border p-4 bg-gray-50 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-                  <div>
+              <div key={index} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 space-y-4 shadow-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+                  <div className="lg:col-span-3 min-w-0">
                     <Label className="text-xs">Tipo</Label>
                     <Select value={row.modality} onValueChange={(value) => handleModalityChange(index, value as SplitRow["modality"])}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="COR">Canário de Cor</SelectItem>
                         <SelectItem value="PORTE">Canário de Porte</SelectItem>
@@ -852,11 +852,11 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
                     </Select>
                   </div>
 
-                  <div className="md:col-span-2">
+                  <div className="sm:col-span-1 lg:col-span-5 min-w-0">
                     <Label className="text-xs">Raça</Label>
                     {row.modality === "PORTE" ? (
                       <Select value={row.breedName || "__empty__"} onValueChange={(value) => updateRow(index, { breedName: value === "__empty__" ? "" : value })}>
-                        <SelectTrigger><SelectValue placeholder="Selecione a raça" /></SelectTrigger>
+                        <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Selecione a raça" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__empty__">Selecione a raça...</SelectItem>
                           {OFFICIAL_PORTE_BREEDS.map((breed) => (
@@ -869,22 +869,22 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
                     )}
                   </div>
 
-                  <div>
+                  <div className="lg:col-span-2 min-w-0">
                     <Label className="text-xs">Bitola</Label>
                     <Input value={suggestion ? `${suggestion.recommendedGaugeMm}` : row.ringGaugeMm} readOnly={!!suggestion} onChange={(e) => updateRow(index, { ringGaugeMm: e.target.value })} />
                   </div>
 
-                  <div>
+                  <div className="lg:col-span-2 min-w-0">
                     <Label className="text-xs">Quantidade</Label>
                     <Input type="number" value={row.quantity} onChange={(e) => updateRow(index, { quantity: e.target.value })} placeholder="Ex: 50" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+                  <div className="lg:col-span-3 min-w-0">
                     <Label className="text-xs">Cor</Label>
                     <Select value={row.color} onValueChange={(value) => updateRow(index, { color: value })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {COLOR_OPTIONS.map((color) => (
                           <SelectItem key={color} value={color}>{color}</SelectItem>
@@ -892,13 +892,13 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="md:col-span-3">
+                  <div className="sm:col-span-1 lg:col-span-7 min-w-0">
                     <Label className="text-xs">Faixa que será criada</Label>
                     <div className="h-10 rounded-md border bg-white px-3 flex items-center text-sm text-gray-700 font-mono">
                       {preview[index].qty > 0 ? `${preview[index].start} – ${preview[index].end}` : "Informe a quantidade"}
                     </div>
                   </div>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end lg:col-span-2">
                     <Button type="button" variant="ghost" size="sm" onClick={() => setRows((current) => current.filter((_, i) => i !== index))} disabled={rows.length <= 1}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
@@ -917,7 +917,7 @@ function SplitOrderDialog({ onCreated }: { onCreated: () => void }) {
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Adicionar linha
         </Button>
 
-        <div className="flex items-center justify-between border-t pt-3 mt-2">
+        <div className="sticky bottom-0 z-20 -mx-5 mt-4 flex flex-col gap-3 border-t bg-white/95 px-5 py-4 backdrop-blur sm:-mx-6 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p className="text-sm text-gray-600">Total do pedido: <span className="font-bold">{totalQuantity}</span> anilhas</p>
           <Button onClick={handleSubmit} disabled={createSplit.isPending} className="bg-amber-600 hover:bg-amber-700">
             {createSplit.isPending ? "Criando..." : "Confirmar pedido"}
