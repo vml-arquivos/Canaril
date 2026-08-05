@@ -10,11 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { SPECIALTIES, COLORS } from "@shared/constants";
-import { Plus, Edit2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle, Dna, CheckCircle, ShieldAlert, TrendingUp, Sparkles, History, Unlink } from "lucide-react";
+import { Plus, Edit2, Trash2, FileText, LayoutGrid, List, Bird as BirdIcon, Heart, AlertTriangle, Dna, CheckCircle, ShieldAlert, TrendingUp, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
-const emptyForm = { maleId: "", femaleId: "", cageId: "", formationDate: "", pairingMethod: "monogamy" as "monogamy" | "bigamy", maleReuseConfirmed: false };
+const emptyForm = { maleId: "", femaleId: "", cageId: "", formationDate: "", status: "active", pairingMethod: "monogamy" as "monogamy" | "bigamy", maleReuseConfirmed: false };
 
 const PAIRING_OBJECTIVES: { value: "cor" | "porte" | "show" | "linhagem" | "diversidade" | "portadores"; label: string; desc: string }[] = [
   { value: "linhagem",    label: "Manter linhagem",      desc: "Preserva as características da linha atual" },
@@ -258,12 +258,12 @@ export default function Couples() {
     onError: (error) => toast.error("Erro ao atualizar casal: " + error.message),
   });
 
-  const dissolveCouple = trpc.management.couples.dissolve.useMutation({
+  const deleteCouple = trpc.management.couples.delete.useMutation({
     onSuccess: () => {
-      toast.success("Casal desfeito. O registro completo foi enviado para o histórico.");
+      toast.success("Casal removido com sucesso!");
       refetch();
     },
-    onError: (error) => toast.error("Erro ao desfazer casal: " + error.message),
+    onError: (error) => toast.error("Erro ao remover casal: " + error.message),
   });
 
   const closeDialog = () => {
@@ -279,6 +279,7 @@ export default function Couples() {
       femaleId: String(couple.femaleId),
       cageId: couple.cageId ? String(couple.cageId) : "",
       formationDate: new Date(couple.formationDate).toISOString().slice(0, 10),
+      status: couple.status,
       pairingMethod: (couple.pairingMethod === "bigamy" ? "bigamy" : "monogamy"),
       maleReuseConfirmed: Boolean(couple.maleReuseConfirmed),
     });
@@ -302,15 +303,15 @@ export default function Couples() {
     };
 
     if (editingId) {
-      updateCouple.mutate({ id: editingId, ...payload });
+      updateCouple.mutate({ id: editingId, ...payload, status: formData.status });
     } else {
       createCouple.mutate(payload);
     }
   };
 
-  const handleDissolve = (id: number) => {
-    if (confirm("Desfazer este casal? Ele sairá da página de casais ativos, a gaiola será liberada e todas as posturas, filhotes e dados de linhagem permanecerão preservados no histórico.")) {
-      dissolveCouple.mutate({ id });
+  const handleDelete = (id: number) => {
+    if (confirm("Tem certeza que deseja remover este casal?")) {
+      deleteCouple.mutate(id);
     }
   };
 
@@ -340,12 +341,6 @@ export default function Couples() {
                 <List className="w-4 h-4" />
               </button>
             </div>
-            <Link href="/couples/history">
-              <Button variant="outline" className="border-slate-300">
-                <History className="w-4 h-4 mr-2" />
-                Histórico
-              </Button>
-            </Link>
             <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeDialog())}>
             <DialogTrigger asChild>
               <Button className="bg-green-600 hover:bg-green-700" onClick={() => { setEditingId(null); setFormData(emptyForm); }}>
@@ -426,6 +421,21 @@ export default function Couples() {
                       onChange={(e) => setFormData({ ...formData, formationDate: e.target.value })}
                     />
                   </div>
+                  {editingId && (
+                    <div>
+                      <Label>Status</Label>
+                      <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Ativo</SelectItem>
+                          <SelectItem value="inactive">Desfeito (libera os pássaros)</SelectItem>
+                          <SelectItem value="finalized">Finalizado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
                 {!editingId && formData.maleId && (
@@ -578,8 +588,7 @@ export default function Couples() {
             ) : (
               <div className="text-center py-16 text-gray-400 border border-dashed rounded-xl">
                 <BirdIcon className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p>Nenhum casal ativo no momento.</p>
-                <p className="text-xs mt-1">Casais desfeitos permanecem disponíveis no Histórico.</p>
+                <p>Nenhum casal formado ainda.</p>
               </div>
             )}
           </div>
@@ -635,14 +644,8 @@ export default function Couples() {
                             <Button size="sm" variant="ghost" onClick={() => openEdit(couple)}>
                               <Edit2 className="w-4 h-4" />
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-amber-700"
-                              title="Desfazer casal e preservar no histórico"
-                              onClick={() => handleDissolve(couple.id)}
-                            >
-                              <Unlink className="w-4 h-4" />
+                            <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDelete(couple.id)}>
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </TableCell>
@@ -653,7 +656,7 @@ export default function Couples() {
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <p>Nenhum casal ativo no momento.</p>
+                <p>Nenhum casal cadastrado ainda.</p>
               </div>
             )}
           </CardContent>

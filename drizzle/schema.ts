@@ -4,7 +4,7 @@
 // primary key, and `integer` represents standard integer columns. Other
 // helpers (varchar, text, timestamp, index) remain the same API across
 // dialects.
-import { serial, integer, varchar, text, timestamp, date, pgTable, index, uniqueIndex, jsonb, boolean, real, numeric } from "drizzle-orm/pg-core";
+import { serial, integer, varchar, text, timestamp, date, pgTable, index, jsonb, boolean, real, numeric } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -264,8 +264,6 @@ export const couples = pgTable("couples", {
   deletedAt: timestamp("deletedAt"),
   deletedBy: integer("deletedBy"),
   status: varchar("status", { length: 20 }).default("active").notNull(),
-  endedAt: timestamp("endedAt"),
-  endReason: text("endReason"),
   notes: text("notes"),
   /**
    * Identificador do canaril/tenant ao qual este casal pertence.
@@ -531,12 +529,8 @@ export const photos = pgTable("photos", {
  */
 export const cages = pgTable("cages", {
   id: serial("id").primaryKey(),
-  code: varchar("code", { length: 50 }).notNull(), // ex: "A-12"; unicidade é por tenant e somente para registros ativos
+  code: varchar("code", { length: 50 }).notNull().unique(), // ex: "A-12"
   section: varchar("section", { length: 100 }), // ex: "Galpão 1 - Fileira 3"
-  batchName: varchar("batchName", { length: 120 }), // identificação opcional do lote de cadastro
-  purpose: varchar("purpose", { length: 150 }), // destinação/linha: ex. Canários vermelhos
-  specialtyCode: varchar("specialtyCode", { length: 50 }), // especialidade/raça oficial opcional
-  breedName: varchar("breedName", { length: 100 }), // raça/variedade informada pelo criador
   capacity: integer("capacity").default(1).notNull(),
   status: varchar("status", { length: 20 }).default("free").notNull(), // free | occupied | maintenance
   // Código público único para QR Code — nullable até ser ativado.
@@ -549,15 +543,6 @@ export const cages = pgTable("cages", {
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (table) => ({
   codeIdx: index("cages_code_idx").on(table.code),
-  tenantCodeActiveUnique: uniqueIndex("cages_tenant_code_active_unique")
-    .on(table.tenantId, sql`lower(${table.code})`)
-    .where(sql`${table.deletedAt} IS NULL`),
-  tenantSpecialtyIdx: index("cages_tenant_specialty_idx")
-    .on(table.tenantId, table.specialtyCode)
-    .where(sql`${table.deletedAt} IS NULL`),
-  tenantBatchIdx: index("cages_tenant_batch_idx")
-    .on(table.tenantId, table.batchName)
-    .where(sql`${table.deletedAt} IS NULL`),
 }));
 
 /**

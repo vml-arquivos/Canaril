@@ -727,75 +727,6 @@ function TabConfronto() {
 }
 
 // ────────────────────────────────────────────────────────────
-// Gaiolas e destinações
-// ────────────────────────────────────────────────────────────
-function TabGaiolas() {
-  const { data, isLoading } = trpc.reports.gaiolas.useQuery();
-
-  const exportCSV = () => {
-    if (!data?.rows.length) return;
-    const header = ["Código", "Lote", "Setor", "Destinação", "Especialidade", "Raça/variedade", "Capacidade", "Status", "Casais ativos", "Pássaros ativos", "Observações"];
-    const rows = data.rows.map((row) => [
-      row.code, row.batchName ?? "", row.section ?? "", row.purpose ?? "",
-      row.specialtyCode ? labelFor(SPECIALTIES, row.specialtyCode) : "", row.breedName ?? "",
-      row.capacity, row.status, row.activeCoupleCount, row.activeBirdCount, row.notes ?? "",
-    ]);
-    const csv = [header, ...rows].map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url; anchor.download = "gaiolas-destinacoes.csv"; anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  if (isLoading) return <p className="text-sm text-gray-400">Carregando...</p>;
-  if (!data) return null;
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          ["Total", data.summary.total, "text-gray-700"],
-          ["Livres", data.summary.free, "text-green-700"],
-          ["Ocupadas", data.summary.occupied, "text-amber-700"],
-          ["Manutenção", data.summary.maintenance, "text-red-700"],
-        ].map(([label, value, color]) => (
-          <Card key={String(label)}><CardContent className="p-4"><p className="text-xs text-gray-500">{label}</p><p className={`text-2xl font-bold ${color}`}>{value}</p></CardContent></Card>
-        ))}
-      </div>
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3">
-            <div><CardTitle className="text-base">Gaiolas, lotes e destinações</CardTitle><CardDescription>Uso planejado por linha, especialidade e raça.</CardDescription></div>
-            <Button variant="outline" size="sm" onClick={exportCSV} disabled={data.rows.length === 0}><Feather className="mr-1.5 h-4 w-4" />CSV</Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader><TableRow><TableHead>Código</TableHead><TableHead>Lote / setor</TableHead><TableHead>Destinação</TableHead><TableHead>Especialidade / raça</TableHead><TableHead>Ocupação</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {data.rows.length === 0 && <TableRow><TableCell colSpan={6} className="py-8 text-center text-gray-400">Nenhuma gaiola cadastrada.</TableCell></TableRow>}
-                {data.rows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-mono font-semibold">{row.code}</TableCell>
-                    <TableCell><p className="text-sm">{row.batchName || "—"}</p><p className="text-xs text-gray-400">{row.section || "Sem setor"}</p></TableCell>
-                    <TableCell className="text-sm">{row.purpose || "—"}</TableCell>
-                    <TableCell><p className="text-sm">{row.specialtyCode ? labelFor(SPECIALTIES, row.specialtyCode) : "—"}</p><p className="text-xs text-gray-400">{row.breedName || ""}</p></TableCell>
-                    <TableCell className="text-xs"><p>{row.activeCoupleCount} casal(is)</p><p>{row.activeBirdCount} pássaro(s)</p></TableCell>
-                    <TableCell><Badge className={row.status === "free" ? "bg-green-100 text-green-800" : row.status === "maintenance" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}>{row.status === "free" ? "Livre" : row.status === "maintenance" ? "Manutenção" : "Ocupada"}</Badge></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────
 // Tab 6: Casais e Reprodução
 // ────────────────────────────────────────────────────────────
 function TabCasais() {
@@ -1441,7 +1372,6 @@ export default function Reports() {
             <TabsTrigger value="plantel">Plantel</TabsTrigger>
             <TabsTrigger value="lacunas">Lacunas</TabsTrigger>
             <TabsTrigger value="anilhas">Anilhas</TabsTrigger>
-            <TabsTrigger value="gaiolas">Gaiolas</TabsTrigger>
             <TabsTrigger value="casais">Casais</TabsTrigger>
             <TabsTrigger value="confronto">Confronto Genético</TabsTrigger>
             <TabsTrigger value="consanguinidade">Mapa de Consanguinidade</TabsTrigger>
@@ -1454,7 +1384,6 @@ export default function Reports() {
           <TabsContent value="plantel" className="mt-6"><TabPlantel /></TabsContent>
           <TabsContent value="lacunas" className="mt-6"><TabLacunas /></TabsContent>
           <TabsContent value="anilhas" className="mt-6"><TabAnilhas /></TabsContent>
-          <TabsContent value="gaiolas" className="mt-6"><TabGaiolas /></TabsContent>
           <TabsContent value="casais" className="mt-6"><TabCasais /></TabsContent>
           <TabsContent value="confronto" className="mt-6"><TabConfronto /></TabsContent>
           <TabsContent value="consanguinidade" className="mt-6"><TabConsanguinidade /></TabsContent>

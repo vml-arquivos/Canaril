@@ -38,7 +38,6 @@ export default function Clutches() {
 
   const { data: clutches, refetch: refetchClutches } = trpc.management.clutches.list.useQuery();
   const { data: couples } = trpc.management.couples.list.useQuery();
-  const { data: coupleReferences = [] } = trpc.management.couples.references.useQuery();
   const { data: chicks, refetch: refetchChicks } = trpc.management.chicks.list.useQuery();
   const updateChickStatus = trpc.management.chicks.update.useMutation({
     onSuccess: () => { toast.success("Status atualizado."); refetchChicks(); },
@@ -305,41 +304,30 @@ export default function Clutches() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {clutches.map((clutch) => {
-                          const couple = coupleReferences.find((item) => item.id === clutch.coupleId);
-                          const historical = !couple || couple.status !== "active" || Boolean(couple.deletedAt);
-                          return (
-                            <TableRow key={clutch.id}>
-                              <TableCell>
-                                <p className="font-medium">Gaiola {couple?.cageNumber || `#${clutch.coupleId}`}</p>
-                                {historical && <p className="text-xs text-gray-400">Casal encerrado · somente leitura</p>}
-                              </TableCell>
-                              <TableCell>{new Date(clutch.clutchDate).toLocaleDateString("pt-BR")}</TableCell>
-                              <TableCell>{clutch.totalEggs}</TableCell>
-                              <TableCell className="text-green-600">{clutch.fertilizedEggs}</TableCell>
-                              <TableCell className="text-red-600">{clutch.infertileEggs}</TableCell>
-                              <TableCell className="text-gray-600">{clutch.lostEggs}</TableCell>
-                              <TableCell className="font-semibold">{clutch.hatchedChicks}</TableCell>
-                              <TableCell>
-                                {historical ? (
-                                  <span className="text-xs text-gray-400">Protegido</span>
-                                ) : (
-                                  <div className="flex gap-2">
-                                    <Button size="sm" variant="ghost" onClick={() => startEditClutch(clutch)}>
-                                      <Edit2 className="w-4 h-4" />
-                                    </Button>
-                                    <Button
-                                      size="sm" variant="ghost" className="text-red-600"
-                                      onClick={() => { if (confirm("Remover esta postura? Os filhotes já registrados a partir dela não são apagados.")) deleteClutch.mutate({ id: clutch.id }); }}
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                        {clutches.map((clutch) => (
+                          <TableRow key={clutch.id}>
+                            <TableCell>Gaiola {clutch.coupleId}</TableCell>
+                            <TableCell>{new Date(clutch.clutchDate).toLocaleDateString("pt-BR")}</TableCell>
+                            <TableCell>{clutch.totalEggs}</TableCell>
+                            <TableCell className="text-green-600">{clutch.fertilizedEggs}</TableCell>
+                            <TableCell className="text-red-600">{clutch.infertileEggs}</TableCell>
+                            <TableCell className="text-gray-600">{clutch.lostEggs}</TableCell>
+                            <TableCell className="font-semibold">{clutch.hatchedChicks}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="ghost" onClick={() => startEditClutch(clutch)}>
+                                  <Edit2 className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="sm" variant="ghost" className="text-red-600"
+                                  onClick={() => { if (confirm("Remover esta postura? Os filhotes já registrados a partir dela não são apagados.")) deleteClutch.mutate({ id: clutch.id }); }}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                   </div>

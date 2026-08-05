@@ -13,7 +13,6 @@ import {
   bird_genotype,
   bird_genetic_profiles,
   chicks,
-  cages,
 } from "../../drizzle/schema";
 import { desc, eq, and, inArray, isNull } from "drizzle-orm";
 import { calculateCOI, calculateCOIForPair, classifyCOIRisk, PedigreeBird } from "../_core/genetics";
@@ -537,50 +536,6 @@ export const reportsRouter = router({
         generatedAt: new Date(),
       };
     }),
-
-  // ─── Relatório de Gaiolas e Destinações ─────────────────────────────────
-  gaiolas: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return { rows: [], summary: { total: 0, free: 0, occupied: 0, maintenance: 0 }, generatedAt: new Date() };
-    const tenantId = getCurrentTenantId(ctx);
-    const cageConditions = [isNull(cages.deletedAt)];
-    const coupleConditions = [eq(couples.status, "active"), isNull(couples.deletedAt)];
-    const birdConditions = [eq(birds.status, "active"), isNull(birds.deletedAt)];
-    if (tenantId !== null) {
-      cageConditions.push(eq(cages.tenantId, tenantId));
-      coupleConditions.push(eq(couples.tenantId, tenantId));
-      birdConditions.push(eq(birds.tenantId, tenantId));
-    }
-
-    const [cageRows, coupleRows, birdRows] = await Promise.all([
-      db.select().from(cages).where(and(...cageConditions)),
-      db.select({ cageId: couples.cageId }).from(couples).where(and(...coupleConditions)),
-      db.select({ cageId: birds.cageId }).from(birds).where(and(...birdConditions)),
-    ]);
-    const coupleCounts = new Map<number, number>();
-    for (const row of coupleRows) if (row.cageId) coupleCounts.set(row.cageId, (coupleCounts.get(row.cageId) ?? 0) + 1);
-    const birdCounts = new Map<number, number>();
-    for (const row of birdRows) if (row.cageId) birdCounts.set(row.cageId, (birdCounts.get(row.cageId) ?? 0) + 1);
-
-    const rows = cageRows
-      .map((cage) => ({
-        ...cage,
-        activeCoupleCount: coupleCounts.get(cage.id) ?? 0,
-        activeBirdCount: birdCounts.get(cage.id) ?? 0,
-      }))
-      .sort((a, b) => a.code.localeCompare(b.code, "pt-BR", { numeric: true }));
-
-    return {
-      rows,
-      summary: {
-        total: rows.length,
-        free: rows.filter((row) => row.status === "free").length,
-        occupied: rows.filter((row) => row.status === "occupied").length,
-        maintenance: rows.filter((row) => row.status === "maintenance").length,
-      },
-      generatedAt: new Date(),
-    };
-  }),
 
   // ─── NOVO: Relatório de Casais e Reprodução ──────────────────────────────
   casaisReproducao: protectedProcedure.query(async ({ ctx }) => {

@@ -194,61 +194,6 @@ async function createCoupleWithReminders(params: {
   }
 }
 
-async function dissolveCoupleAtomic(params: { tenantId: number; coupleId: number; reason?: string }) {
-  const pool = getPool();
-  if (!pool) throw new Error("Banco de dados não disponível.");
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const found = await client.query<{ id: number; cageId: number | null; status: string }>(
-      `SELECT id, "cageId", status FROM couples
-        WHERE id=$1 AND "tenantId"=$2 AND "deletedAt" IS NULL
-        FOR UPDATE`,
-      [params.coupleId, params.tenantId],
-    );
-    const couple = found.rows[0];
-    if (!couple) throw new Error("Casal não encontrado neste criadouro.");
-    if (couple.status !== "active") throw new Error("Este casal já foi encerrado e está disponível somente no histórico.");
-
-    await client.query(
-      `UPDATE couples
-          SET status='dissolved', "endedAt"=NOW(), "endReason"=$3, "updatedAt"=NOW()
-        WHERE id=$1 AND "tenantId"=$2`,
-      [params.coupleId, params.tenantId, params.reason?.trim() || null],
-    );
-
-    if (couple.cageId) {
-      const occupancy = await client.query<{ coupleCount: number; birdCount: number }>(
-        `SELECT
-           (SELECT COUNT(*)::integer FROM couples
-             WHERE "tenantId"=$1 AND "cageId"=$2 AND status='active' AND "deletedAt" IS NULL) AS "coupleCount",
-           (SELECT COUNT(*)::integer FROM birds
-             WHERE "tenantId"=$1 AND "cageId"=$2 AND status='active' AND "deletedAt" IS NULL) AS "birdCount"`,
-        [params.tenantId, couple.cageId],
-      );
-      const occupied = (occupancy.rows[0]?.coupleCount ?? 0) > 0 || (occupancy.rows[0]?.birdCount ?? 0) > 0;
-      await client.query(
-        `UPDATE cages
-            SET status=CASE
-              WHEN $3='free' AND status='maintenance' THEN 'maintenance'
-              ELSE $3
-            END,
-                "updatedAt"=NOW()
-          WHERE id=$1 AND "tenantId"=$2 AND "deletedAt" IS NULL`,
-        [couple.cageId, params.tenantId, occupied ? "occupied" : "free"],
-      );
-    }
-
-    await client.query("COMMIT");
-    return { success: true, status: "dissolved" as const };
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
 export const managementRouter = router({
   // ===== ANILHAS =====
   rings: router({
@@ -363,60 +308,20 @@ export const managementRouter = router({
 
   // ===== CRUZAMENTOS/CASAIS =====
   couples: router({
-    // A página operacional mostra somente casais realmente ativos. Casais
-    // desfeitos permanecem intactos no banco e são consultados em history.
     list: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return [];
       try {
-        const tenantId = getCurrentTenantId(ctx);
-        const conditions = [eq(couples.status, "active"), isNull(couples.deletedAt)];
-        if (tenantId !== null && tenantId !== undefined) conditions.push(eq(couples.tenantId, tenantId));
-        return await db.select().from(couples).where(and(...conditions)).orderBy(desc(couples.createdAt));
+        const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
+        let query: any = db.select().from(couples);
+        if (tenantId !== null && tenantId !== undefined) {
+          query = query.where(eq(couples.tenantId, tenantId));
+        }
+        return await query.orderBy(desc(couples.createdAt));
       } catch (error) {
-        console.error("Error listing active couples:", error);
+        console.error("Error listing couples:", error);
         return [];
       }
-    }),
-
-    history: protectedProcedure.query(async ({ ctx }) => {
-      const pool = getPool();
-      if (!pool) return [];
-      const tenantId = requireTenantId(ctx);
-      const { rows } = await pool.query(
-        `SELECT cp.id, cp.status, cp."formationDate", cp."endedAt", cp."deletedAt", cp."endReason",
-                cp."cageNumber", cp."cageId", cp."pairingMethod",
-                m.id AS "maleId", m.ring AS "maleRing", m."displayTitle" AS "maleTitle",
-                f.id AS "femaleId", f.ring AS "femaleRing", f."displayTitle" AS "femaleTitle",
-                COUNT(DISTINCT cl.id)::integer AS "clutchCount",
-                COALESCE(SUM(cl."totalEggs"), 0)::integer AS "totalEggs",
-                COALESCE(SUM(cl."fertilizedEggs"), 0)::integer AS "fertilizedEggs",
-                COALESCE(SUM(cl."hatchedChicks"), 0)::integer AS "hatchedChicks"
-           FROM couples cp
-      LEFT JOIN birds m ON m.id=cp."maleId" AND m."tenantId"=$1
-      LEFT JOIN birds f ON f.id=cp."femaleId" AND f."tenantId"=$1
-      LEFT JOIN clutches cl ON cl."coupleId"=cp.id AND cl."tenantId"=$1 AND cl."deletedAt" IS NULL
-          WHERE cp."tenantId"=$1
-            AND (cp.status <> 'active' OR cp."deletedAt" IS NOT NULL)
-       GROUP BY cp.id, m.id, m.ring, m."displayTitle", f.id, f.ring, f."displayTitle"
-       ORDER BY COALESCE(cp."endedAt", cp."deletedAt", cp."updatedAt") DESC`,
-        [tenantId],
-      );
-      return rows;
-    }),
-
-    references: protectedProcedure.query(async ({ ctx }) => {
-      const db = await getDb();
-      if (!db) return [];
-      const tenantId = requireTenantId(ctx);
-      return db.select({
-        id: couples.id,
-        cageNumber: couples.cageNumber,
-        status: couples.status,
-        formationDate: couples.formationDate,
-        endedAt: couples.endedAt,
-        deletedAt: couples.deletedAt,
-      }).from(couples).where(eq(couples.tenantId, tenantId)).orderBy(desc(couples.formationDate));
     }),
 
     getById: protectedProcedure
@@ -485,6 +390,7 @@ export const managementRouter = router({
         pairingMethod: z.enum(["monogamy", "bigamy"]).optional(),
         maleReuseConfirmed: z.boolean().optional(),
         formationDate: z.date().optional(),
+        status: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const db = await getDb();
@@ -494,9 +400,6 @@ export const managementRouter = router({
           const [existing] = await db.select().from(couples).where(eq(couples.id, id));
           if (!existing) {
             throw new Error("Casal não encontrado.");
-          }
-          if (existing.status !== "active" || existing.deletedAt) {
-            throw new Error("Casais encerrados são somente para leitura e não podem ser editados.");
           }
           const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
           if (tenantId !== null && tenantId !== undefined) {
@@ -555,6 +458,9 @@ export const managementRouter = router({
             }
             await db.update(cages).set({ status: "occupied", updatedAt: new Date() }).where(eq(cages.id, input.cageId));
           }
+          if (input.status && input.status !== "active" && existing.cageId) {
+            await db.update(cages).set({ status: "free", updatedAt: new Date() }).where(eq(cages.id, existing.cageId));
+          }
           return { success: true };
         } catch (error) {
           console.error("Error updating couple:", error);
@@ -562,21 +468,36 @@ export const managementRouter = router({
         }
       }),
 
-    dissolve: protectedProcedure
-      .input(z.object({
-        id: z.number().int().positive(),
-        reason: z.string().trim().max(1000).optional(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        return dissolveCoupleAtomic({ tenantId: requireTenantId(ctx), coupleId: input.id, reason: input.reason });
-      }),
-
-    // Mantido como alias para clientes antigos. O registro não é apagado:
-    // ele é encerrado e preservado no histórico reprodutivo.
     delete: protectedProcedure
-      .input(z.number().int().positive())
+      .input(z.number())
       .mutation(async ({ ctx, input }) => {
-        return dissolveCoupleAtomic({ tenantId: requireTenantId(ctx), coupleId: input });
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        try {
+          const [existing] = await db.select().from(couples).where(eq(couples.id, input));
+          if (!existing) {
+            throw new Error("Casal não encontrado.");
+          }
+          const tenantId = getCurrentTenantId(ctx); // seguro: lança erro se usuário não-admin não tiver tenant (antes: silenciosamente via TUDO)
+          if (tenantId !== null && tenantId !== undefined) {
+            requireTenantAccess(ctx, existing.tenantId);
+          }
+          await db.update(couples).set({
+            status: "inactive",
+            deletedAt: new Date(),
+            deletedBy: ctx.user.id,
+            updatedAt: new Date(),
+          }).where(and(eq(couples.id, input), eq(couples.tenantId, requireTenantId(ctx))));
+          if (existing.cageId) {
+            await db.update(cages).set({ status: "free", updatedAt: new Date() }).where(and(
+              eq(cages.id, existing.cageId), eq(cages.tenantId, requireTenantId(ctx)),
+            ));
+          }
+          return { success: true };
+        } catch (error) {
+          console.error("Error deleting couple:", error);
+          throw error;
+        }
       }),
   }),
 
@@ -605,6 +526,7 @@ export const managementRouter = router({
         const [ownedCouple] = await db.select({ id: couples.id }).from(couples).where(and(
           eq(couples.id, input),
           eq(couples.tenantId, tenantId),
+          isNull(couples.deletedAt),
         )).limit(1);
         if (!ownedCouple) throw new Error("Casal não encontrado neste criadouro.");
         return db.select().from(clutches).where(and(
@@ -694,15 +616,9 @@ export const managementRouter = router({
         const tenantId = requireTenantId(ctx);
         const { id, ...fields } = input;
 
-        const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId, coupleId: clutches.coupleId }).from(clutches).where(eq(clutches.id, id)).limit(1);
+        const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId }).from(clutches).where(eq(clutches.id, id)).limit(1);
         if (!existing) throw new Error("Postura não encontrada.");
         if (existing.tenantId !== tenantId) throw new Error("Esta postura não pertence ao seu criadouro.");
-        const [ownerCouple] = await db.select({ status: couples.status, deletedAt: couples.deletedAt }).from(couples).where(and(
-          eq(couples.id, existing.coupleId), eq(couples.tenantId, tenantId),
-        )).limit(1);
-        if (!ownerCouple || ownerCouple.status !== "active" || ownerCouple.deletedAt) {
-          throw new Error("Posturas de casais encerrados são somente para leitura e não podem ser alteradas.");
-        }
 
         await db.update(clutches).set({ ...fields, updatedAt: new Date() }).where(and(eq(clutches.id, id), eq(clutches.tenantId, tenantId)));
         return { success: true };
@@ -717,15 +633,9 @@ export const managementRouter = router({
         const tenantId = requireTenantId(ctx);
         const uid = ctx.user.id;
 
-        const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId, coupleId: clutches.coupleId }).from(clutches).where(eq(clutches.id, input.id)).limit(1);
+        const [existing] = await db.select({ id: clutches.id, tenantId: clutches.tenantId }).from(clutches).where(eq(clutches.id, input.id)).limit(1);
         if (!existing) throw new Error("Postura não encontrada.");
         if (existing.tenantId !== tenantId) throw new Error("Esta postura não pertence ao seu criadouro.");
-        const [ownerCouple] = await db.select({ status: couples.status, deletedAt: couples.deletedAt }).from(couples).where(and(
-          eq(couples.id, existing.coupleId), eq(couples.tenantId, tenantId),
-        )).limit(1);
-        if (!ownerCouple || ownerCouple.status !== "active" || ownerCouple.deletedAt) {
-          throw new Error("Posturas de casais encerrados são somente para leitura e não podem ser apagadas.");
-        }
 
         await db.update(clutches).set({ deletedAt: new Date(), deletedBy: uid }).where(and(eq(clutches.id, input.id), eq(clutches.tenantId, tenantId)));
         return { success: true };
